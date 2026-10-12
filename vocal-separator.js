@@ -1080,7 +1080,7 @@
       '<div id="ppv-wout" class="ppv-out"></div>';
     // AI tools no longer live in the one panel: tagging + smart playlists go to the Library tab, Whisper goes to captions (video) or Lyrics (songs)
     d1.querySelector('summary').textContent = 'AI tagging & smart playlists';
-    d1.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-tag"><i></i></div><select id="ppv-scope"><option value="cur">Tag: current track</option><option value="pick">Tag: a track I choose</option><option value="all">Tag: all tracks</option></select><select id="ppv-pick" style="display:none"></select><label class="ppv-c" id="ppv-redo-l" style="display:none"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label><div class="ppv-row"><button id="ppv-tag">Tag current track</button><button id="ppv-stop" class="ppv-sec" style="display:none;width:auto;padding:6px 14px" data-keep="1">Stop</button></div><div id="ppv-tags" class="ppv-out"></div><details id="ppv-saved"><summary>Saved tags</summary><select id="ppv-sf"><option value="video">Videos</option><option value="audio">Songs</option><option value="all">Everything tagged</option></select><div id="ppv-slist" class="ppv-note"></div></details>');
+    d1.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-tag"><i></i></div><select id="ppv-scope"><option value="cur">Tag: current track</option><option value="pick">Tag: a track I choose</option><option value="all">Tag: all tracks</option></select><select id="ppv-pick" style="display:none"></select><label class="ppv-c" id="ppv-redo-l" style="display:none"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label><div class="ppv-row"><button id="ppv-tag">Tag current track</button><button id="ppv-stop" class="ppv-sec" style="display:none;width:auto;padding:6px 14px" data-keep="1">Stop</button></div><div id="ppv-tags" class="ppv-out"></div><details id="ppv-saved" open><summary>Tagged tracks <span id="ppv-scount" style="opacity:.6;font-weight:400"></span></summary><input type="text" id="ppv-ss" placeholder="Filter by title, artist or tag (e.g. piano, 120 bpm)"><select id="ppv-sf"><option value="all">Everything tagged</option><option value="audio">Songs</option><option value="video">Videos</option></select><div id="ppv-slist" class="ppv-note"></div></details>');
     d2.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-wh"><i></i></div>');
     d2.style.borderTop = '0'; d2.style.marginTop = '4px';
     const libHost = document.createElement('div'); libHost.className = 'ppv-scope'; libHost.id = 'ppv-libhost'; libHost.appendChild(d1);
@@ -1088,6 +1088,11 @@
     d1.open = false; d2.open = true;
     const pane = document.getElementById('sidebar-pane-playlist'), srow = document.getElementById('search-row');
     if (pane && srow) srow.after(libHost); else if (pane) pane.prepend(libHost); else p.appendChild(libHost);   // fallback: old panel
+    const savedEl = d1.querySelector('#ppv-saved');
+    const savedHost = document.createElement('div'); savedHost.className = 'ppv-scope'; savedHost.id = 'ppv-savedhost';
+    savedHost.style.cssText = 'padding:0 20px 10px';
+    savedHost.appendChild(savedEl); savedEl.style.marginTop = '0';
+    libHost.after(savedHost);
     const capDrop = document.getElementById('subtitle-dropdown'), lyPane = document.querySelector('#extras-panel .pp-pane[data-pp="ly"]');
     // the Whisper block sits in whichever place fits the current track: captions menu for video, Lyrics tab for songs
     const placeWhisper = where => {
@@ -1124,22 +1129,28 @@
       if (c.ts) L.push('Tagged ' + new Date(c.ts).toLocaleDateString());
       return L.join('\n') || 'No details saved.';
     };
+    let savedLimit = 100;
     const renderSaved = () => {
       const a = A(), box = $('#ppv-slist'), f = $('#ppv-sf').value; if (!a || !box) return;
-      const tg = loadTags(), rows = a.tracks().filter(t => tg[t.dbId] && (f === 'all' || (f === 'video') === (t.kind === 'video')));
+      const q = ($('#ppv-ss').value || '').trim().toLowerCase(), words = q ? q.split(/\s+/) : [];
+      const tg = loadTags(), all = a.tracks().filter(t => tg[t.dbId] && (f === 'all' || (f === 'video') === (t.kind === 'video')));
+      const rows = words.length ? all.filter(t => { const hay = (t.title + ' ' + t.artist + ' ' + tagWords(tg[t.dbId])).toLowerCase(); return words.every(w => hay.includes(w)); }) : all;
+      $('#ppv-scount').textContent = '(' + (words.length ? rows.length + ' of ' + all.length : all.length) + ')';
       box.textContent = '';
-      if (!rows.length) { box.textContent = f === 'video' ? 'No tagged videos yet. Pick a video with the Tag button above.' : 'Nothing tagged here yet.'; return; }
-      rows.slice(0, 200).forEach(t => {
+      if (!rows.length) { box.textContent = words.length ? 'No tagged tracks match that.' : (f === 'video' ? 'No tagged videos yet. Pick a video with the Tag button above.' : 'Nothing tagged yet. Use the tag buttons above.'); return; }
+      rows.slice(0, savedLimit).forEach(t => {
         const c = tg[t.dbId], row = document.createElement('div'), head = document.createElement('div'), body = document.createElement('div');
         row.style.cssText = 'border-top:1px solid var(--line,#333);padding:6px 0;cursor:pointer';
         head.innerHTML = '<b></b><div style="opacity:.7;font-size:11px"></div>';
-        head.firstChild.textContent = (t.kind === 'video' ? '🎬 ' : '🎵 ') + t.title;
-        head.lastChild.textContent = [c.bpm ? c.bpm + ' BPM' : '', c.key || '', c.gp && c.gp[0] ? c.gp[0][0] : '', c.md && c.md[0] ? c.md[0][0] : '', c.v != null ? (c.v >= 50 ? 'vocals' : 'instrumental') : ''].filter(Boolean).join(' · ') || 'tagged';
+        head.firstChild.textContent = (t.kind === 'video' ? '🎬 ' : '🎵 ') + (t.artist && !/^(Unknown artist|Video|Stream)$/.test(t.artist) ? t.artist + ' – ' : '') + t.title;
+        head.lastChild.textContent = [c.bpm ? c.bpm + ' BPM' : '', c.key || '', c.gp && c.gp[0] ? c.gp[0][0] : '', c.st && c.st[0] ? c.st[0][0].replace(/ \(.*\)$/, '') : '', c.md && c.md[0] ? c.md[0][0] : '', c.v != null ? (c.v >= 50 ? 'vocals' : 'instrumental') : ''].filter(Boolean).join(' · ') || 'tagged';
         body.style.cssText = 'display:none;white-space:pre-wrap;font-size:12px;margin-top:6px'; body.textContent = fmtStored(c);
-        row.onclick = () => { body.style.display = body.style.display === 'none' ? 'block' : 'none'; };
-        row.append(head, body); box.appendChild(row);
+        const play = document.createElement('button'); play.className = 'ppv-sec'; play.textContent = 'Play this track'; play.style.display = 'none';
+        play.onclick = ev => { ev.stopPropagation(); const i = a.tracks().indexOf(t); if (i >= 0) a.play(i, a.tracks().map((_, k) => k)); };
+        row.onclick = () => { const open = body.style.display === 'none'; body.style.display = open ? 'block' : 'none'; play.style.display = open ? 'block' : 'none'; };
+        row.append(head, body, play); box.appendChild(row);
       });
-      if (rows.length > 200) { const m = document.createElement('div'); m.textContent = 'Showing the first 200 of ' + rows.length + '.'; box.appendChild(m); }
+      if (rows.length > savedLimit) { const m = document.createElement('button'); m.className = 'ppv-sec'; m.textContent = 'Show more (' + (rows.length - savedLimit) + ' left)'; m.onclick = () => { savedLimit += 100; renderSaved(); }; box.appendChild(m); }
     };
     const refreshCount = () => { const a = A(); if (!a) return; const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch (e) {} };
     function renderSmart() {
@@ -1149,7 +1160,7 @@
       box.innerHTML = SMART.map(s => '<label><input type="checkbox" value="' + s.id + '"' + (ticked.has(s.id) ? ' checked' : '') + '> ' + s.name + ' <span style="opacity:.6">(' + rows.filter(r => s.test(r[0], r[1])).length + ')</span></label>').join('');
     }
     d1.addEventListener('toggle', () => { if (d1.open) refreshCount(); });
-    $('#ppv-saved').addEventListener('toggle', () => { if ($('#ppv-saved').open) renderSaved(); }); $('#ppv-sf').onchange = renderSaved;
+    $('#ppv-saved').addEventListener('toggle', () => { if ($('#ppv-saved').open) renderSaved(); }); $('#ppv-sf').onchange = () => { savedLimit = 100; renderSaved(); }; $('#ppv-ss').oninput = () => { savedLimit = 100; renderSaved(); };
     $('#ppv-heads').onclick = async () => { await resetHeads(); h.status('Mood models will be downloaded again on the next tagging run.'); };
 
     // single track tagging (replaces the old button behaviour so results are kept)
@@ -1300,6 +1311,9 @@
       try { if (asr) { await asr.dispose(); asr = null; asrId = ''; } const ks = await caches.keys(); for (const k of ks) if (/transformers/i.test(k)) await caches.delete(k); h.status('Whisper download removed.'); } catch (e) { h.status('Error: ' + e.message); }
     };
     refreshCount();
+    // the list is always visible now, so keep it current as the library loads and tags change
+    let lastSig = '';
+    setInterval(() => { const a = A(); if (!a) return; const sig = a.tracks().length + ':' + tagVer; if (sig !== lastSig) { lastSig = sig; refreshCount(); } }, 1500);
   }
 
   // ---------- UI ----------
