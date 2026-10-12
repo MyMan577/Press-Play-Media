@@ -1647,6 +1647,9 @@
     font-size:13px;
     line-height:1.6;
   }
+  .stem-section-head{display:flex;align-items:center;gap:8px;padding:10px 12px 6px;margin-top:6px;font-weight:600;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line,#333);user-select:none}
+  .stem-section-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stem-section-count{opacity:.6;font-size:12px;font-weight:500}
   .playlist-filter-empty{
     padding:40px 24px;
     text-align:center;
@@ -7407,13 +7410,37 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   });
   syncTitleMode();
 
+  // ---------- Split-track (stem) views ----------
+  // Stems made by the splitter are flagged t.stem. They never count as library tracks:
+  // "All tracks" skips them and they live under their own "Split tracks" view. A playlist
+  // with .stemOf is a per-song stem playlist; .libOnly hides it from the Playlists tab
+  // (it stays in the library's view selector).
+  const STEMS_VIEW = '__stems__';
+  function hasStems(){ return tracks.some(t => t.stem); }
+  function viewAllowed(id){
+    if (id === '__all__') return true;
+    if (id === STEMS_VIEW) return hasStems();
+    const pl = playlists.find(p => p.id === id);
+    return !!pl && (detailedPlaylistMode || !!pl.stemOf);
+  }
+  function effectiveView(){ return viewAllowed(activePlaylistView) ? activePlaylistView : '__all__'; }
+  function userPlaylistViewId(){   // real user playlist being viewed (not All / Split tracks), for "add here" behavior
+    return (detailedPlaylistMode && activePlaylistView !== '__all__' && activePlaylistView !== STEMS_VIEW) ? activePlaylistView : null;
+  }
+  // Optional: in the Split tracks view, give every split song its own collapsible section.
+  let stemSections = false;
+  try { stemSections = localStorage.getItem('ppStemSections') === '1'; } catch(e){}
+  const stemCollapsed = new Set();
+  const stemKey = t => t.stemOf || ('t:' + (t.stemSrc || ''));
+  function syncViewRow(){ playlistViewRow.classList.toggle('active', detailedPlaylistMode || hasStems()); }
+
   // ---------- Detailed mode toggle ----------
   function applyDetailedModeUI(){
     detailedModeToggle.checked = detailedPlaylistMode;
     const hint = document.getElementById('playlists-manager-hint');
     if (hint) hint.style.display = detailedPlaylistMode ? 'none' : '';
-    playlistViewRow.classList.toggle('active', detailedPlaylistMode);
-    if (!detailedPlaylistMode) activePlaylistView = '__all__';
+    if (!viewAllowed(activePlaylistView)) activePlaylistView = '__all__';
+    syncViewRow();
   }
   detailedModeToggle.addEventListener('change', () => {
     detailedPlaylistMode = detailedModeToggle.checked;
@@ -7438,7 +7465,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       row.innerHTML = `
         <button class="pl-manager-thumb" data-id="${pl.id}" title="Set playlist thumbnail" type="button">🖼️</button>
         <span class="pl-manager-name" data-id="${pl.id}" title="Click to rename">${escapeHtml(pl.name)}</span>
-        <span class="pl-manager-count">${count} track${count!==1?'s':''}</span>
+        <span class="pl-manager-count">${count} track${count!==1?'s':''}${pl.stemOf ? (pl.libOnly ? ' · split, library only' : ' · split') : ''}</span>
         <button class="pl-manager-btn" data-id="${pl.id}" title="Delete playlist" type="button">&times;</button>
       `;
       const nameEl = row.querySelector('.pl-manager-name');
@@ -7563,17 +7590,24 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   // ---------- Playlist view selector (Playlist tab) ----------
   function renderPlaylistViewSelect(){
     const prev = activePlaylistView;
-    playlistViewSelect.innerHTML = `<option value="__all__">All tracks (${tracks.length})</option>`;
+    playlistViewSelect.innerHTML = `<option value="__all__">All tracks (${tracks.filter(t => !t.stem).length})</option>`;
+    const stemCount = tracks.filter(t => t.stem).length;
+    if (stemCount){
+      const so = document.createElement('option');
+      so.value = STEMS_VIEW; so.textContent = `Split tracks (${stemCount})`;
+      playlistViewSelect.appendChild(so);
+    }
     playlists.forEach(pl => {
+      if (!detailedPlaylistMode && !pl.stemOf) return;
       const count = tracks.filter(t => (t.playlistIds||[]).includes(pl.id)).length;
       const opt = document.createElement('option');
       opt.value = pl.id;
       opt.textContent = `${pl.name} (${count})`;
       playlistViewSelect.appendChild(opt);
     });
-    const stillExists = prev === '__all__' || playlists.some(p => p.id === prev);
-    activePlaylistView = stillExists ? prev : '__all__';
+    activePlaylistView = viewAllowed(prev) ? prev : '__all__';
     playlistViewSelect.value = activePlaylistView;
+    syncViewRow();
   }
   playlistViewSelect.addEventListener('change', () => {
     if (selectMode) exitSelectMode();
@@ -8558,6 +8592,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
           dbId: t.dbId, artDbId: t.artDbId || null, kind: t.kind, ext: t.ext || 'mp4',
           title: t.title, artist: t.artist, duration: t.duration, size: t.size != null ? t.size : null,
           width: t.width || null, height: t.height || null, playlistIds: t.playlistIds || [],
+          stem: t.stem || undefined, stemOf: t.stemOf || undefined, stemSrc: t.stemSrc || undefined,
           mediaFile: 'media/' + fileName, artFile: artFile ? 'art/' + artFile : null
         });
       }
@@ -8666,7 +8701,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         tracks.push({
           dbId: m.dbId, artDbId: m.artDbId || null, url: URL.createObjectURL(mediaBlob), artUrl,
           kind: m.kind, ext: m.ext, title: m.title, artist: m.artist, duration: m.duration,
-          size: m.size, width: m.width, height: m.height, playlistIds: m.playlistIds || []
+          size: m.size, width: m.width, height: m.height, playlistIds: m.playlistIds || [],
+          stem: m.stem || undefined, stemOf: m.stemOf || null, stemSrc: m.stemSrc || null
         });
         restored++;
       }
@@ -8816,6 +8852,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       width: t.width || null,
       height: t.height || null,
       playlistIds: t.playlistIds || [],
+      stem: t.stem || undefined, stemOf: t.stem ? (t.stemOf || null) : undefined, stemSrc: t.stem ? (t.stemSrc || null) : undefined,
       remoteUrl: t.remoteUrl || null,
       fileName: t.fileName || null,
       convertedFromVideo: t.convertedFromVideo || false,
@@ -8873,6 +8910,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
           height: autoRevert ? (m.origHeight != null ? m.origHeight : null) : (m.height || null),
           playlistIds: Array.isArray(m.playlistIds) ? m.playlistIds : [],
           fileName: m.fileName || null,
+          stem: m.stem || undefined, stemOf: m.stemOf || null, stemSrc: m.stemSrc || null,
           convertedFromVideo: autoRevert ? false : wasConverted,
           _origExt: autoRevert ? undefined : m.origExt,
           _origArtist: autoRevert ? undefined : m.origArtist,
@@ -15093,18 +15131,24 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       if (selectedTracks.size === 0) exitSelectMode();
     }
     playlistEl.innerHTML = '';
-    if (tracks.length === 0){
+    const libCount = tracks.filter(t => !t.stem).length;
+    const curView = effectiveView(), stemsView = curView === STEMS_VIEW;
+    if (tracks.length === 0 || (libCount === 0 && curView === '__all__')){
       playlistEl.appendChild(emptyState);
-      trackCount.textContent = 'No tracks loaded';
+      trackCount.textContent = tracks.length === 0 ? 'No tracks loaded' : 'No tracks loaded · ' + (tracks.length) + ' split';
       return;
     }
 
     let indices = tracks.map((_, i) => i);
-    const filteringByPlaylist = detailedPlaylistMode && activePlaylistView !== '__all__';
-    const activePl = filteringByPlaylist ? playlists.find(p => p.id === activePlaylistView) : null;
-    if (filteringByPlaylist){
-      indices = indices.filter(i => (tracks[i].playlistIds||[]).includes(activePlaylistView));
+    const filteringByPlaylist = curView !== '__all__';
+    const activePl = (filteringByPlaylist && !stemsView) ? playlists.find(p => p.id === curView) : null;
+    if (stemsView){
+      indices = indices.filter(i => tracks[i].stem);
+    } else if (filteringByPlaylist){
+      indices = indices.filter(i => (tracks[i].playlistIds||[]).includes(curView));
       indices = orderIndicesForPlaylist(indices, activePl);
+    } else {
+      indices = indices.filter(i => !tracks[i].stem);
     }
     // Snapshot the playlist-ordered indices before the search box narrows
     // things down further - this is the actual queue a click should start
@@ -15129,9 +15173,11 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       });
     }
 
-    trackCount.textContent = (filteringByPlaylist || searching)
-      ? `${indices.length} of ${tracks.length} track${tracks.length>1?'s':''}`
-      : `${tracks.length} track${tracks.length>1?'s':''}`;
+    trackCount.textContent = stemsView
+      ? `${indices.length}${searching ? ' of ' + tracks.filter(t => t.stem).length : ''} split track${indices.length!==1?'s':''}`
+      : (filteringByPlaylist || searching)
+        ? `${indices.length} of ${libCount} track${libCount>1?'s':''}`
+        : `${libCount} track${libCount>1?'s':''}`;
     if (sortMode) trackCount.textContent += ` · sorted by ${sortMode}`;
 
     if (indices.length === 0){
@@ -15147,7 +15193,12 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     // Reordering by drag needs a stable, unambiguous list of positions -
     // that holds for the full library or a single playlist, just not
     // while a text search is narrowing things down.
-    const dragEnabled = !searching && !sortMode;
+    if (stemsView && stemSections){          // keep each song's stems together, groups in order of first appearance
+      const order = new Map(); indices.forEach(i => { const k = stemKey(tracks[i]); if (!order.has(k)) order.set(k, order.size); });
+      indices = indices.map((i, n) => [i, n]).sort((a, b) => (order.get(stemKey(tracks[a[0]])) - order.get(stemKey(tracks[b[0]]))) || (a[1] - b[1])).map(x => x[0]);
+    }
+    let lastStemKey = null, stemSecHidden = false;
+    const dragEnabled = !searching && !sortMode && !stemsView;
     dragScopeIndices = indices;
     dragScopePlaylist = filteringByPlaylist ? activePl : null;
 
@@ -15263,6 +15314,20 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       }
       attachDragHandlers(row, i);
       attachSelectHandlers(row, t);
+      if (stemsView && stemSections){
+        const k = stemKey(t);
+        if (k !== lastStemKey){
+          lastStemKey = k;
+          const n = indices.filter(j => stemKey(tracks[j]) === k).length;
+          stemSecHidden = stemCollapsed.has(k);
+          const head = document.createElement('div');
+          head.className = 'stem-section-head';
+          head.innerHTML = `<span class="stem-section-caret">${stemSecHidden ? '\u25b8' : '\u25be'}</span><span class="stem-section-name">${escapeHtml(t.stemSrc || 'Other splits')}</span><span class="stem-section-count">${n}</span>`;
+          head.addEventListener('click', () => { if (stemCollapsed.has(k)) stemCollapsed.delete(k); else stemCollapsed.add(k); renderPlaylist(); });
+          playlistEl.appendChild(head);
+        }
+        if (stemSecHidden) return;
+      }
       playlistEl.appendChild(row);
     });
     updateSelectBar();
@@ -16224,6 +16289,25 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       return ok;
     },
     createPlaylist: name => createPlaylist(name),
+    setStemSections: on => { stemSections = !!on; try { localStorage.setItem('ppStemSections', on ? '1' : '0'); } catch(e){} renderPlaylist(); },
+    // Splitter entry point: adds stems as split tracks (kept out of All tracks, grouped under "Split tracks").
+    // info: { srcId, srcTitle, makePlaylist, showInTab }
+    addStemFiles: (files, info) => {
+      info = info || {};
+      let plId = null;
+      if (info.makePlaylist){
+        let pl = info.srcId ? playlists.find(p => p.stemOf === info.srcId) : null;
+        if (!pl){
+          pl = { id: 'pl_' + Date.now() + '_' + Math.random().toString(36).slice(2,8), name: (info.srcTitle || 'Split') + ' (stems)', stemOf: info.srcId || 'x' };
+          playlists.push(pl);
+        }
+        pl.libOnly = !info.showInTab;
+        plId = pl.id;
+        savePlaylists();
+        renderPlaylistsManager();
+      }
+      addFiles(files, { srcId: info.srcId, srcTitle: info.srcTitle, playlistId: plId });
+    },
     addToPlaylist: (dbId, plId) => {
       const t = tracks.find(x => x.dbId === dbId); if (!t) return false;
       t.playlistIds = t.playlistIds || [];
@@ -16410,7 +16494,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   // is no longer in that queue (e.g. it was removed from the playlist).
   function activeQueue(){
     if (playQueue.length && playQueue.includes(currentIndex)) return playQueue;
-    return tracks.map((_,i) => i);
+    const curIsStem = !!(tracks[currentIndex] && tracks[currentIndex].stem);
+    return tracks.map((_,i) => i).filter(i => !!tracks[i].stem === curIsStem);
   }
   function nextTrackIndex(){
     if (tracks.length === 0) return -1;
@@ -16932,7 +17017,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (attached) showToast('Attached subtitles to ' + attached + ' video' + (attached === 1 ? '' : 's') + '.');
   }
 
-  function addFiles(fileList){
+  function addFiles(fileList, stemInfo){
     const startIdx = tracks.length;
     const newTracks = [];
     const subFiles = fileList.filter(f => SUBTITLE_EXT_RE.test(f.name));
@@ -16941,9 +17026,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     // add files, they should land in that playlist too, not just the
     // overall library - otherwise a track you just dropped in while viewing
     // a playlist mysteriously doesn't show up in it.
-    const targetPlaylistId = (detailedPlaylistMode && activePlaylistView !== '__all__')
-      ? activePlaylistView
-      : null;
+    // Split tracks never follow the viewed playlist; they only go to their own per-song playlist (if enabled).
+    const targetPlaylistId = stemInfo ? (stemInfo.playlistId || null) : userPlaylistViewId();
     fileList.forEach((file) => {
       const kind = detectKind(file);
       if (!kind) return;
@@ -16965,6 +17049,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         fileName: file.name,
         playlistIds: targetPlaylistId ? [targetPlaylistId] : []
       };
+      if (stemInfo){ track.stem = true; track.stemOf = stemInfo.srcId || null; track.stemSrc = stemInfo.srcTitle || null; }
       tracks.push(track);
       newTracks.push(track);
       ppSidecarLrc(track, file, fileList);
@@ -17093,7 +17178,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   function sortScopeIndices(pl){
     return pl
       ? tracks.map((_, i) => i).filter(i => (tracks[i].playlistIds||[]).includes(pl.id))
-      : tracks.map((_, i) => i);
+      : tracks.map((_, i) => i).filter(i => !tracks[i].stem);
   }
   function sortCompareFor(mode){
     if (mode === 'title') return (a,b) => a.title.localeCompare(b.title, undefined, {sensitivity:'base'});
@@ -19689,7 +19774,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       url: u.href, remoteUrl: u.href, kind, ext: ext || (kind === 'video' ? 'mp4' : 'mp3'),
       title: (title || name.replace(/\.[^/.]+$/, '')), artist: 'Stream', duration: null,
       artUrl: null, artDbId: null, size: null, width: null, height: null, fileName: name,
-      playlistIds: (detailedPlaylistMode && activePlaylistView !== '__all__') ? [activePlaylistView] : []
+      playlistIds: userPlaylistViewId() ? [userPlaylistViewId()] : []
     };
     tracks.push(track);
     if (kind === 'audio') probeAudioDuration(track).then(() => { saveLibraryMeta(); renderPlaylist(); }).catch(() => {});
@@ -19713,8 +19798,9 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
 
   // ----- M3U export / import -----
   function ppExportM3U(){
-    let idxs = tracks.map((_, i) => i), name = 'All tracks';
-    if (detailedPlaylistMode && activePlaylistView !== '__all__'){
+    let idxs = tracks.map((_, i) => i).filter(i => !tracks[i].stem), name = 'All tracks';
+    if (activePlaylistView === STEMS_VIEW){ idxs = tracks.map((_, i) => i).filter(i => tracks[i].stem); name = 'Split tracks'; }
+    else if (detailedPlaylistMode && activePlaylistView !== '__all__'){
       const pl = playlists.find(p => p.id === activePlaylistView);
       if (pl){ idxs = orderIndicesForPlaylist(idxs.filter(i => (tracks[i].playlistIds || []).includes(pl.id)), pl); name = pl.name; }
     }
@@ -23264,7 +23350,7 @@ async function ppMp4Chapters(blob){
   if (edStrip) edStrip.addEventListener('click', e => {
     const el = e.target.closest('[data-act]'); if (!el) return;
     const A = window.__ppApi; if (!A) return;
-    const tracks = A.tracks(), all = tracks.map((t, k) => k), act = el.dataset.act;
+    const tracks = A.tracks(), all = tracks.map((t, k) => k).filter(k => !tracks[k].stem), act = el.dataset.act;
     if (act === 'strip-play') playFrom(+el.dataset.idx, all);
     else if (act === 'shuffle-all'){
       const q = all.slice();
@@ -23295,7 +23381,7 @@ async function ppMp4Chapters(blob){
   function renderHome(force){
     if (!on || (view !== 'home' && view !== 'playlists')) return;
     const A = window.__ppApi; if (!A) return;
-    const tracks = A.tracks(), pls = A.playlists(), cur = A.currentIndex();
+    const tracks = A.tracks(), pls = A.playlists().filter(p => !p.libOnly), cur = A.currentIndex();
     const byId = new Map(tracks.map((t, i) => [t.dbId, i]));
     const vidIdx = [];
     tracks.forEach((t, i) => { if (t.kind === 'video') vidIdx.push(i); });

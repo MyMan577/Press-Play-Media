@@ -212,6 +212,10 @@
     };
   }
   function encode(ch) { const e = makeEncoder(); e.push(ch[0], ch[1]); return e.finish(); }
+  function addSplit(files, info) {        // split tracks: kept out of "All tracks", grouped under "Split tracks"
+    const A = window.__ppApi;
+    if (A && A.addStemFiles) A.addStemFiles(files, info); else addToLibrary(files);
+  }
   function addToLibrary(files) {
     const inp = document.getElementById('file-input'); if (!inp) throw new Error('file-input not found');
     const dt = new DataTransfer(); files.forEach(f => dt.items.add(f));
@@ -1473,6 +1477,12 @@
       '<div style="margin-top:8px">Mute vocal gaps</div><select id="ppv-gate"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Silences leftover noise between sung lines. Vocals stem only.</div>' +
       '<div id="ppv-spl" style="margin-top:8px">Strength: <span id="ppv-sv">1</span><input id="ppv-sl" type="range" min="1" max="4" step="0.5" value="1" style="width:100%"><div style="opacity:.6;font-size:11px">Higher = less bleed, more watery artifacts</div><div style="margin-top:8px">Quality</div><select id="ppv-q"><option value="0">Standard</option><option value="1">Better (smooth seams, ~1.3x time)</option><option value="2">Best (+ averaged 2nd pass, ~2.7x time)</option></select></div>' +
       '<label id="ppv-gpu" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-gpuc"> Use GPU (faster, experimental)</label>' +
+      '<details><summary>Where split tracks go</summary><div class="ppv-note">Split tracks never count as new library tracks. They are all kept together under \u201cSplit tracks\u201d in the library\u2019s view selector.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mkpl"> Also make a playlist for each split song</label>' +
+      '<label id="ppv-tabl" class="ppv-c" style="display:block"><input type="checkbox" id="ppv-pltab"> Show those playlists in the Playlists tab</label>' +
+      '<div class="ppv-note">Off = they only appear in the library\u2019s playlist selector.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-sect"> Give each split song its own section</label>' +
+      '<div class="ppv-note">In \u201cSplit tracks\u201d, each song gets a collapsible section with all its stems.</div></details>' +
       '<div id="ppv-st" style="margin-top:8px;opacity:.8">Ready</div><div id="ppv-bar"><i></i></div><button id="ppv-go">Split current track</button><button id="ppv-del" class="ppv-sec">Free up space (delete this model)</button>';
     document.body.appendChild(p);
     const mas = mascot(p);
@@ -1500,6 +1510,14 @@
     lsel.value = ls('ppvLevel') || (ls('ppvLow') === '0' ? '0' : '2'); showLv(); gpu.checked = ls('ppvGpu') === '1'; if (navigator.gpu) $('#ppv-gpu').style.display = 'block';
     sl.oninput = () => { sv.textContent = sl.value; ls('ppvStrength', sl.value); };
     gpu.onchange = () => ls('ppvGpu', gpu.checked ? '1' : '0');
+    const mkpl = $('#ppv-mkpl'), pltab = $('#ppv-pltab');
+    const syncPl = () => { pltab.disabled = !mkpl.checked; $('#ppv-tabl').style.opacity = mkpl.checked ? 1 : .5; };
+    mkpl.checked = ls('ppvMkPl') === '1'; pltab.checked = ls('ppvPlTab') === '1'; syncPl();
+    mkpl.onchange = () => { ls('ppvMkPl', mkpl.checked ? '1' : '0'); syncPl(); };
+    pltab.onchange = () => ls('ppvPlTab', pltab.checked ? '1' : '0');
+    const sect = $('#ppv-sect'); sect.checked = ls('ppvSect') === '1';
+    sect.onchange = () => { ls('ppvSect', sect.checked ? '1' : '0'); const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); };
+    { const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); }
     gsel.value = ls('ppvGate') || '0'; gsel.onchange = () => ls('ppvGate', gsel.value);
     qsel.value = ls('ppvQuality') || '1'; qsel.onchange = () => ls('ppvQuality', qsel.value);
     lsel.onchange = () => { ls('ppvLevel', lsel.value); showLv(); refresh(); };
@@ -1536,8 +1554,8 @@
           const e = res[n].blob ? res[n] : encode(res[n]); delete res[n];
           files.push(new File([e.blob], t.title + ' (' + n + ').' + e.ext, { type: e.blob.type }));
         }
-        addToLibrary(files);
-        status('Done. Added ' + files.length + ' track' + (files.length > 1 ? 's' : '') + ' to your library.');
+        addSplit(files, { srcId: t.dbId, srcTitle: t.title, makePlaylist: mkpl.checked, showInTab: mkpl.checked && pltab.checked });
+        status('Done. Added ' + files.length + ' split track' + (files.length > 1 ? 's' : '') + ' to Split tracks' + (mkpl.checked ? ' + a playlist.' : '.'));
       } catch (e) { console.error(e); status('Error: ' + e.message); }
       wl && wl.release().catch(() => {});
       go.disabled = false; refresh();
