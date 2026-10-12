@@ -1,4 +1,4 @@
-const CACHE_NAME = 'press-play-media-v8';
+const CACHE_NAME = 'press-play-media-v9';
 const CORE_ASSETS = [
   './',
   './index.html',
