@@ -7421,7 +7421,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (id === '__all__') return true;
     if (id === STEMS_VIEW) return hasStems();
     const pl = playlists.find(p => p.id === id);
-    return !!pl && (detailedPlaylistMode || !!pl.stemOf);
+    return !!pl && (detailedPlaylistMode || !!pl.stemOf || !!pl.auto);
   }
   function effectiveView(){ return viewAllowed(activePlaylistView) ? activePlaylistView : '__all__'; }
   function userPlaylistViewId(){   // real user playlist being viewed (not All / Split tracks), for "add here" behavior
@@ -7432,7 +7432,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   try { stemSections = localStorage.getItem('ppStemSections') === '1'; } catch(e){}
   const stemCollapsed = new Set();
   const stemKey = t => t.stemOf || ('t:' + (t.stemSrc || ''));
-  function syncViewRow(){ playlistViewRow.classList.toggle('active', detailedPlaylistMode || hasStems()); }
+  function syncViewRow(){ playlistViewRow.classList.toggle('active', detailedPlaylistMode || hasStems() || playlists.some(p => p.auto)); }
 
   // ---------- Detailed mode toggle ----------
   function applyDetailedModeUI(){
@@ -7465,7 +7465,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       row.innerHTML = `
         <button class="pl-manager-thumb" data-id="${pl.id}" title="Set playlist thumbnail" type="button">🖼️</button>
         <span class="pl-manager-name" data-id="${pl.id}" title="Click to rename">${escapeHtml(pl.name)}</span>
-        <span class="pl-manager-count">${count} track${count!==1?'s':''}${pl.stemOf ? (pl.libOnly ? ' · split, library only' : ' · split') : ''}</span>
+        <span class="pl-manager-count">${count} track${count!==1?'s':''}${pl.stemOf ? (pl.libOnly ? ' · split, library only' : ' · split') : pl.auto === 'smart' ? ' · smart (live)' : pl.auto === 'surprise' ? (pl.libOnly ? ' · surprise, library only' : ' · surprise') : ''}</span>
         <button class="pl-manager-btn" data-id="${pl.id}" title="Delete playlist" type="button">&times;</button>
       `;
       const nameEl = row.querySelector('.pl-manager-name');
@@ -7598,7 +7598,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       playlistViewSelect.appendChild(so);
     }
     playlists.forEach(pl => {
-      if (!detailedPlaylistMode && !pl.stemOf) return;
+      if (!detailedPlaylistMode && !pl.stemOf && !pl.auto) return;
       const count = tracks.filter(t => (t.playlistIds||[]).includes(pl.id)).length;
       const opt = document.createElement('option');
       opt.value = pl.id;
@@ -16314,7 +16314,17 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       if (!t.playlistIds.includes(plId)) t.playlistIds.push(plId);
       return true;
     },
-    commitPlaylists: () => { saveLibraryMeta(); renderPlaylistsManager(); renderPlaylistViewSelect(); renderPlaylist(); },
+    removeFromPlaylist: (dbId, plId) => {
+      const t = tracks.find(x => x.dbId === dbId); if (!t || !t.playlistIds) return false;
+      t.playlistIds = t.playlistIds.filter(pid => pid !== plId); return true;
+    },
+    deletePlaylistQuiet: id => {       // no confirm: used for auto-made (surprise) playlists that age out
+      if (!playlists.some(p => p.id === id)) return;
+      playlists = playlists.filter(p => p.id !== id);
+      tracks.forEach(t => { if (t.playlistIds) t.playlistIds = t.playlistIds.filter(pid => pid !== id); });
+      if (activePlaylistView === id) activePlaylistView = '__all__';
+    },
+    commitPlaylists: () => { savePlaylists(); saveLibraryMeta(); renderPlaylistsManager(); renderPlaylistViewSelect(); renderPlaylist(); },
     sel: {
       active: () => selectMode,
       has: t => selectedTracks.has(t),

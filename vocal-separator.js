@@ -1067,6 +1067,19 @@
       '<label class="ppv-c"><input type="checkbox" id="ppv-moods"> Mood models (8 tiny files, ~4 MB, downloaded once)</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-aeq"> Auto-EQ from genre when tagging</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-askip"> Skip long intros (needs whole-track tags)</label>' +
+'<details id="ppv-bgd"><summary>Background tagging &amp; surprise playlists</summary>' +
+      '<div class="ppv-note">Runs only while this page is open and you are away.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bg"> Tag untagged tracks while I am away</label>' +
+      '<select id="ppv-bgidle"><option value="1">Away = 1 minute idle</option><option value="5">Away = 5 minutes idle</option><option value="15">Away = 15 minutes idle</option></select>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bgplay"> Also while music is playing</label>' +
+      '<label class="ppv-c" id="ppv-bgchl" style="display:block"><input type="checkbox" id="ppv-bgchg"> Only while charging</label>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-live"> Keep smart playlists up to date as tracks get tagged</label>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-surp"> Assemble surprise playlists</label>' +
+      '<select id="ppv-surpev"><option value="6">New surprise every 6 hours</option><option value="24">New surprise every day</option><option value="72">New surprise every 3 days</option><option value="168">New surprise every week</option></select>' +
+      '<select id="ppv-surpmax"><option value="3">Keep the newest 3</option><option value="5">Keep the newest 5</option><option value="10">Keep the newest 10</option></select>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-surptab"> Show surprise playlists in the Playlists tab</label>' +
+      '<div class="ppv-note">Off = library playlist selector only. Tap Keep on the reveal to stop one from being replaced.</div>' +
+      '<button id="ppv-surpnow" class="ppv-sec">Surprise me now</button><div id="ppv-bgst" class="ppv-note"></div></details>' +
       '<div style="margin-top:10px"><b>Smart playlists</b></div><div id="ppv-smart" class="ppv-grid"></div>' +
       '<button id="ppv-mk">Create / update ticked playlists</button>' +
       '<input type="text" id="ppv-q" placeholder="Playlist from search, e.g. piano slow"><button id="ppv-mkq" class="ppv-sec">Make playlist from this search</button>' +
@@ -1111,7 +1124,8 @@
     if (eb) eb.addEventListener('click', () => { if (curKind() !== 'video') placeWhisper('ly'); }, true);
     const $ = s => document.querySelector(s), A = () => window.__ppApi, cur = () => { const a = A(); return a && a.tracks()[a.currentIndex()]; };
     const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
-    const busy = on => document.querySelectorAll('#ppv-panel button, .ppv-scope button').forEach(b => { if (!b.dataset.keep && !b.classList.contains('ppv-x')) b.disabled = on; });
+    let isBusy = false;
+    const busy = on => { isBusy = on; document.querySelectorAll('#ppv-panel button, .ppv-scope button').forEach(b => { if (!b.dataset.keep && !b.classList.contains('ppv-x')) b.disabled = on; }); };
     const deep = $('#ppv-deep'), aeq = $('#ppv-aeq'), ask = $('#ppv-askip'), lib = $('#ppv-lib'), cnt = $('#ppv-count');
     const mo = $('#ppv-moods'); mo.checked = moodsOn(); mo.onchange = () => ls('ppvMoods', mo.checked ? '1' : '0');
     deep.checked = ls('ppvDeep') === '1'; aeq.checked = ls('ppvAutoEq') === '1'; ask.checked = ls('ppvAutoSkip') === '1';
@@ -1156,7 +1170,7 @@
       });
       if (rows.length > savedLimit) { const m = document.createElement('button'); m.className = 'ppv-sec'; m.textContent = 'Show more (' + (rows.length - savedLimit) + ' left)'; m.onclick = () => { savedLimit += 100; renderSaved(); }; box.appendChild(m); }
     };
-    const refreshCount = () => { const a = A(); if (!a) return; const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch (e) {} };
+    const refreshCount = () => { const a = A(); if (!a) return; try { syncSmartLive(); } catch (e) {} const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch (e) {} };
     function renderSmart() {
       const a = A(), tg = loadTags(), box = $('#ppv-smart'); if (!a) return;
       const ticked = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
@@ -1230,17 +1244,18 @@
 
     // smart playlists
     function ensureDetailed() { const dm = document.getElementById('detailed-mode-toggle'); if (dm && !dm.checked) { dm.checked = true; dm.dispatchEvent(new Event('change')); } }
-    function fill(name, pick) {
+    function fill(name, pick, flags) {
       const a = A(), pl = a.playlists().find(x => x.name === name) || a.createPlaylist(name); let n = 0;
-      a.tracks().forEach(t => { if (pick(t) && a.addToPlaylist(t.dbId, pl.id)) n++; });
+      if (flags) Object.assign(pl, flags);
+      a.tracks().forEach(t => { if (!t.stem && pick(t) && a.addToPlaylist(t.dbId, pl.id)) n++; });
       return n;
     }
     $('#ppv-mk').onclick = () => {
       const a = A(), tg = loadTags(), ids = [...document.querySelectorAll('#ppv-smart input:checked')].map(i => i.value);
       if (!ids.length) { h.status('Tick at least one playlist.'); return; }
-      ensureDetailed(); const msg = [];
-      SMART.filter(s => ids.includes(s.id)).forEach(s => { const n = fill('✨ ' + s.name, t => { const c = tg[t.dbId]; return c && s.test(c, vibes(c)); }); msg.push(s.name + ': ' + n); });
-      a.commitPlaylists(); lib.textContent = msg.join('\n'); h.status('Playlists updated. Switch the playlist view to see them.');
+      const msg = [];
+      SMART.filter(s => ids.includes(s.id)).forEach(s => { const n = fill('✨ ' + s.name, t => { const c = tg[t.dbId]; return c && s.test(c, vibes(c)); }, { auto: 'smart', smartKey: s.id }); msg.push(s.name + ': ' + n); });
+      a.commitPlaylists(); lib.textContent = msg.join('\n'); h.status('Playlists updated. They are real playlists now: find them in the Playlists tab or the library view selector' + (live() ? ', and they keep updating as tracks get tagged.' : '.'));
     };
     $('#ppv-mkq').onclick = () => {
       const q = $('#ppv-q').value.trim().toLowerCase(), a = A(); if (!q) { h.status('Type a search first.'); return; }
@@ -1248,6 +1263,121 @@
       const n = fill('🔎 ' + q, t => { const hay = (t.title + ' ' + t.artist + ' ' + window.__ppTagText(t.dbId)).toLowerCase(); return words.every(w => hay.includes(w)); });
       a.commitPlaylists(); h.status('Playlist made with ' + n + ' track' + (n === 1 ? '' : 's') + '.');
     };
+
+    // ---------- live smart playlists, background tagging, surprise playlists ----------
+    const live = () => ls('ppvLive') !== '0';
+    function syncSmartLive() {
+      const a = A(); if (!a || !live()) return; const tg = loadTags(); let changed = false;
+      a.playlists().filter(p => p.auto === 'smart').forEach(pl => {
+        const s = SMART.find(x => x.id === pl.smartKey); if (!s) return;
+        a.tracks().forEach(t => {
+          const c = tg[t.dbId]; if (t.stem || !c) return;
+          const m = s.test(c, vibes(c)), has = (t.playlistIds || []).includes(pl.id);
+          if (m && !has) { a.addToPlaylist(t.dbId, pl.id); changed = true; } else if (!m && has) { a.removeFromPlaylist(t.dbId, pl.id); changed = true; }
+        });
+      });
+      if (changed) a.commitPlaylists();
+    }
+    const rnd = n => Math.floor(Math.random() * n);
+    const shuf = arr => { const x = arr.slice(); for (let i = x.length - 1; i > 0; i--) { const j = rnd(i + 1); const v = x[i]; x[i] = x[j]; x[j] = v; } return x; };
+    const VIBE_NAMES = { chill: 'Slow-down hour', party: 'Pre-game', workout: 'Second wind', happy: 'Good-mood grab bag', sad: 'Rainy window', focus: 'Deep focus', sleep: 'Wind down', acoustic: 'Unplugged', instr: 'No words needed' };
+    async function buildSurprise() {
+      const a = A(), tg = loadTags(), tr = a.tracks();
+      const tagged = tr.map((t, i) => ({ t, i, c: tg[t.dbId] })).filter(o => o.c && !o.t.stem);
+      if (tagged.length < 12) return null;
+      const ids = m => m.map(o => o.t.dbId), themes = [];
+      SMART.forEach(s => { const nm = VIBE_NAMES[s.id]; if (!nm) return; const m = tagged.filter(o => s.test(o.c, vibes(o.c))); if (m.length >= 8) themes.push({ key: 'v:' + s.id, name: nm, ids: ids(shuf(m).slice(0, 20)) }); });
+      const gen = {}; tagged.forEach(o => { const g = o.c.gp && o.c.gp[0] && o.c.gp[0][0]; if (g) (gen[g] = gen[g] || []).push(o); });
+      Object.keys(gen).forEach(g => { if (gen[g].length >= 8) themes.push({ key: 'g:' + g, name: g + ' spotlight', ids: ids(shuf(gen[g]).slice(0, 20)) }); });
+      const bp = tagged.filter(o => o.c.bpm);
+      if (bp.length >= 12) {
+        const sub = shuf(bp).slice(0, Math.max(12, Math.ceil(bp.length * 0.6))).sort((x, y) => x.c.bpm - y.c.bpm), n = Math.min(18, sub.length), pk = [];
+        for (let k = 0; k < n; k++) pk.push(sub[Math.round(k * (sub.length - 1) / (n - 1))]);
+        themes.push({ key: 'ramp', name: 'Slow burn to full speed', ids: ids(pk) });
+      }
+      try {
+        const o = tagged[rnd(tagged.length)], order = await similarTo(o.i, 'sound');
+        const l = [o.t.dbId].concat(order.map(i => tr[i]).filter(t => t && !t.stem).slice(0, 19).map(t => t.dbId));
+        if (l.length >= 8) themes.push({ key: 's:' + o.t.dbId, name: 'More like ' + o.t.title, ids: l });
+      } catch (e) {}
+      if (!themes.length) return null;
+      let recent = []; try { recent = JSON.parse(ls('ppvSurpRecent')) || []; } catch (e) {}
+      const pool = themes.filter(t => !recent.includes(t.key)), th = (pool.length ? pool : themes)[rnd((pool.length ? pool : themes).length)];
+      recent.push(th.key); ls('ppvSurpRecent', JSON.stringify(recent.slice(-8)));
+      return th;
+    }
+    function toast(pl, n) {
+      const old = document.getElementById('ppv-toast'); if (old) old.remove();
+      const a = A(), d = document.createElement('div'); d.id = 'ppv-toast';
+      d.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:99999;max-width:92vw;background:#23242a;color:#eee;border:1px solid #555;border-radius:12px;padding:10px 12px;box-shadow:0 6px 24px #0008;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+      const m = document.createElement('span'); m.textContent = 'A surprise playlist is ready: ' + pl.name + ' (' + n + ' tracks)';
+      const bt = (txt, fn) => { const b = document.createElement('button'); b.textContent = txt; b.style.cssText = 'padding:5px 10px;border-radius:8px;border:1px solid #555;background:#2f3037;color:#eee;cursor:pointer'; b.onclick = fn; return b; };
+      const tr = a.tracks();
+      d.append(m,
+        bt('Play', () => { const q = (pl.order || []).map(id => tr.findIndex(t => t.dbId === id)).filter(i => i >= 0); if (q.length) a.play(q[0], q); d.remove(); }),
+        bt('Keep', () => { pl.auto = null; pl.at = undefined; a.commitPlaylists(); d.remove(); }),
+        bt('\u00d7', () => d.remove()));
+      document.body.appendChild(d);
+    }
+    async function makeSurprise() {
+      const a = A(), th = await buildSurprise(); if (!th) return null;
+      const pl = a.createPlaylist('\ud83c\udf81 ' + th.name);
+      pl.auto = 'surprise'; pl.at = Date.now(); pl.libOnly = ls('ppvSurpTab') === '0'; pl.order = th.ids.slice();
+      th.ids.forEach(id => a.addToPlaylist(id, pl.id));
+      const max = parseInt(ls('ppvSurpMax') || '5', 10);
+      a.playlists().filter(p => p.auto === 'surprise' && p.id !== pl.id).sort((x, y) => (y.at || 0) - (x.at || 0)).slice(Math.max(0, max - 1)).forEach(p => a.deletePlaylistQuiet(p.id));
+      a.commitPlaylists(); ls('ppvSurpLast', String(Date.now()));
+      toast(pl, th.ids.length);
+      return pl;
+    }
+    const bgSt = $('#ppv-bgst'), setBg = s => { bgSt.textContent = s; };
+    [['ppv-bg', 'ppvBg', '0'], ['ppv-bgplay', 'ppvBgPlay', '0'], ['ppv-bgchg', 'ppvBgChg', '0'], ['ppv-surp', 'ppvSurp', '0'], ['ppv-surptab', 'ppvSurpTab', '1']].forEach(([id, k, def]) => {
+      const el = $('#' + id); el.checked = (ls(k) == null ? def : ls(k)) === '1'; el.onchange = () => ls(k, el.checked ? '1' : '0');
+    });
+    const lv2 = $('#ppv-live'); lv2.checked = live(); lv2.onchange = () => { ls('ppvLive', lv2.checked ? '1' : '0'); syncSmartLive(); };
+    [['ppv-bgidle', 'ppvBgIdle', '5'], ['ppv-surpev', 'ppvSurpEv', '24'], ['ppv-surpmax', 'ppvSurpMax', '5']].forEach(([id, k, def]) => {
+      const el = $('#' + id); el.value = ls(k) || def; el.onchange = () => ls(k, el.value);
+    });
+    if (!navigator.getBattery) $('#ppv-bgchl').style.display = 'none';
+    $('#ppv-surpnow').onclick = async () => {
+      setBg('Assembling a surprise\u2026');
+      try { const pl = await makeSurprise(); setBg(pl ? 'Made ' + pl.name + '.' : 'Tag at least 12 tracks first (stems are skipped).'); } catch (e) { console.error(e); setBg('Error: ' + e.message); }
+    };
+    let lastInput = Date.now(), bgBusy = false, bgCache = null; const bgFailed = new Set();
+    ['pointerdown', 'keydown', 'touchstart', 'wheel', 'mousemove'].forEach(ev => addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true }));
+    const mediaPlaying = () => [...document.querySelectorAll('audio,video')].some(m => !m.paused && !m.ended && m.readyState > 2);
+    async function isAway() {
+      if (isBusy) return false;
+      if (Date.now() - lastInput < parseInt(ls('ppvBgIdle') || '5', 10) * 60000) return false;
+      if (ls('ppvBgPlay') !== '1' && mediaPlaying()) return false;
+      if (ls('ppvBgChg') === '1' && navigator.getBattery) { try { const b = await navigator.getBattery(); if (!b.charging) return false; } catch (e) {} }
+      return true;
+    }
+    const freeBg = () => { if (bgCache) { Object.values(bgCache).forEach(s => s && s.release && s.release()); bgCache = null; } };
+    const surpDue = () => Date.now() - (parseInt(ls('ppvSurpLast') || '0', 10)) >= parseInt(ls('ppvSurpEv') || '24', 10) * 3600000;
+    async function bgTick() {
+      if (bgBusy) return; const bgOn = ls('ppvBg') === '1', surpOn = ls('ppvSurp') === '1'; const a = A();
+      if (!a || (!bgOn && !surpOn)) { freeBg(); return; }
+      if (!(await isAway())) { freeBg(); return; }
+      bgBusy = true;
+      try {
+        while (ls('ppvBg') === '1' && await isAway()) {
+          const tg = loadTags(), list = a.tracks().filter(x => !x.stem), t = list.find(x => !tg[x.dbId] && !bgFailed.has(x.dbId));
+          if (!t) break;
+          const lv = h.LV(); if (!lv && !bgCache) bgCache = {};
+          setBg('Background: tagging ' + t.title + ' (' + list.filter(x => !tg[x.dbId] && !bgFailed.has(x.dbId)).length + ' left)\u2026');
+          try { const r = await tagTrack(t.url, () => {}, lv, { deep: deep.checked, cache: lv ? null : bgCache }); if (!r.emb && !r.genre) throw new Error('nothing detected'); await persistTags(t.dbId, r, aeq.checked); }
+          catch (e) { console.warn('background tag failed', t.title, e); bgFailed.add(t.dbId); }
+          try { refreshCount(); } catch (e) {}
+          await tick();
+        }
+        if (ls('ppvSurp') === '1' && surpDue() && await isAway()) {
+          setBg('Background: assembling a surprise\u2026');
+          const pl = await makeSurprise(); setBg(pl ? 'Made ' + pl.name + '.' : 'Waiting for more tagged tracks.');
+        } else if (bgOn) setBg('Background: nothing left to tag.');
+      } catch (e) { console.warn('background task', e); } finally { bgBusy = false; if (!(await isAway())) freeBg(); }
+    }
+    setInterval(() => { bgTick().catch(e => console.warn(e)); }, 15000);
 
     // more like this + intro skip
     $('#ppv-simgo').onclick = async () => {
@@ -1442,8 +1572,259 @@
       if (m === 'work') { set('work', pick(lines)); return; }
       set(m, pick(lines), 6000); pop();
     }
+
+    // ---------- Chat with Bloop: a tiny on-device language model (SmolLM2-135M-Instruct via transformers.js) ----------
+    // Off by default. App questions and crisis messages are answered from fixed text (no model needed, always reliable);
+    // everything else goes to the small model. Chat is kept in memory only.
+    const CHAT_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
+    let chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [];
+    const cstyle = document.createElement('style');
+    cstyle.textContent = `
+      #ppv-cfab{position:fixed;left:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:99997;display:none;filter:drop-shadow(0 4px 10px #0007)}
+      #ppv-cfab .ppv-ball{width:54px;height:54px}
+      #ppv-chat{position:fixed;left:12px;right:12px;bottom:calc(160px + env(safe-area-inset-bottom,0px));z-index:99997;max-width:420px;max-height:min(58vh,440px);display:none;flex-direction:column;background:#1b1c20;color:#eee;border:1px solid #3a3b42;border-radius:14px;box-shadow:0 8px 28px #000a;font:13.5px/1.4 system-ui,sans-serif;overflow:hidden}
+      #ppv-chat .ch-h{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2e2f36}
+      #ppv-chat .ch-n{flex:1;font-size:10.5px;opacity:.6;line-height:1.25}
+      #ppv-chat button{background:#2f3037;color:#eee;border:1px solid #484952;border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+      #ppv-chat .ch-c{padding:3px 8px;font-size:12px}
+      #ppv-chat .ch-l{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:7px;min-height:90px}
+      #ppv-chat .ch-m{max-width:86%;padding:7px 10px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+      #ppv-chat .ch-m.bot{align-self:flex-start;background:#2a2b31}
+      #ppv-chat .ch-m.me{align-self:flex-end;background:var(--accent,#7c5cff);color:#fff}
+      #ppv-chat .ch-a{align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap}
+      #ppv-chat .ch-i{display:flex;gap:6px;padding:8px;border-top:1px solid #2e2f36}
+      #ppv-chat .ch-i input{flex:1;min-width:0;padding:8px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444;font:inherit}`;
+    document.head.appendChild(cstyle);
+    const cfab = document.createElement('div'); cfab.id = 'ppv-cfab'; cfab.setAttribute('role', 'button'); cfab.setAttribute('aria-label', 'Chat with Bloop');
+    const cball = ball(); cfab.appendChild(cball);
+    const cbox = document.createElement('div'); cbox.id = 'ppv-chat';
+    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Tiny AI on your device. It can be wrong and is not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="send">Send</button></div>';
+    document.body.append(cfab, cbox);
+    const clist = cbox.querySelector('.ch-l'), cin = cbox.querySelector('input');
+    const cm = m => { cball.className = 'ppv-ball m-' + m; };
+    const scrollDown = () => { clist.scrollTop = clist.scrollHeight; };
+    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); return d; };
+    const actions = btns => { const d = document.createElement('div'); d.className = 'ch-a'; btns.forEach(([t, fn]) => { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { fn(b, d); }; d.appendChild(b); }); clist.appendChild(d); scrollDown(); return d; };
+    const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; };
+    cfab.style.display = chatOn ? 'block' : 'none';
+    cfab.onclick = () => {
+      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none';
+      if (open) { if (!clist.children.length) add('bot', pick(["Hi! I'm Bloop. Ask me about the app, or tell me how you're feeling.", "Hey! Want to chat about the app, or about your day?"])); cm('greet'); setTimeout(() => cm('idle'), 1300); cin.focus(); }
+    };
+    cbox.addEventListener('click', e => {
+      const a = e.target.closest && e.target.closest('[data-a]'); if (!a) return;
+      if (a.dataset.a === 'x') cbox.style.display = 'none';
+      else if (a.dataset.a === 'clear') { clist.textContent = ''; hist = []; }
+      else if (a.dataset.a === 'send') { const v = cin.value; cin.value = ''; send(v); }
+    });
+    cin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const v = cin.value; cin.value = ''; send(v); } });
+
+    const CRISIS = /(suicid|kill (myself|me)|end (my life|it all)|ending my life|want to die|wanna die|don'?t want to (live|be here|exist)|self[- ]?harm|hurt(ing)? myself|cut(ting)? myself|better off (dead|without me))/i;
+    const CRISIS_MSG = "I'm really sorry you're hurting this much. I'm only a tiny music-app ball and I can't help with this the way a person can. Please reach out to someone right now: a friend or family member you trust, or a crisis line where you live (in the US you can call or text 988). If you might act on these thoughts, or you are in danger, call your local emergency number. You deserve real support.";
+    const FAQ = [
+      [/\b(stems?|karaoke|separat\w*|split (a |the |this |my )?(song|track|music)|vocal remov\w*)/i, 'Stems: play a track, open the Stems button, pick what to keep, then tap "Split current track". The pieces go to "Split tracks" in the library selector instead of All tracks. In that panel you can also make a playlist or a section for each split song.'],
+      [/\bsurprise/i, 'Surprise playlists get put together from your tags while you are away. Turn them on under "Background tagging & surprise playlists" in the Library tab. When one shows up, tap Play to hear it, or Keep so it is not replaced later.'],
+      [/\b(smart playlists?|auto(matic)? playlists?|make a playlist)/i, 'Smart playlists live in the Library tab under "AI tagging & smart playlists". Tick the ones you want and tap Create / update. They are real playlists and keep updating as tracks get tagged.'],
+      [/\b(tagging|tag (a |my |the |all )?(song|track)s?|bpm|tempo)/i, 'AI tagging is in the Library tab. Tag one track, a chosen one, or everything. It finds tempo, key, genre and vibe. You can also let it tag while you are away in the background tagging settings.'],
+      [/\b(lyrics?|subtitles?|captions?|whisper|transcrib\w*)/i, 'Lyrics: Whisper writes synced lyrics for songs (Lyrics tab) and subtitles for videos (captions menu). It runs on your device and downloads a model the first time.'],
+      [/\b(who are you|what are you|your name|what can you do|how do you work)\b/i, "I'm Bloop, the little ball in this player. I can explain how things work here, suggest music for your mood, or just chat. I'm a very small AI, so I get things wrong sometimes."],
+      [/\b(private|privacy|offline|where (does|is) (this|it) run|download)/i, 'I run on your device after a one-time download of about 200 MB, so what you tell me stays on your phone. I forget the chat when you close the page or tap Clear.']
+    ];
+    const MOODS = [
+      [/\b(sad|down|blue|lonely|cry(ing)?|heartbroken)\b/i, 'chill', 'something gentle'],
+      [/\b(stress(ed)?|anxious|anxiety|nervous|overwhelm\w*|worried|panic\w*)\b/i, 'chill', 'something calming'],
+      [/\b(tired|sleepy|exhaust\w*|insomnia|can'?t sleep)\b/i, 'sleep', 'something to wind down'],
+      [/\b(angry|mad|annoyed|frustrat\w*|furious)\b/i, 'workout', 'something with energy'],
+      [/\b(happy|excited|amazing|pumped|joyful)\b/i, 'happy', 'something upbeat'],
+      [/\b(bored|party|dance|dancing)\b/i, 'party', 'something fun'],
+      [/\b(focus|study(ing)?|homework|concentrat\w*)\b/i, 'focus', 'something to focus to']
+    ];
+    function moodQueue(sid) {
+      const A = window.__ppApi; if (!A) return [];
+      const s = SMART.find(x => x.id === sid), tg = loadTags(), tr = A.tracks();
+      const q = tr.map((t, i) => i).filter(i => { const c = tg[tr[i].dbId]; return !tr[i].stem && c && s.test(c, vibes(c)); });
+      for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const v = q[i]; q[i] = q[j]; q[j] = v; }
+      return q.slice(0, 30);
+    }
+    function moodChip(text) {
+      const m = MOODS.find(x => x[0].test(text)); if (!m) return;
+      const q = moodQueue(m[1]);
+      if (q.length < 3) return add('bot', 'If you tag some tracks, I can pick music for how you feel.');
+      actions([['\u25b6 Play ' + m[2], () => { window.__ppApi.play(q[0], q); }]]);
+    }
+    const sysPrompt = () => {
+      const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], c = t && loadTags()[t.dbId];
+      return "You are Bloop, a small, friendly ball mascot inside a music player app. Reply in one to three short, warm sentences. Be kind and curious, and ask how the person feels when it fits. If you are not sure about something, say so instead of guessing. Never give medical or legal advice. You are not a doctor or a counselor. Never claim you played, changed or did something in the app; commands are handled separately." +
+        (t ? " Now playing: " + t.title + (c ? " (" + vibes(c).join(', ') + ")." : ".") : "");
+    };
+    async function ensureModel(say) {
+      if (gen) return gen; if (genP) return genP;
+      genP = (async () => {
+        say('Loading my brain\u2026'); if (!tfMod) tfMod = await import(TF_URL);
+        const gpuOn = lsGet('ppvChatGpu') === '1' && navigator.gpu;
+        const pcb = p => { if (p && p.status === 'progress' && p.file) say('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); };
+        try { gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: gpuOn ? 'q4f16' : 'q4', device: gpuOn ? 'webgpu' : 'wasm', progress_callback: pcb }); }
+        catch (e) { if (!gpuOn) throw e; gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: 'q4', device: 'wasm', progress_callback: pcb }); }
+        lsSet('ppvChatDl', '1'); return gen;
+      })();
+      try { return await genP; } finally { genP = null; }
+    }
+    async function freeChat() {
+      if (gen) { try { await gen.dispose(); } catch (e) {} gen = null; }
+      lsSet('ppvChatDl', '0');
+      const ks = await caches.keys();
+      for (const k of ks) if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/SmolLM2/i.test(r.url)) await c.delete(r); }
+    }
+    // AGENT START
+    // ---------- Agent: Bloop does things when asked ----------
+    // Fixed command patterns, not model guesswork: a 135M model cannot be trusted to pick tools, and it must never claim
+    // it did something it did not. Light actions run at once; heavy ones (split, tag all, lyrics) ask first.
+    const agentOn = () => lsGet('ppvAgent') !== '0';
+    const $id = id => document.getElementById(id);
+    const mediaOn = () => [...document.querySelectorAll('audio,video')].some(m => !m.paused && !m.ended && m.readyState > 2);
+    const SYN = { relax: 'chill', relaxing: 'chill', relaxed: 'chill', calm: 'chill', mellow: 'chill', dance: 'party', dancing: 'party', gym: 'workout', exercise: 'workout', upbeat: 'happy', study: 'focus', studying: 'focus', instrumentals: 'instrumental',
+      song: '', songs: '', track: '', tracks: '', music: '', tunes: '', something: '', some: '', a: '', an: '', the: '', me: '', my: '', to: '', for: '', of: '', with: '', from: '' };
+    const VIBEW = new Set(['chill', 'party', 'workout', 'happy', 'sad', 'focus', 'sleep', 'acoustic', 'instrumental', 'slow', 'fast']);
+    const wordsOf = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean).map(w => SYN[w] === undefined ? w : SYN[w]).filter(Boolean);
+    const shuffleIn = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const v = a[i]; a[i] = a[j]; a[j] = v; } return a; };
+    function findTracks(ws) {
+      const A = window.__ppApi, tr = A.tracks(), out = []; if (!ws.length) return out;
+      tr.forEach((t, i) => {
+        if (t.stem) return;
+        const ti = (t.title + ' ' + (t.artist || '')).toLowerCase(), hay = ti + ' ' + (window.__ppTagText ? window.__ppTagText(t.dbId) : '');
+        if (ws.every(w => hay.includes(w))) out.push([i, ws.filter(w => ti.includes(w)).length]);
+      });
+      return out.sort((a, b) => b[1] - a[1]).map(o => o[0]);
+    }
+    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\nOr just chat with me.';
+    function agent(raw) {
+      let t = String(raw).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
+      const A = window.__ppApi; if (!A || !t) return false;
+      let m; const say = s => { add('bot', s); return true; }, done = s => say('\u2713 ' + s);
+      const click = id => { const b = $id(id); if (b && !b.disabled) { b.click(); return true; } return false; };
+      const ask = (q, fn) => { add('bot', q); actions([['Yes', (b, d) => { d.remove(); fn(); }], ['No', (b, d) => { d.remove(); add('bot', 'Okay, never mind.'); }]]); return true; };
+      const busyMsg = () => say("I'm in the middle of another job. Ask me again when it finishes.");
+      const cur = () => A.tracks()[A.currentIndex()], need = () => cur() ? null : say('Play or pick a track first.');
+      const vol = () => $id('volume');
+      const setVol = v => { const e = vol(); if (!e) return false; v = Math.max(0, Math.min(100, Math.round(v))); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return done('Volume ' + v + '%.'); };
+      const sleepSet = (v, msg) => { const b = document.querySelector('#sleep-dropdown [data-sleep="' + v + '"]'); if (!b) return say('I cannot reach the sleep timer.'); b.click(); return done(msg); };
+      const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok ? done('Started. I will pop up when it is done.') : busyMsg(); };
+
+      if (/^(help|commands|what can you do|what can i ask( you)?|what do you do)$/i.test(t)) return say(HELP);
+      // transport
+      if (/^(pause|stop)( the)?( music| song| track| playing| playback)?$/i.test(t)) { if (!mediaOn()) return say('Nothing is playing right now.'); click('play-btn'); return done('Paused.'); }
+      if (/^(resume|unpause|continue|play|keep playing|start( the)? music|play( the)? (music|song|track))$/i.test(t)) { if (mediaOn()) return say('It is already playing.'); if (A.currentIndex() < 0) return say('Nothing is loaded yet. Try \u201cplay something chill\u201d.'); click('play-btn'); return done('Playing.'); }
+      if (/^(next|skip)( (the |this )?(song|track))?$/i.test(t)) { if (A.currentIndex() < 0) return say('Nothing is playing.'); click('next-btn'); return done('Skipped.'); }
+      if (/^(previous|prev|go back|back)( (song|track))?$/i.test(t)) { if (A.currentIndex() < 0) return say('Nothing is playing.'); click('prev-btn'); return done('Went back.'); }
+      if ((m = t.match(/^(?:(?:turn|switch) )?shuffle(?: (on|off))?$|^(?:turn|switch) (on|off) shuffle$/i))) {
+        const sb = $id('shuffle-btn'); if (!sb) return say('I cannot find the shuffle button.');
+        const want = (m[1] || m[2] || '').toLowerCase(), isOn = sb.classList.contains('toggled');
+        if (want && (want === 'on') === isOn) return say('Shuffle is already ' + want + '.');
+        sb.click(); return done('Shuffle ' + (isOn ? 'off' : 'on') + '.');
+      }
+      // volume
+      if ((m = t.match(/^(?:set )?(?:the )?volume (?:to |at )?(\d{1,3})\s*%?$/i))) return setVol(+m[1]);
+      if (/^(volume up|turn (it |the volume |the music )?up|louder|raise the volume|increase the volume)$/i.test(t)) return vol() ? setVol(parseFloat(vol().value) + 10) : false;
+      if (/^(volume down|turn (it |the volume |the music )?down|quieter|softer|lower the volume|decrease the volume)$/i.test(t)) return vol() ? setVol(parseFloat(vol().value) - 10) : false;
+      if (/^mute$/i.test(t)) { if (!vol()) return false; if (parseFloat(vol().value) > 0) agent.prevVol = parseFloat(vol().value); return setVol(0); }
+      if (/^unmute$/i.test(t)) return setVol(agent.prevVol || 60);
+      // sleep timer
+      if (/^(cancel|turn off|clear|stop)( the)? sleep timer$/i.test(t)) return sleepSet('off', 'Sleep timer off.');
+      if (/^(stop|pause|sleep)( the music| playing)? after (this|the current) (song|track)$/i.test(t) || /^sleep timer (for )?(the )?(end of )?(this |the current )?(song|track)$/i.test(t)) return sleepSet('track', 'I will stop after this track.');
+      if ((m = t.match(/^(?:set (?:a )?)?sleep timer(?: for| to)?\s*(\d+)\s*(?:min\w*)?$/i)) || (m = t.match(/^(?:stop|pause|sleep)(?: the music| playing)? in (\d+)\s*(?:min\w*)?$/i))) {
+        const want = +m[1], pk = [15, 30, 45, 60].reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a);
+        return sleepSet(String(pk), 'Sleep timer set for ' + pk + ' minutes' + (pk !== want ? ' (the closest option to ' + want + ')' : '') + '.');
+      }
+      if (/^(set (a )?)?sleep timer$/i.test(t)) return say('How long? Say \u201csleep timer 30 minutes\u201d (15, 30, 45 or 60).');
+      // info
+      if (/^(what'?s|what is) (this|playing|the current)( song| track)?( playing)?$|^what (song|track) is this$|^what am i (listening to|hearing)$/i.test(t)) {
+        const c = cur(); if (!c) return say('Nothing is playing.'); const tg = loadTags()[c.dbId];
+        return say(c.title + (c.artist ? ' \u2013 ' + c.artist : '') + (tg ? '\n' + vibes(tg).join(', ') : ''));
+      }
+      if (/^how many (tracks|songs).*tagged$/i.test(t)) { const tg = loadTags(), tr = A.tracks().filter(x => !x.stem); return say(tr.filter(x => tg[x.dbId]).length + ' of ' + tr.length + ' tracks are tagged.'); }
+      // current-track jobs through the panel's own buttons
+      if (/^(tag|analy[sz]e)( this| the current| current| it)?( song| track)?$/i.test(t)) return need() || tagWith('cur');
+      if (/^(tag|analy[sz]e) (all|everything|every)( of)?( my)?( songs| tracks| music| library)?$/i.test(t)) return ask('Tag your whole library? It runs one track at a time and can take a while.', () => { tagWith('all'); });
+      if (/^(split|separate)( this| the current| current| it)?( song| track)?( into stems)?$|^(make|get) (the )?stems( of| for)?( this| it)?( song| track)?$/i.test(t)) {
+        const c = cur(); if (!c) return say('Play or pick a track first.');
+        return ask('Split \u201c' + c.title + '\u201d into stems using your Stems settings? It can take a while on a phone.', () => { click('ppv-go') ? done('Started. I will pop up when it is done.') : busyMsg(); });
+      }
+      if (/^(transcribe|get (the )?lyrics|add lyrics|write (out )?the lyrics)( for)?( this| it)?( song| track)?$/i.test(t)) {
+        const c = cur(); if (!c) return say('Play or pick a track first.');
+        return ask('Write lyrics for \u201c' + c.title + '\u201d with Whisper? It downloads a model the first time.', () => { click('ppv-wgo') ? done('Started. I will pop up when it is done.') : busyMsg(); });
+      }
+      if (/^(play |find )?(more like (this|it)|similar( songs| tracks| music)?( to this)?)$/i.test(t)) return need() || (click('ppv-simgo') ? done('Looking for similar tracks.') : busyMsg());
+      if (/^(skip|jump past|jump over|get past)( the)? intro$|^jump to (the )?first vocals?$/i.test(t)) return need() || (click('ppv-skipgo') ? done('Jumping ahead.') : busyMsg());
+      if (/^(surprise me|play (me )?a surprise|make (me )?a surprise( playlist)?)$/i.test(t)) return click('ppv-surpnow') ? done('Putting a surprise together. It needs at least 12 tagged tracks, and I will show it when ready.') : busyMsg();
+      // playlists
+      if ((m = t.match(/^(?:make|create|start)(?: me)?(?: a| an)?(?: new)? playlist (?:called|named) (.+)$/i))) {
+        const pl = A.createPlaylist(m[1].trim().slice(0, 60)); A.commitPlaylists(); return done('Made an empty playlist \u201c' + pl.name + '\u201d. Say \u201cadd this to ' + pl.name + '\u201d to fill it.');
+      }
+      if ((m = t.match(/^(?:make|create|build|start)(?: me)?(?: a| an)?(?: new)? playlist (?:of |with |from |for )?(.+)$/i)) || (m = t.match(/^(?:make|create|build)(?: me)?(?: a| an)? (.+?) playlist$/i))) {
+        const ws = wordsOf(m[1]); if (!ws.length) return say('What should be in it? Try \u201cmake a playlist of slow piano\u201d.');
+        const r = findTracks(ws); if (!r.length) return say('I could not find any tracks for \u201c' + m[1] + '\u201d. Tagging more tracks helps me find moods and styles.');
+        const tr = A.tracks(), pl = A.createPlaylist('\ud83e\udd16 ' + m[1].trim().slice(0, 40)); r.slice(0, 200).forEach(i => A.addToPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists();
+        add('bot', '\u2713 Made \u201c' + pl.name + '\u201d with ' + Math.min(r.length, 200) + ' tracks. Find it in the Playlists tab.'); actions([['\u25b6 Play it', () => { A.play(r[0], r.slice(0, 200)); }]]); return true;
+      }
+      if ((m = t.match(/^add (?:this|it|the current)(?: song| track)? to (?:my |the )?(.+?)(?: playlist)?$/i))) {
+        const c = cur(); if (!c) return say('Play or pick a track first.');
+        const norm = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''), want = norm(m[1]);
+        const pls = A.playlists(), pl = pls.find(p => norm(p.name) === want) || pls.find(p => want && norm(p.name).includes(want));
+        if (!pl) return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.' + (pls.length ? ' You have: ' + pls.slice(0, 6).map(p => p.name).join(', ') + '.' : ' You have no playlists yet. Say \u201cmake a playlist called ' + m[1] + '\u201d.'));
+        A.addToPlaylist(c.dbId, pl.id); A.commitPlaylists(); return done('Added \u201c' + c.title + '\u201d to ' + pl.name + '.');
+      }
+      // settings
+      let tg = null; if ((m = t.match(/^(?:turn|switch|set) (on|off) (.+)$/i))) tg = [m[1], m[2]]; else if ((m = t.match(/^(enable|disable) (.+)$/i))) tg = [m[1] === 'enable' ? 'on' : 'off', m[2]];
+      if (tg) {
+        const TOG = [[/background|away|idle/i, 'ppv-bg', 'Background tagging'], [/surprise/i, 'ppv-surp', 'Surprise playlists'], [/section/i, 'ppv-sect', 'Split-song sections'], [/(live|smart)/i, 'ppv-live', 'Live smart playlists']];
+        const hit = TOG.find(x => x[0].test(tg[1])), el = hit && $id(hit[1]);
+        if (!hit || !el) return say('I can switch these on or off: background tagging, surprise playlists, split-song sections, live smart playlists.');
+        el.checked = tg[0].toLowerCase() === 'on'; el.dispatchEvent(new Event('change', { bubbles: true })); return done(hit[2] + ' ' + (el.checked ? 'on' : 'off') + '.');
+      }
+      // play something
+      if ((m = t.match(/^(?:play|put on|queue up|start playing)\s+(.+)$/i))) {
+        const ws = wordsOf(m[1]), tr = A.tracks();
+        if (!ws.length || ws.every(w => ['random', 'anything', 'everything', 'all', 'shuffle', 'shuffled'].includes(w))) {
+          const q = shuffleIn(tr.map((x, i) => i).filter(i => !tr[i].stem)); if (!q.length) return say('Your library is empty.'); A.play(q[0], q); return done('Playing a shuffled mix.');
+        }
+        const r = findTracks(ws); if (!r.length) return say('I could not find anything for \u201c' + m[1] + '\u201d. Tagging more tracks helps me find moods and styles.');
+        const vibeOnly = ws.every(w => VIBEW.has(w)); if (vibeOnly) shuffleIn(r);
+        const q = r.slice(0, 30); A.play(q[0], q);
+        return done('Playing ' + (vibeOnly ? q.length + ' ' + ws.join(' ') + ' tracks' : tr[q[0]].title + (q.length > 1 ? ' (and ' + (q.length - 1) + ' more matches queued)' : '')) + '.');
+      }
+      return false;
+    }
+    // AGENT END
+
+    async function send(raw, noEcho) {
+      const text = String(raw || '').trim().slice(0, 400); if (!text || chatBusy) return;
+      if (!noEcho) add('me', text);
+      if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
+      if (agentOn()) { let hit = false; try { hit = agent(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
+      const f = FAQ.find(x => x[0].test(text)); if (f) { add('bot', f[1]); return; }
+      if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
+        add('bot', "To chat about anything else I need to download my brain first: about 200 MB, one time. Wi-Fi is best.");
+        actions([['Download and chat', (b, d) => { d.remove(); dlOk = true; send(text, true); }], ['Not now', (b, d) => d.remove()]]);
+        return;
+      }
+      chatBusy = true; cm('work');
+      const el = add('bot', '\u2026');
+      try {
+        const g = await ensureModel(s => { el.textContent = s; });
+        const msgs = [{ role: 'system', content: sysPrompt() }].concat(hist.slice(-6), [{ role: 'user', content: text }]);
+        let acc = '', opts = { max_new_tokens: 90, do_sample: true, temperature: 0.7, top_p: 0.9, repetition_penalty: 1.15 };
+        if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: t => { acc += t; el.textContent = acc; scrollDown(); } });
+        const out = await g(msgs, opts);
+        let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
+        r = String(r || acc).trim().replace(/\s+\n/g, '\n') || "Hmm, I lost my words. Try again?";
+        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = hist.slice(-12);
+        moodChip(text);
+      } catch (e) { console.error(e); dlOk = false; el.textContent = "Oops, my brain would not load: " + e.message; }
+      chatBusy = false; scrollDown(); cm('greet'); setTimeout(() => cm('idle'), 1300);
+    }
     return {
       react,
+      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat },
       start() { key = ''; set('start', pick(L.start), 900); },
       opened() {
         if (greeted || !on) return; greeted = true;
@@ -1490,6 +1871,18 @@
     document.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'); if (bt && !bt.disabled && ['ppv-go', 'ppv-tag', 'ppv-all', 'ppv-wgo', 'ppv-simgo', 'ppv-mk', 'ppv-mkq', 'ppv-eqall'].includes(bt.id)) mas.start(); }, true);
     p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="margin-top:10px"><input type="checkbox" id="ppv-mas"> Show Bloop, the mascot</label>');
     const mc = p.querySelector('#ppv-mas'); mc.checked = mas.isOn(); mc.onchange = () => mas.setOn(mc.checked);
+    p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-chat-on"> Chat with Bloop (small on-device AI)</label>' +
+      '<div class="ppv-note">Adds a Bloop button you can tap to chat about the app or how you feel. Needs a one-time ~200 MB download (asked first), then runs on your device. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-agent-on"> Let Bloop do things when I ask (play, playlists, tagging, volume\u2026)</label>' +
+      '<label id="ppv-chatgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-chatgpu"> Use GPU (smaller 134 MB download, experimental)</label>' +
+      '<button id="ppv-chatfree" class="ppv-sec" type="button">Free up chat download</button>');
+    { const co = p.querySelector('#ppv-chat-on'), cg = p.querySelector('#ppv-chatgpu'), cl = p.querySelector('#ppv-chatgpul');
+      co.checked = mas.chat.isOn(); co.onchange = () => mas.chat.setOn(co.checked);
+      const ag = p.querySelector('#ppv-agent-on'); try { ag.checked = localStorage.getItem('ppvAgent') !== '0'; } catch (e) { ag.checked = true; }
+      ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch (e) {} };
+      if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
+      cg.onchange = () => { try { localStorage.setItem('ppvChatGpu', cg.checked ? '1' : '0'); } catch (e) {} };
+      p.querySelector('#ppv-chatfree').onclick = async () => { try { await mas.chat.free(); status('Chat download removed.'); } catch (e) { status('Error: ' + e.message); } }; }
     // Keep the pill attached: if it's ever detached (or was never in the page), put it back in the quick bar
     // when the user has it enabled there, otherwise in its menu slot. Never moves it while it's attached.
     const place = () => {
