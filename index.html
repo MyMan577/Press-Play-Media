@@ -22958,7 +22958,11 @@ async function ppMp4Chapters(blob){
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => { /* offline caching unavailable */ });
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        // look for a newer sw.js now, and again whenever the app comes back to the foreground
+        const chk = () => { try { reg.update(); } catch (e) {} };
+        chk(); document.addEventListener('visibilitychange', () => { if (!document.hidden) chk(); });
+      }).catch(() => { /* offline caching unavailable */ });
     });
   }
 </script>
@@ -24806,6 +24810,7 @@ body.pp-lite .eq-band-pro { display:flex !important; }
   setTimeout(finish, 12000);
 })();
 </script>
-<script src="./vocal-separator.js" defer></script>
+<script src="./vocal-separator.js?v=20261012a" defer></script>
+<script src="./update-options.js?v=20261012a" defer></script>   <!-- bump v= each time vocal-separator.js changes so phones fetch the new copy -->
 </body>
 </html>

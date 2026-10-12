@@ -479,10 +479,10 @@
   const AS_GENRE = [216, 265], AS_MOOD = [276, 282], AS_NOT_INST = new Set([145, 146, 166, 167, 192]);
   const asInst = i => (i >= 140 && i <= 199 && !AS_NOT_INST.has(i)) || [208, 209, 210, 211, 213].includes(i);
 
-  async function ensureTagFile(key, status, low) {
+  async function ensureTagFile(key, status, low, pr) {
     if (await idbGet(key)) return;
     const f = TAG_FILES[key];
-    await fetchPart(key, f, (g, t) => status('Downloading ' + f.split('/').pop() + ' ' + (t ? Math.round(g / t * 100) + '%' : (g / 1048576 | 0) + ' MB')), low);
+    await fetchPart(key, f, (g, t) => { status('Downloading ' + f.split('/').pop() + ' ' + (t ? Math.round(g / t * 100) + '%' : (g / 1048576 | 0) + ' MB')); pr && pr(g, t); }, low);
   }
   async function decodeMono(url, sr) {
     const buf = await (await fetch(url)).arrayBuffer();
@@ -564,29 +564,34 @@
     }
     throw last || new Error('all routes failed');
   }
-  async function builtinHeads(status, low) {
+  let headsLog = [];                                                 // why each mood model failed, shown in the tag result
+  async function builtinHeads(status, low, prog) {
     if (headsFailed) return [];
-    const out = [];
-    for (const b of BUILTIN_HEADS) {
+    const ok = new Array(BUILTIN_HEADS.length).fill(null); let got = 0;
+    const one = async (b, k) => {
       try {
         let h = null; try { const c = await idbGet('tghm_' + b.id); if (c) h = JSON.parse(c); } catch (e) {}
         if (!h || !(await idbGet('tgh_' + b.id))) {
           h = { id: b.id, label: b.label, kind: 'binary', group: 'mood', pos: b.pos, classes: null };
-          status('Downloading ' + b.label + ' mood model…');
-          const buf = await fetchHeadFile(b, 'onnx', 12000, (g, t) => status('Downloading ' + b.label + ' mood model ' + (t ? Math.round(g / t * 100) + '%' : '')));
-          try { const j = JSON.parse(new TextDecoder().decode(await fetchHeadFile(b, 'json', 5000))); if (j.classes && j.classes.length === 2) { h.classes = j.classes; const p = j.classes.findIndex(c => !/^(non|not)[_ -]/i.test(c)); if (p >= 0) h.pos = p; } } catch (e) {}
+          const buf = await fetchHeadFile(b, 'onnx', 8000);
+          try { const j = JSON.parse(new TextDecoder().decode(await fetchHeadFile(b, 'json', 4000))); if (j.classes && j.classes.length === 2) { h.classes = j.classes; const p = j.classes.findIndex(c => !/^(non|not)[_ -]/i.test(c)); if (p >= 0) h.pos = p; } } catch (e) {}
           await idbPut('tgh_' + b.id, buf);
           await idbPut('tghm_' + b.id, JSON.stringify(h));
         }
-        out.push(h);
-      } catch (e) {
-        console.warn('mood head skipped', b.id, e);
-        if (!out.length) { headsFailed = true; break; }              // first one failed on every route: don't wait on the other seven
-      }
-    }
+        ok[k] = h; headsFailed = false;
+      } catch (e) { headsLog.push(b.label + ': ' + ((e && e.message) || e)); console.warn('mood head skipped', b.id, e); }
+      finally { got++; status('Mood models: ' + got + ' of ' + BUILTIN_HEADS.length + ' ready…'); prog && prog(got / BUILTIN_HEADS.length); }
+    };
+    status('Mood models: checking…');
+    const all = Promise.all(BUILTIN_HEADS.map(one));                  // all eight at once, so the wait is the slowest one, not the sum
+    await Promise.race([all, new Promise(r => setTimeout(r, 25000))]);   // never hold up tagging for more than 25 s
+    if (got < BUILTIN_HEADS.length) headsLog.push('some are still downloading in the background, they will be ready next run');
+    const out = ok.filter(Boolean);
+    if (!out.length) headsFailed = true;                              // skip the wait on the next tracks (cleared if a background download succeeds, or by Refresh)
     return out;
   }
-  async function loadHeads(status, low, enabled) {
+  async function loadHeads(status, low, enabled, prog) {
+    headsLog = [];
     if (enabled === false) return [];
     if (headsMemo) return headsMemo;
     let man = null;
@@ -601,8 +606,9 @@
         heads.push(h);
       } catch (e) { console.warn('head skipped', h.id, e); }
     }
-    if (!heads.length) heads.push(...await builtinHeads(status, low));
-    return heads.length ? (headsMemo = heads) : heads;       // don't remember an empty result, so a later run can try again
+    let custom = heads.length > 0;
+    if (!custom) heads.push(...await builtinHeads(status, low, prog));
+    return heads.length && (custom || heads.length === BUILTIN_HEADS.length) ? (headsMemo = heads) : heads;   // only remember a complete set       // don't remember an empty result, so a later run can try again
   }
   async function resetHeads() {
     headsMemo = null; headsFailed = false;
@@ -699,13 +705,17 @@
   // opt.cache : object that keeps ONNX sessions alive between tracks (batch mode).
   async function tagTrack(url, status, lv, opt) {
     opt = opt || {};
-    await loadOrt();
+    const P = f => { try { opt.progress && opt.progress(Math.max(0, Math.min(1, f))); } catch (e) {} };
+    P(0); await loadOrt();
     const low = !!(lv && lv.blob), r = { errors: [] }, own = [];
-    for (const k of ['tg_effnet', 'tg_hinst', 'tg_hvoice', 'tg_mel', 'tg_mn10']) await ensureTagFile(k, status, low);
+    const TF = ['tg_effnet', 'tg_hinst', 'tg_hvoice', 'tg_mel', 'tg_mn10'];
+    for (let i = 0; i < TF.length; i++) { await ensureTagFile(TF[i], status, low, (g, t) => P(0.1 * (i + (t ? g / t : 0.5)) / TF.length)); P(0.1 * (i + 1) / TF.length); await tick(); }
     let hasGenre = true; try { await ensureTagFile('tg_hgenre', status, low); } catch (e) { hasGenre = false; }
     let hasStyleNet = false;
     if (!hasGenre) { try { await ensureTagFile('tg_effstyle', status, low); hasStyleNet = true; } catch (e) { r.errors.push('Styles model download failed: ' + e.message); } }
-    let heads = await loadHeads(status, low, moodsOn());
+    let heads = await loadHeads(status, low, moodsOn(), f => P(0.10 + 0.10 * f));
+    P(0.2); await tick();
+    if (moodsOn() && headsLog.length) r.errors.push('Moods: ' + headsLog.join('; '));
     const S = async key => {
       if (opt.cache) return opt.cache[key] || (opt.cache[key] = await makeSession(key, false, lv));
       const s = await makeSession(key, false, lv); own.push(s); return s;
@@ -730,14 +740,14 @@
       const hG = hasGenre ? await S('tg_hgenre') : null;
       const sNet = hasStyleNet ? await S('tg_effstyle') : null;
       const hs = [], okHeads = [];
-      for (const h of heads) { try { hs.push(await S('tgh_' + h.id)); okHeads.push(h); } catch (e) { console.warn('mood head unusable', h.id, e); try { await idbDel('tgh_' + h.id); await idbDel('tghm_' + h.id); } catch (e2) {} headsMemo = null; } }
+      for (const h of heads) { try { hs.push(await S('tgh_' + h.id)); okHeads.push(h); status('Loading mood models ' + okHeads.length + ' of ' + heads.length + '…'); P(0.2 + 0.05 * okHeads.length / heads.length); await tick(); } catch (e) { console.warn('mood head unusable', h.id, e); try { await idbDel('tgh_' + h.id); await idbDel('tghm_' + h.id); } catch (e2) {} headsMemo = null; } }
       const heads0 = heads; heads = okHeads; if (!okHeads.length && heads0.length) r.errors.push('Moods skipped: the mood models would not load (they will be re-downloaded next run).');
       const inst = new Float32Array(40), g400 = new Float32Array(400), embSum = new Float64Array(1280), hacc = heads.map(() => null), pv = [];
       let voice = 0, rows = 0, gotG = false;
       for (let b = 0; b < take; b += 64) {
         const cnt = Math.min(64, take - b), X = new Float32Array(64 * 128 * 96);      // the graph wants exactly 64 patches
         for (let i = 0; i < cnt; i++) { const s0 = idx[b + i] * 62 * 96; X.set(mel.subarray(s0, Math.min(mel.length, s0 + 128 * 96)), i * 128 * 96); }
-        status('Listening… ' + Math.min(b + 64, take) + ' of ' + take + ' patches'); await tick();
+        status('Listening… ' + Math.min(b + 64, take) + ' of ' + take + ' patches'); P(0.25 + 0.6 * b / take); await tick();
         const res = await eff.run({ [eff.inputNames[0]]: new ort.Tensor('float32', X, [64, 128, 96]) });
         let emb = null, p400 = null;
         for (const n of eff.outputNames) { const o = res[n], d = o.dims[o.dims.length - 1]; if (d === 1280) emb = o.data; else if (d === 400) p400 = o.data; }
@@ -803,7 +813,7 @@
           wav.set(x.subarray(st, st + W));
           const y = (await sess.run({ [sess.inputNames[0]]: new ort.Tensor('float32', wav, [1, W]) }))[sess.outputNames[0]].data;
           for (let c = 0; c < 527; c++) probs[c] += y[c] / nW;
-          status('Listening (2 of 2)… ' + (w + 1) + ' of ' + nW); await tick();
+          status('Listening (2 of 2)… ' + (w + 1) + ' of ' + nW); P(0.85 + 0.15 * (w + 1) / nW); await tick();
         }
       } finally { own.forEach(s => s.release && s.release()); own.length = 0; }
       x = null;
@@ -811,6 +821,7 @@
       r.genre = pick(AS_GENRE[0], AS_GENRE[1]); r.mood = pick(AS_MOOD[0], AS_MOOD[1]); r.music = probs[137];
       r.inst2 = []; for (let i = 140; i <= 213; i++) if (asInst(i)) r.inst2.push([AUDIOSET[i], probs[i]]);
     } catch (e) { console.error(e); r.errors.push('AudioSet: ' + e.message); }
+    P(1);
     return r;
   }
   const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
@@ -1090,13 +1101,17 @@
     // single track tagging (replaces the old button behaviour so results are kept)
     h.tagBtn.onclick = async () => {
       busy(true); h.tagOut.textContent = '';
+      let last = Date.now(), lastTxt = '', stalled = false;               // if nothing reports progress for 90 s, unlock the buttons and say where it stopped
+      const stat = t => { last = Date.now(); lastTxt = t; if (!stalled) h.status(t); };
+      const iv = setInterval(() => { if (!stalled && Date.now() - last > 90000) { stalled = true; busy(false); h.status('Stalled at "' + lastTxt + '". Buttons unlocked. Try again, or untick Mood models.'); } }, 3000);
       try {
         const t = cur(); if (!t) throw new Error('Play or select a track first.');
-        const r = await tagTrack(t.url, h.status, h.LV(), { deep: deep.checked });
+        h.prog(0);
+        const r = await tagTrack(t.url, stat, h.LV(), { deep: deep.checked, progress: f => { last = Date.now(); h.prog(f); } });
         const ok = await persistTags(t.dbId, r, aeq.checked);
         h.tagOut.textContent = fmtTags(r) + (ok ? '' : '\n! Could not save the tags (storage is full).'); h.status('Tagged and saved.'); refreshCount();
       } catch (e) { console.error(e); h.status('Error: ' + e.message); }
-      busy(false);
+      clearInterval(iv); busy(false);
     };
 
     // batch
@@ -1112,7 +1127,7 @@
           if (!$('#ppv-redo').checked && loadTags()[t.dbId]) { skip++; continue; }
           h.status('Tagging ' + (i + 1) + ' of ' + list.length + ': ' + t.title);
           try {
-            const r = await tagTrack(t.url, s => h.status('(' + (i + 1) + '/' + list.length + ') ' + s), lv, { deep: deep.checked, cache });
+            const r = await tagTrack(t.url, s => h.status('(' + (i + 1) + '/' + list.length + ') ' + s), lv, { deep: deep.checked, cache, progress: f => h.prog((i + f) / list.length) });
             if (!r.emb && !r.genre) throw new Error(r.errors.join('; ') || 'nothing detected');
             await persistTags(t.dbId, r, aeq.checked); done++;
           } catch (e) { console.warn('tag failed', t.title, e); fail++; }
@@ -1437,7 +1452,7 @@
       go.disabled = false; refresh();
     };
     const tagBtn = $('#ppv-tag'), tagOut = $('#ppv-tags');
-    try { smartUI(p, { status, LV, sel, sl, tagBtn, tagOut }); } catch (e) { console.error(e); }
+    try { smartUI(p, { status, LV, sel, sl, tagBtn, tagOut, prog: f => { bar.style.width = (f * 100) + '%'; } }); } catch (e) { console.error(e); }
     refresh();
   }
   window.PPVocals = { separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
