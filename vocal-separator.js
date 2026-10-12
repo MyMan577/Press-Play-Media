@@ -1054,7 +1054,7 @@
   // ---------- Panel: library tools + lyrics ----------
   function smartUI(p, h) {
     const css = document.createElement('style');
-    css.textContent = '#ppv-panel details{margin-top:10px;border-top:1px solid #333;padding-top:8px}#ppv-panel summary{cursor:pointer;font-weight:600;padding:2px 0}#ppv-panel input[type=text]{width:100%;box-sizing:border-box;margin-top:6px;padding:7px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444}#ppv-panel .ppv-note{opacity:.6;font-size:11px;margin-top:4px}#ppv-panel .ppv-out{margin-top:6px;font-size:12px;white-space:pre-wrap}#ppv-panel .ppv-row{display:flex;gap:6px}#ppv-panel .ppv-row button{margin-top:8px}#ppv-panel .ppv-grid label{display:block;margin:4px 0}';
+    css.textContent = '#ppv-panel details,.ppv-scope details{margin-top:10px;border-top:1px solid #333;padding-top:8px}#ppv-panel summary,.ppv-scope summary{cursor:pointer;font-weight:600;padding:2px 0}#ppv-panel input[type=text],.ppv-scope input[type=text]{width:100%;box-sizing:border-box;margin-top:6px;padding:7px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444}#ppv-panel .ppv-note,.ppv-scope .ppv-note{opacity:.6;font-size:11px;margin-top:4px}#ppv-panel .ppv-out,.ppv-scope .ppv-out{margin-top:6px;font-size:12px;white-space:pre-wrap}#ppv-panel .ppv-row,.ppv-scope .ppv-row{display:flex;gap:6px}#ppv-panel .ppv-row button,.ppv-scope .ppv-row button{margin-top:8px}#ppv-panel .ppv-grid label,.ppv-scope .ppv-grid label{display:block;margin:4px 0}.ppv-scope{color:var(--text,#eee);font:13px system-ui,sans-serif;margin:8px 0;padding:0 2px}.ppv-scope button{width:100%;margin-top:8px;padding:9px;border-radius:8px;border:0;background:var(--accent,#7c3aed);color:#fff;font:600 13px system-ui}.ppv-scope button:disabled{opacity:.5}.ppv-scope button.ppv-sec{background:transparent;border:1px solid var(--line,#555);color:inherit;font-weight:500;font-size:12px;padding:6px}.ppv-scope select{width:100%;margin-top:6px;padding:7px;border-radius:8px;background:var(--bg,#2a2b31);color:inherit;border:1px solid var(--line,#444)}.ppv-scope label.ppv-c{display:inline-block;margin:6px 10px 0 0}.ppv-scope details{border-top-color:var(--line,#333)}.ppv-pbar{height:6px;background:var(--line,#333);border-radius:3px;margin-top:8px}.ppv-pbar i{display:block;height:100%;width:0;background:var(--accent,#7c3aed);border-radius:3px}';
     document.head.appendChild(css);
     const d1 = document.createElement('details'), d2 = document.createElement('details');
     d1.innerHTML = '<summary>Library tools (tags)</summary>' +
@@ -1063,8 +1063,6 @@
       '<label class="ppv-c"><input type="checkbox" id="ppv-moods"> Mood models (8 tiny files, ~4 MB, downloaded once)</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-aeq"> Auto-EQ from genre when tagging</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-askip"> Skip long intros (needs whole-track tags)</label>' +
-      '<div class="ppv-row"><button id="ppv-all">Tag all tracks</button><button id="ppv-stop" class="ppv-sec" style="display:none" data-keep="1">Stop</button></div>' +
-      '<label class="ppv-c"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label>' +
       '<div style="margin-top:10px"><b>Smart playlists</b></div><div id="ppv-smart" class="ppv-grid"></div>' +
       '<button id="ppv-mk">Create / update ticked playlists</button>' +
       '<input type="text" id="ppv-q" placeholder="Playlist from search, e.g. piano slow"><button id="ppv-mkq" class="ppv-sec">Make playlist from this search</button>' +
@@ -1080,15 +1078,70 @@
       '<div class="ppv-note">Songs get synced lyrics, videos get subtitles. The music-removal step uses the model chosen at the top of this panel.</div>' +
       '<button id="ppv-wgo">Transcribe current track</button><button id="ppv-wsrt" class="ppv-sec" style="display:none">Download .srt</button><button id="ppv-wfree" class="ppv-sec">Free up Whisper download</button>' +
       '<div id="ppv-wout" class="ppv-out"></div>';
-    p.appendChild(d1); p.appendChild(d2);
-    const $ = s => p.querySelector(s), A = () => window.__ppApi, cur = () => { const a = A(); return a && a.tracks()[a.currentIndex()]; };
+    // AI tools no longer live in the one panel: tagging + smart playlists go to the Library tab, Whisper goes to captions (video) or Lyrics (songs)
+    d1.querySelector('summary').textContent = 'AI tagging & smart playlists';
+    d1.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-tag"><i></i></div><select id="ppv-scope"><option value="cur">Tag: current track</option><option value="pick">Tag: a track I choose</option><option value="all">Tag: all tracks</option></select><select id="ppv-pick" style="display:none"></select><label class="ppv-c" id="ppv-redo-l" style="display:none"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label><div class="ppv-row"><button id="ppv-tag">Tag current track</button><button id="ppv-stop" class="ppv-sec" style="display:none;width:auto;padding:6px 14px" data-keep="1">Stop</button></div><div id="ppv-tags" class="ppv-out"></div><details id="ppv-saved"><summary>Saved tags</summary><select id="ppv-sf"><option value="video">Videos</option><option value="audio">Songs</option><option value="all">Everything tagged</option></select><div id="ppv-slist" class="ppv-note"></div></details>');
+    d2.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-wh"><i></i></div>');
+    d2.style.borderTop = '0'; d2.style.marginTop = '4px';
+    const libHost = document.createElement('div'); libHost.className = 'ppv-scope'; libHost.id = 'ppv-libhost'; libHost.appendChild(d1);
+    const whHost = document.createElement('div'); whHost.className = 'ppv-scope'; whHost.id = 'ppv-whhost'; whHost.appendChild(d2);
+    d1.open = false; d2.open = true;
+    const pane = document.getElementById('sidebar-pane-playlist'), srow = document.getElementById('search-row');
+    if (pane && srow) srow.after(libHost); else if (pane) pane.prepend(libHost); else p.appendChild(libHost);   // fallback: old panel
+    const capDrop = document.getElementById('subtitle-dropdown'), lyPane = document.querySelector('#extras-panel .pp-pane[data-pp="ly"]');
+    // the Whisper block sits in whichever place fits the current track: captions menu for video, Lyrics tab for songs
+    const placeWhisper = where => {
+      if (where === 'cap' && capDrop) { if (whHost.parentNode !== capDrop) { capDrop.appendChild(document.createElement('hr')); capDrop.appendChild(whHost); } }
+      else if (where === 'ly' && lyPane) { if (whHost.parentNode !== lyPane) lyPane.appendChild(whHost); }
+    };
+    const curKind = () => { const a = window.__ppApi, t = a && a.tracks()[a.currentIndex()]; return t ? t.kind : null; };
+    placeWhisper('cap');
+    if (!capDrop && !lyPane) p.appendChild(whHost);
+    const sb = document.getElementById('subtitle-btn'), eb = document.getElementById('extras-btn');
+    if (sb) sb.addEventListener('click', () => placeWhisper('cap'), true);
+    if (eb) eb.addEventListener('click', () => { if (curKind() !== 'video') placeWhisper('ly'); }, true);
+    const $ = s => document.querySelector(s), A = () => window.__ppApi, cur = () => { const a = A(); return a && a.tracks()[a.currentIndex()]; };
     const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
-    const busy = on => p.querySelectorAll('button').forEach(b => { if (!b.dataset.keep && !b.classList.contains('ppv-x')) b.disabled = on; });
+    const busy = on => document.querySelectorAll('#ppv-panel button, .ppv-scope button').forEach(b => { if (!b.dataset.keep && !b.classList.contains('ppv-x')) b.disabled = on; });
     const deep = $('#ppv-deep'), aeq = $('#ppv-aeq'), ask = $('#ppv-askip'), lib = $('#ppv-lib'), cnt = $('#ppv-count');
     const mo = $('#ppv-moods'); mo.checked = moodsOn(); mo.onchange = () => ls('ppvMoods', mo.checked ? '1' : '0');
     deep.checked = ls('ppvDeep') === '1'; aeq.checked = ls('ppvAutoEq') === '1'; ask.checked = ls('ppvAutoSkip') === '1';
     deep.onchange = () => ls('ppvDeep', deep.checked ? '1' : '0'); aeq.onchange = () => ls('ppvAutoEq', aeq.checked ? '1' : '0'); ask.onchange = () => ls('ppvAutoSkip', ask.checked ? '1' : '0');
-    const refreshCount = () => { const a = A(); if (!a) return; const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); };
+    const lst = a => (a || []).map(v => v[0] + ' ' + v[1] + '%').join(', ');
+    const fmtStored = c => {                                           // saved (compact) tags -> readable lines
+      const L = [];
+      if (c.bpm || c.key) L.push([c.bpm ? 'Tempo: ' + c.bpm + ' BPM' : '', c.key ? 'Key: ' + c.key + (c.ck ? ' (' + c.ck + ')' : '') : ''].filter(Boolean).join(' · '));
+      if (c.v != null) L.push((c.v >= 50 ? 'Vocals: yes (' + c.v + '%)' : 'Instrumental (' + (100 - c.v) + '%)') + (c.fv != null ? ' · first vocals at ' + mmss(c.fv) : ''));
+      if (c.gp && c.gp.length) L.push('Genre: ' + lst(c.gp));
+      if (c.st && c.st.length) L.push('Style: ' + lst(c.st));
+      if (c.gn && c.gn.length) L.push('Also sounds like: ' + lst(c.gn));
+      if (c.md && c.md.length) L.push('Mood: ' + lst(c.md));
+      const feels = Object.entries(c.hd || {}).filter(e => e[1] >= 50).sort((u, v) => v[1] - u[1]).map(e => [e[0].replace(/^mood_/, '').replace(/_/g, ' '), e[1]]);
+      if (feels.length) L.push('Feels: ' + lst(feels.slice(0, 6)));
+      if (c.in && c.in.length) L.push('Instruments: ' + lst(c.in));
+      Object.entries(c.hm || {}).forEach(([id, a]) => { if (a && a.length) L.push(id.replace(/_/g, ' ') + ': ' + lst(a)); });
+      if (c.d) L.push('Length: ' + mmss(c.d) + (c.w ? ' (whole track scanned)' : ''));
+      if (c.ts) L.push('Tagged ' + new Date(c.ts).toLocaleDateString());
+      return L.join('\n') || 'No details saved.';
+    };
+    const renderSaved = () => {
+      const a = A(), box = $('#ppv-slist'), f = $('#ppv-sf').value; if (!a || !box) return;
+      const tg = loadTags(), rows = a.tracks().filter(t => tg[t.dbId] && (f === 'all' || (f === 'video') === (t.kind === 'video')));
+      box.textContent = '';
+      if (!rows.length) { box.textContent = f === 'video' ? 'No tagged videos yet. Pick a video with the Tag button above.' : 'Nothing tagged here yet.'; return; }
+      rows.slice(0, 200).forEach(t => {
+        const c = tg[t.dbId], row = document.createElement('div'), head = document.createElement('div'), body = document.createElement('div');
+        row.style.cssText = 'border-top:1px solid var(--line,#333);padding:6px 0;cursor:pointer';
+        head.innerHTML = '<b></b><div style="opacity:.7;font-size:11px"></div>';
+        head.firstChild.textContent = (t.kind === 'video' ? '🎬 ' : '🎵 ') + t.title;
+        head.lastChild.textContent = [c.bpm ? c.bpm + ' BPM' : '', c.key || '', c.gp && c.gp[0] ? c.gp[0][0] : '', c.md && c.md[0] ? c.md[0][0] : '', c.v != null ? (c.v >= 50 ? 'vocals' : 'instrumental') : ''].filter(Boolean).join(' · ') || 'tagged';
+        body.style.cssText = 'display:none;white-space:pre-wrap;font-size:12px;margin-top:6px'; body.textContent = fmtStored(c);
+        row.onclick = () => { body.style.display = body.style.display === 'none' ? 'block' : 'none'; };
+        row.append(head, body); box.appendChild(row);
+      });
+      if (rows.length > 200) { const m = document.createElement('div'); m.textContent = 'Showing the first 200 of ' + rows.length + '.'; box.appendChild(m); }
+    };
+    const refreshCount = () => { const a = A(); if (!a) return; const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch (e) {} };
     function renderSmart() {
       const a = A(), tg = loadTags(), box = $('#ppv-smart'); if (!a) return;
       const ticked = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
@@ -1096,16 +1149,18 @@
       box.innerHTML = SMART.map(s => '<label><input type="checkbox" value="' + s.id + '"' + (ticked.has(s.id) ? ' checked' : '') + '> ' + s.name + ' <span style="opacity:.6">(' + rows.filter(r => s.test(r[0], r[1])).length + ')</span></label>').join('');
     }
     d1.addEventListener('toggle', () => { if (d1.open) refreshCount(); });
+    $('#ppv-saved').addEventListener('toggle', () => { if ($('#ppv-saved').open) renderSaved(); }); $('#ppv-sf').onchange = renderSaved;
     $('#ppv-heads').onclick = async () => { await resetHeads(); h.status('Mood models will be downloaded again on the next tagging run.'); };
 
     // single track tagging (replaces the old button behaviour so results are kept)
-    h.tagBtn.onclick = async () => {
+    h.tagBtn = $('#ppv-tag'); h.tagOut = $('#ppv-tags');
+    const tagOne = async t0 => {
       busy(true); h.tagOut.textContent = '';
       let last = Date.now(), lastTxt = '', stalled = false;               // if nothing reports progress for 90 s, unlock the buttons and say where it stopped
       const stat = t => { last = Date.now(); lastTxt = t; if (!stalled) h.status(t); };
       const iv = setInterval(() => { if (!stalled && Date.now() - last > 90000) { stalled = true; busy(false); h.status('Stalled at "' + lastTxt + '". Buttons unlocked. Try again, or untick Mood models.'); } }, 3000);
       try {
-        const t = cur(); if (!t) throw new Error('Play or select a track first.');
+        const t = t0 || cur(); if (!t) throw new Error('Play or select a track first.');
         h.prog(0);
         const r = await tagTrack(t.url, stat, h.LV(), { deep: deep.checked, progress: f => { last = Date.now(); h.prog(f); } });
         const ok = await persistTags(t.dbId, r, aeq.checked);
@@ -1114,10 +1169,30 @@
       clearInterval(iv); busy(false);
     };
 
+    // scope: current track / a track you pick / all tracks
+    const scope = $('#ppv-scope'), pick = $('#ppv-pick'), redoL = $('#ppv-redo-l');
+    const fillPick = () => {
+      const a = A(); if (!a) return; const keep = pick.value, ci = a.currentIndex(), tl = a.tracks(), tg = loadTags();
+      pick.textContent = '';
+      tl.forEach((t, i) => { const o = document.createElement('option'); o.value = String(t.dbId); o.textContent = (tg[t.dbId] ? '✓ ' : '') + (t.artist ? t.artist + ' – ' : '') + t.title; pick.appendChild(o); if (!keep && i === ci) o.selected = true; });
+      if (keep && [...pick.options].some(o => o.value === keep)) pick.value = keep;
+    };
+    const syncScope = () => {
+      const v = scope.value; pick.style.display = v === 'pick' ? '' : 'none'; redoL.style.display = v === 'all' ? '' : 'none';
+      h.tagBtn.textContent = v === 'all' ? 'Tag all tracks' : v === 'pick' ? 'Tag chosen track' : 'Tag current track';
+      if (v === 'pick') fillPick();
+    };
+    scope.onchange = syncScope; syncScope();
+    h.tagBtn.onclick = () => {
+      if (scope.value === 'all') return runAll();
+      if (scope.value === 'pick') { const a = A(), t = a && a.tracks().find(x => String(x.dbId) === pick.value); if (!t) { h.status('Choose a track first.'); return; } return tagOne(t); }
+      return tagOne(null);
+    };
+
     // batch
     let stopFlag = false; const stopB = $('#ppv-stop');
     stopB.onclick = () => { stopFlag = true; h.status('Stopping after this track…'); };
-    $('#ppv-all').onclick = async () => {
+    const runAll = async () => {
       const a = A(); if (!a) return; stopFlag = false; busy(true); stopB.style.display = ''; stopB.disabled = false;
       const lv = h.LV(), cache = lv ? null : {}, list = a.tracks().slice(); let done = 0, fail = 0, skip = 0;
       let wl = null; try { if (lv && lv.wake && navigator.wakeLock) wl = await navigator.wakeLock.request('screen'); } catch (e) {}
@@ -1146,7 +1221,7 @@
       return n;
     }
     $('#ppv-mk').onclick = () => {
-      const a = A(), tg = loadTags(), ids = [...p.querySelectorAll('#ppv-smart input:checked')].map(i => i.value);
+      const a = A(), tg = loadTags(), ids = [...document.querySelectorAll('#ppv-smart input:checked')].map(i => i.value);
       if (!ids.length) { h.status('Tick at least one playlist.'); return; }
       ensureDetailed(); const msg = [];
       SMART.filter(s => ids.includes(s.id)).forEach(s => { const n = fill('✨ ' + s.name, t => { const c = tg[t.dbId]; return c && s.test(c, vibes(c)); }); msg.push(s.name + ': ' + n); });
@@ -1206,7 +1281,9 @@
         const a = A(), t = cur(); if (!t) throw new Error('Play or select a track first.');
         const lyr = window.__ppLyrics;
         if (t.kind !== 'video' && lyr && lyr.has(t.dbId) && !confirm('This track already has lyrics. Replace them?')) { busy(false); return; }
-        const cues = await transcribe(t, { size: wsize.value, lang: wlang.value, task: wtask.value, clean: wclean.checked, model: h.sel.value, strength: +h.sl.value, lv: h.LV() }, h.status);
+        document.querySelectorAll('.ppv-bar-wh i').forEach(e => e.style.width = '0');
+        const wst = t => { h.status(t); const m = /(\d+)%/.exec(t); if (m) document.querySelectorAll('.ppv-bar-wh i').forEach(e => e.style.width = m[1] + '%'); };
+        const cues = await transcribe(t, { size: wsize.value, lang: wlang.value, task: wtask.value, clean: wclean.checked, model: h.sel.value, strength: +h.sl.value, lv: h.LV() }, wst);
         if (!cues.length) throw new Error('No speech found.');
         if (t.kind === 'video' || !lyr) a.setSubtitles(t.dbId, cues, 'Whisper.srt'); else lyr.set(t.dbId, toLrc(cues));
         lastSrt = { name: t.title, text: toSrt(cues) }; wsrt.style.display = '';
@@ -1382,11 +1459,11 @@
       '<div style="margin-top:8px">Mute vocal gaps</div><select id="ppv-gate"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Silences leftover noise between sung lines. Vocals stem only.</div>' +
       '<div id="ppv-spl" style="margin-top:8px">Strength: <span id="ppv-sv">1</span><input id="ppv-sl" type="range" min="1" max="4" step="0.5" value="1" style="width:100%"><div style="opacity:.6;font-size:11px">Higher = less bleed, more watery artifacts</div><div style="margin-top:8px">Quality</div><select id="ppv-q"><option value="0">Standard</option><option value="1">Better (smooth seams, ~1.3x time)</option><option value="2">Best (+ averaged 2nd pass, ~2.7x time)</option></select></div>' +
       '<label id="ppv-gpu" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-gpuc"> Use GPU (faster, experimental)</label>' +
-      '<div id="ppv-st" style="margin-top:8px;opacity:.8">Ready</div><div id="ppv-bar"><i></i></div><button id="ppv-go">Split current track</button><button id="ppv-tag" class="ppv-sec">Tag current track</button><div id="ppv-tags" style="margin-top:6px;font-size:12px;white-space:pre-wrap"></div><button id="ppv-del" class="ppv-sec">Free up space (delete this model)</button>';
+      '<div id="ppv-st" style="margin-top:8px;opacity:.8">Ready</div><div id="ppv-bar"><i></i></div><button id="ppv-go">Split current track</button><button id="ppv-del" class="ppv-sec">Free up space (delete this model)</button>';
     document.body.appendChild(p);
     const mas = mascot(p);
     mas.ball.onclick = () => mas.tap();
-    p.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'); if (bt && !bt.disabled && ['ppv-go', 'ppv-tag', 'ppv-all', 'ppv-wgo', 'ppv-simgo', 'ppv-mk', 'ppv-mkq', 'ppv-eqall'].includes(bt.id)) mas.start(); });
+    document.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'); if (bt && !bt.disabled && ['ppv-go', 'ppv-tag', 'ppv-all', 'ppv-wgo', 'ppv-simgo', 'ppv-mk', 'ppv-mkq', 'ppv-eqall'].includes(bt.id)) mas.start(); }, true);
     p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="margin-top:10px"><input type="checkbox" id="ppv-mas"> Show Bloop, the mascot</label>');
     const mc = p.querySelector('#ppv-mas'); mc.checked = mas.isOn(); mc.onchange = () => mas.setOn(mc.checked);
     // Keep the pill attached: if it's ever detached (or was never in the page), put it back in the quick bar
@@ -1403,7 +1480,7 @@
     const $ = s => p.querySelector(s), st = $('#ppv-st'), bar = $('#ppv-bar i'), go = $('#ppv-go'), sel = $('#ppv-model'), sl = $('#ppv-sl'), sv = $('#ppv-sv'), gpu = $('#ppv-gpuc'), lsel = $('#ppv-lvl'), lvi = $('#ppv-lvi'), qsel = $('#ppv-q'), gsel = $('#ppv-gate');
     const LV = () => LEVELS[+lsel.value] || null, showLv = () => lvi.textContent = LV() ? LV().info : 'No limits. Fastest, but can crash weak phones.';
     let holdUntil = 0;                                                // keep "Done"/"Error" visible instead of being wiped by "Ready" a split second later
-    const status = t => { st.textContent = t; if (/^(Done|Error)/.test(t)) holdUntil = Date.now() + 5000; mas.react(t); }, ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
+    const status = t => { st.textContent = t; document.querySelectorAll('.ppv-stx').forEach(e => { e.textContent = t; }); if (/^(Done|Error)/.test(t)) holdUntil = Date.now() + 5000; mas.react(t); }, ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
     const savedModel = ls('ppvModel'); if (savedModel && MODELS[savedModel]) sel.value = savedModel;
     if (ls('ppvStrength')) { sl.value = ls('ppvStrength'); sv.textContent = sl.value; }
     lsel.value = ls('ppvLevel') || (ls('ppvLow') === '0' ? '0' : '2'); showLv(); gpu.checked = ls('ppvGpu') === '1'; if (navigator.gpu) $('#ppv-gpu').style.display = 'block';
@@ -1451,8 +1528,7 @@
       wl && wl.release().catch(() => {});
       go.disabled = false; refresh();
     };
-    const tagBtn = $('#ppv-tag'), tagOut = $('#ppv-tags');
-    try { smartUI(p, { status, LV, sel, sl, tagBtn, tagOut, prog: f => { bar.style.width = (f * 100) + '%'; } }); } catch (e) { console.error(e); }
+    try { smartUI(p, { status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
     refresh();
   }
   window.PPVocals = { separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
