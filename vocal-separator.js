@@ -1534,11 +1534,11 @@
       .ppv-ball .sh{fill:#000;opacity:.25}
       .ppv-ball .bd{fill:var(--accent,#7c5cff)}
       .ppv-ball .eye{fill:#fff}.ppv-ball .pu{fill:#1a1a22}
-      .ppv-ball .m{fill:none;stroke:#1a1a22;stroke-width:2.4;stroke-linecap:round;display:none}
-      .ppv-ball .m.open{fill:#1a1a22;stroke:none}
-      .ppv-ball .xe{display:none;fill:none;stroke:#1a1a22;stroke-width:2.4;stroke-linecap:round}
+      .ppv-ball .m{fill:none;stroke:var(--bl-ink,#1a1a22);stroke-width:2.4;stroke-linecap:round;display:none}
+      .ppv-ball .m.open{fill:var(--bl-ink,#1a1a22);stroke:none}
+      .ppv-ball .xe{display:none;fill:none;stroke:var(--bl-eink,var(--bl-ink,#1a1a22));stroke-width:2.4;stroke-linecap:round}
       .ppv-ball .spark{display:none}.ppv-ball .spark path{fill:#ffd95a}
-      .ppv-ball .fs{fill:none;stroke:#1a1a22;stroke-width:2.4;stroke-linecap:round}.ppv-ball .fm{fill:#1a1a22}.ppv-ball .sw{fill:#9fd8ff;opacity:.9}.ppv-ball .zz{font:700 9px system-ui,sans-serif;fill:#e9e4ff}
+      .ppv-ball .fs{fill:none;stroke:var(--bl-ink,#1a1a22);stroke-width:2.4;stroke-linecap:round}.ppv-ball .fs[data-fe]{stroke:var(--bl-eink,var(--bl-ink,#1a1a22))}.ppv-ball .fm{fill:var(--bl-ink,#1a1a22)}.ppv-ball .sw{fill:#9fd8ff;opacity:.9}.ppv-ball .zz{font:700 9px system-ui,sans-serif;fill:#e9e4ff}
       .ppv-ball[data-face=talk] [data-fm=open]{animation:blMouth .28s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:center}.ppv-ball[data-face=sleep] .zz{animation:blZ 2.4s ease-in-out infinite}
       @keyframes blMouth{from{transform:scaleY(.35)}to{transform:scaleY(1.25)}}@keyframes blZ{0%,100%{opacity:.2;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
       .m-idle .m.smile,.m-greet .m.smile,.m-start .m.open,.m-work .m.flat,.m-done .m.open,.m-err .m.wavy{display:block}
@@ -1560,7 +1560,7 @@
       @keyframes ppvShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px) rotate(-4deg)}75%{transform:translateX(3px) rotate(4deg)}}
       @keyframes ppvTw{from{opacity:.4;transform:scale(.8)}to{opacity:1;transform:scale(1.1)}}
       @keyframes ppvIn{from{opacity:0;transform:translateY(10px)}}
-      .ppv-ball .arm{fill:none;stroke:var(--accent,#7c5cff);stroke-width:4.4;stroke-linecap:round}
+      .ppv-ball .arm{fill:none;stroke-width:4.4;stroke-linecap:round}
       .ppv-ball .gear{transform-box:view-box;transform-origin:32px 58px}
       .m-idle .gear{animation:ppvBob 2.6s ease-in-out infinite}
       .m-greet .gear{animation:ppvHop .55s ease-out 3}
@@ -1596,8 +1596,8 @@
 
     const star = (x, y, sc) => `<path transform="translate(${x} ${y}) scale(${sc})" d="M0-5L1.4-1.4 5 0 1.4 1.4 0 5-1.4 1.4-5 0-1.4-1.4z"/>`;
     // ---------- Bloopy's gear: shaded items, worn or held with hands, drawn in front of him (never behind). Same art feeds the menu icons. ----------
-    const BL_DEFS = g => `<linearGradient id="${g}mt" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6f8fc"/><stop offset=".45" stop-color="#aeb5c2"/><stop offset=".55" stop-color="#6f7684"/><stop offset="1" stop-color="#cfd5de"/></linearGradient><linearGradient id="${g}dk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#555770"/><stop offset="1" stop-color="#15161d"/></linearGradient><linearGradient id="${g}gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#f4c430"/><stop offset="1" stop-color="#a9780a"/></linearGradient><linearGradient id="${g}gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e4f3ff" stop-opacity=".7"/><stop offset="1" stop-color="#7fb2e6" stop-opacity=".28"/></linearGradient><linearGradient id="${g}pu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7a58d6"/><stop offset="1" stop-color="#2c1a5e"/></linearGradient><linearGradient id="${g}pk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa6d2"/><stop offset="1" stop-color="#df3d8c"/></linearGradient><linearGradient id="${g}sc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#78e6ff"/><stop offset="1" stop-color="#2a63ee"/></linearGradient><linearGradient id="${g}pp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#dfe2ec"/></linearGradient><linearGradient id="${g}wd" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b98355"/><stop offset=".5" stop-color="#7a4a27"/><stop offset="1" stop-color="#3f2411"/></linearGradient><linearGradient id="${g}ye" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffe98a"/><stop offset=".5" stop-color="#f5c21c"/><stop offset="1" stop-color="#cf9004"/></linearGradient><linearGradient id="${g}or" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa45c"/><stop offset="1" stop-color="#d9501a"/></linearGradient><radialGradient id="${g}gw"><stop offset="0" stop-color="#fff2a6" stop-opacity=".9"/><stop offset="1" stop-color="#ffd95a" stop-opacity="0"/></radialGradient><radialGradient id="${g}rb" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ff9aa6"/><stop offset="1" stop-color="#b3122f"/></radialGradient><radialGradient id="${g}bl" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#9fd0ff"/><stop offset="1" stop-color="#1f56c4"/></radialGradient><radialGradient id="${g}pl" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#b9bfcc"/></radialGradient>`;
-    const blHand = (g, x, y, r) => `<circle class="bd" cx="${x}" cy="${y}" r="${r}" stroke="rgba(0,0,0,.35)" stroke-width=".8"/><circle cx="${x}" cy="${y}" r="${r}" fill="url(#${g})"/>`;
+    const BL_DEFS = g => `<linearGradient id="${g}mt" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6f8fc"/><stop offset=".45" stop-color="#aeb5c2"/><stop offset=".55" stop-color="#6f7684"/><stop offset="1" stop-color="#cfd5de"/></linearGradient><linearGradient id="${g}dk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#555770"/><stop offset="1" stop-color="#15161d"/></linearGradient><linearGradient id="${g}gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#f4c430"/><stop offset="1" stop-color="#a9780a"/></linearGradient><linearGradient id="${g}gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e4f3ff" stop-opacity=".7"/><stop offset="1" stop-color="#7fb2e6" stop-opacity=".28"/></linearGradient><linearGradient id="${g}pu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7a58d6"/><stop offset="1" stop-color="#2c1a5e"/></linearGradient><linearGradient id="${g}pk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa6d2"/><stop offset="1" stop-color="#df3d8c"/></linearGradient><linearGradient id="${g}sc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#78e6ff"/><stop offset="1" stop-color="#2a63ee"/></linearGradient><linearGradient id="${g}pp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#dfe2ec"/></linearGradient><linearGradient id="${g}wd" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b98355"/><stop offset=".5" stop-color="#7a4a27"/><stop offset="1" stop-color="#3f2411"/></linearGradient><linearGradient id="${g}ye" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffe98a"/><stop offset=".5" stop-color="#f5c21c"/><stop offset="1" stop-color="#cf9004"/></linearGradient><linearGradient id="${g}or" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa45c"/><stop offset="1" stop-color="#d9501a"/></linearGradient><radialGradient id="${g}gw"><stop offset="0" stop-color="#fff2a6" stop-opacity=".9"/><stop offset="1" stop-color="#ffd95a" stop-opacity="0"/></radialGradient><radialGradient id="${g}rb" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ff9aa6"/><stop offset="1" stop-color="#b3122f"/></radialGradient><radialGradient id="${g}bl" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#9fd0ff"/><stop offset="1" stop-color="#1f56c4"/></radialGradient><radialGradient id="${g}pl" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#b9bfcc"/></radialGradient><linearGradient id="${g}ss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5f9e"/><stop offset=".55" stop-color="#ff8a6a"/><stop offset="1" stop-color="#ffc15c"/></linearGradient><clipPath id="${g}bc"><circle cx="32" cy="34" r="24"/></clipPath>`;
+    const blHand = (g, x, y, r) => `<circle class="hd" cx="${x}" cy="${y}" r="${r}" stroke="rgba(0,0,0,.35)" stroke-width=".8"/><circle cx="${x}" cy="${y}" r="${r}" fill="url(#${g})"/>`;
     const blArm = d => `<path class="arm" d="${d}"/>`;
     const BL_TICKS = (() => { let a = '', b = ''; for (let i = 0; i < 12; i++) { const t = i * Math.PI / 6, c = i % 3 === 0, r1 = c ? 5 : 5.7, s = `M${(Math.sin(t) * r1).toFixed(2)} ${(-Math.cos(t) * r1).toFixed(2)}L${(Math.sin(t) * 6.5).toFixed(2)} ${(-Math.cos(t) * 6.5).toFixed(2)}`; if (c) a += s; else b += s; } return `<path d="${b}" stroke="#2a2c36" stroke-width=".5"/><path d="${a}" stroke="#2a2c36" stroke-width="1" stroke-linecap="round"/>`; })();
     // each entry: vb = menu icon view box, place = where the item sits on Bloopy, item = the object alone, back = arms and extras behind the item, front = hands over it
@@ -1636,6 +1636,172 @@
     // the worn / held versions on Bloopy: arms and extras first, then the item in place, then the hands on top
     const BL_GEAR = g => ['headphones', 'glasses', 'phone', 'glass', 'pencil', 'note', 'timer', 'scissors', 'wand', 'wizard', 'party', 'crown'].map(k => { const a = BL_ART[k];
       return `<g class="prop" data-p="${k}">${a.back(g).replace(/url\(#GG\)/g, 'url(#' + g + 'pp)')}${a.place ? `<g transform="${a.place}">${a.item(g)}</g>` : a.item(g)}${a.front(g)}</g>`; }).join('');
+    // ---------- Bloopy skins: real things and plain reskins. A skin sets his colours, and can add parts behind him (ears, tail), on his body (patterns, clipped to the ball) and in front (nose, beak, stem). ----------
+    const blPent = (cx, cy, r) => { let d = ''; for (let i = 0; i < 5; i++) { const a = (i * 72 - 90) * Math.PI / 180; d += (i ? 'L' : 'M') + (cx + r * Math.cos(a)).toFixed(1) + ' ' + (cy + r * Math.sin(a)).toFixed(1); } return d + 'Z'; };
+    const blMirror = s => `<g transform="translate(64 0) scale(-1 1)">${s}</g>`;
+    const BL_SKINS = {
+      orange: { name: 'Orange', color: '#ff9a1f', say: 'Fresh squeezed. Please do not peel me.',
+        body: () => `<g fill="#b85400" opacity=".24"><circle cx="16" cy="28" r=".8"/><circle cx="22" cy="48" r=".8"/><circle cx="46" cy="24" r=".8"/><circle cx="50" cy="42" r=".8"/><circle cx="36" cy="54" r=".8"/><circle cx="14" cy="42" r=".8"/><circle cx="27" cy="16" r=".8"/><circle cx="44" cy="52" r=".8"/><circle cx="53" cy="32" r=".8"/><circle cx="40" cy="14" r=".8"/><circle cx="10" cy="34" r=".8"/><circle cx="31" cy="50" r=".8"/></g><ellipse cx="22" cy="18" rx="7" ry="4" fill="#fff" opacity=".2" transform="rotate(-30 22 18)"/>`,
+        front: () => `<path d="M32 11Q32 7 33 5" stroke="#6b4a1c" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M33 8Q39 2 46 5Q41 12 33 8Z" fill="#3fae4a" stroke="#27782f" stroke-width=".6" stroke-linejoin="round"/><path d="M34 7.5Q39 5.5 44 5.3" stroke="#fff" stroke-opacity=".4" stroke-width=".6" fill="none"/>` },
+      pumpkin: { name: 'Pumpkin', color: '#f08a1c', say: 'Spooky season, any time of year.',
+        body: () => `<path d="M32 10Q23 34 32 58M21 12Q8 34 21 56M43 12Q56 34 43 56" fill="none" stroke="#a84f08" stroke-opacity=".45" stroke-width="1.6" stroke-linecap="round"/>`,
+        front: () => `<path d="M29 12Q29 4 34 2L37 5Q34 7 35 12Z" fill="#6a8a2a" stroke="#4a6418" stroke-width=".7" stroke-linejoin="round"/><path d="M36 6Q42 3 43 8Q44 11 41 11" fill="none" stroke="#5aa03a" stroke-width="1.1" stroke-linecap="round"/>` },
+      basketball: { name: 'Basketball', color: '#e87a2f', say: 'Please do not dribble me.',
+        body: () => `<path d="M32 10V21M32 49V58M8 34H15M49 34H56M14 15Q20 34 14 53M50 15Q44 34 50 53" fill="none" stroke="#2a1608" stroke-opacity=".85" stroke-width="1.4" stroke-linecap="round"/><g fill="#7a3a0a" opacity=".16"><circle cx="20" cy="22" r=".7"/><circle cx="44" cy="22" r=".7"/><circle cx="18" cy="50" r=".7"/><circle cx="46" cy="50" r=".7"/><circle cx="32" cy="55" r=".7"/><circle cx="12" cy="42" r=".7"/><circle cx="52" cy="42" r=".7"/></g>` },
+      soccer: { name: 'Soccer ball', color: '#f5f5f8', say: 'Please do not kick me.',
+        body: () => `<path d="${blPent(32, 16, 6)}${blPent(14, 32, 6)}${blPent(50, 32, 6)}${blPent(20, 52, 6)}${blPent(44, 52, 6)}" fill="#23242e"/><path d="M27.5 20Q19 22 15 27M36.5 20Q45 22 49 27M12 38Q13 46 17 48M52 38Q51 46 47 48M26 54Q32 57 38 54" fill="none" stroke="#9a9dac" stroke-width=".9" stroke-linecap="round"/>` },
+      earth: { name: 'Earth', color: '#2f7fd6', say: 'Hello, world.',
+        rear: () => `<circle cx="32" cy="34" r="27.5" fill="#8fd0ff" opacity=".35"/>`,
+        body: () => `<path d="M10 22Q16 14 26 16Q30 20 24 26Q20 32 14 30Q8 28 10 22Z" fill="#4dbb5f"/><path d="M38 14Q48 12 54 22Q52 30 46 28Q42 34 40 28Q34 22 38 14Z" fill="#4dbb5f"/><path d="M20 44Q28 40 34 46Q32 54 24 56Q16 52 20 44Z" fill="#4dbb5f"/><path d="M12 40Q18 38 22 41M40 46Q46 44 50 47M30 12Q36 10 42 12" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round"/>` },
+      cat: { name: 'Cat', color: '#f2a65a', say: 'Meow. That was not in my script.',
+        rear: () => { const ear = `<path d="M10.5 26L11.5 1.5L29.5 11.5Z" fill="#f2a65a" stroke="#b86e2a" stroke-width=".9" stroke-linejoin="round"/><path d="M14.5 20L15 7L24 12.5Z" fill="#f5a9b8"/>`; return `<path d="M50 50Q66 52 62 32" fill="none" stroke="#b86e2a" stroke-width="7" stroke-linecap="round"/><path d="M50 50Q66 52 62 32" fill="none" stroke="#f2a65a" stroke-width="5" stroke-linecap="round"/>${ear}${blMirror(ear)}`; },
+        body: () => `<ellipse cx="32" cy="44" rx="9" ry="6.5" fill="#fff4e6" opacity=".85"/><path d="M32 11V17M26 12.5L27.5 17.5M38 12.5L36.5 17.5" fill="none" stroke="#c9792f" stroke-width="1.5" stroke-linecap="round"/>`,
+        front: () => { const w = `<path d="M20 41L6 38.5M20 44L5 45.5M21 46.5L8 52" fill="none" stroke="#5a3a1e" stroke-opacity=".8" stroke-width=".8" stroke-linecap="round"/>`; return `<path d="M29.8 37.2H34.2L32 39.8Z" fill="#e8758b" stroke="#b84a64" stroke-width=".4" stroke-linejoin="round"/>${w}${blMirror(w)}`; } },
+      bunny: { name: 'Bunny', color: '#f7f1f8', say: 'Hop hop.',
+        rear: () => { const ear = `<ellipse cx="22" cy="5" rx="5.6" ry="15" transform="rotate(-9 22 5)" fill="#f7f1f8" stroke="#c9bfd0" stroke-width=".8"/><ellipse cx="22" cy="6" rx="2.9" ry="11" transform="rotate(-9 22 6)" fill="#f6b3c6"/>`; return `<circle cx="55" cy="52" r="5.5" fill="#fff" stroke="#c9bfd0" stroke-width=".8"/>${ear}${blMirror(ear)}`; },
+        body: () => `<circle cx="16.5" cy="40" r="3.6" fill="#ff9fb8" opacity=".5"/><circle cx="47.5" cy="40" r="3.6" fill="#ff9fb8" opacity=".5"/>`,
+        front: () => `<ellipse cx="32" cy="38" rx="2.2" ry="1.6" fill="#f08aa8"/>` },
+      panda: { name: 'Panda', color: '#f8f8fb', hand: '#23242e', eink: '#fff', say: 'Bamboo break.',
+        rear: () => `<circle cx="14.5" cy="14.5" r="7.5" fill="#23242e"/><circle cx="49.5" cy="14.5" r="7.5" fill="#23242e"/>`,
+        body: () => `<ellipse cx="23" cy="32" rx="7.5" ry="8.5" transform="rotate(25 23 32)" fill="#23242e"/><ellipse cx="41" cy="32" rx="7.5" ry="8.5" transform="rotate(-25 41 32)" fill="#23242e"/>`,
+        front: () => `<ellipse cx="32" cy="38" rx="3" ry="2.2" fill="#23242e"/>` },
+      penguin: { name: 'Penguin', color: '#2a2b36', hand: '#2a2b36', say: 'Waddle waddle.',
+        body: () => `<ellipse cx="32" cy="39" rx="17.5" ry="18.5" fill="#f4f5fa"/>`,
+        front: () => `<path d="M27.5 37Q32 34.6 36.5 37Q32 40.5 27.5 37Z" fill="#ff9f1c" stroke="#c46f00" stroke-width=".5" stroke-linejoin="round"/><ellipse cx="23" cy="59.5" rx="6.5" ry="2.8" fill="#ff9f1c" stroke="#c46f00" stroke-width=".6"/><ellipse cx="41" cy="59.5" rx="6.5" ry="2.8" fill="#ff9f1c" stroke="#c46f00" stroke-width=".6"/>` },
+      mint: { name: 'Mint', color: '#4fd1a5', say: 'Cool and fresh.',
+        body: () => `<ellipse cx="22" cy="18" rx="8" ry="4.5" fill="#fff" opacity=".22" transform="rotate(-30 22 18)"/>` },
+      sunset: { name: 'Sunset', color: '#ff8a6a', say: 'Golden hour.',
+        body: g => `<rect x="8" y="10" width="48" height="48" fill="url(#${g}ss)"/>` },
+      midnight: { name: 'Midnight', color: '#242b63', ink: '#e9e4ff', say: 'Night mode, for the soul.',
+        body: () => `<g fill="#fff"><circle cx="16" cy="22" r=".9"/><circle cx="24" cy="15" r=".7"/><circle cx="34" cy="13" r="1"/><circle cx="52" cy="34" r=".8"/><circle cx="14" cy="46" r=".8"/><circle cx="22" cy="54" r=".7"/><circle cx="42" cy="55" r=".9"/><circle cx="53" cy="46" r=".7"/><circle cx="40" cy="47" r=".6"/></g><circle cx="47" cy="19" r="5" fill="#ffe9a8"/><circle cx="49.2" cy="17.6" r="4.4" fill="#242b63"/>` },
+      gold: { name: 'Gold', color: '#e9b92e', say: 'Shiny.',
+        body: g => `<rect x="8" y="10" width="48" height="48" fill="url(#${g}gd)"/><path d="M12 24A22 22 0 0 1 26 13" stroke="#fff" stroke-opacity=".6" stroke-width="2" fill="none" stroke-linecap="round"/>` }
+    };
+    const BL_SKIN_KEYS = Object.keys(BL_SKINS);
+    const blSkinOne = (k, part, g) => { const s = BL_SKINS[k]; return s && s[part] ? `<g class="sk" data-sk="${k}"${part === 'body' ? ` clip-path="url(#${g}bc)"` : ''}>${s[part](g)}</g>` : ''; };
+    const blSkinPart = (part, g) => BL_SKIN_KEYS.map(k => blSkinOne(k, part, g)).join('');
+    const blSkinCss = document.createElement('style');
+    blSkinCss.textContent = '.sk{display:none}.ppv-ball .bd{fill:var(--bl-skin,var(--accent,#7c5cff))}.ppv-ball .hd{fill:var(--bl-hand,var(--bl-skin,var(--accent,#7c5cff)))}.ppv-ball .arm{stroke:var(--bl-hand,var(--bl-skin,var(--accent,#7c5cff)))}' +
+      BL_SKIN_KEYS.map(k => { const s = BL_SKINS[k]; return `[data-skin=${k}]{--bl-skin:${s.color};${s.hand ? '--bl-hand:' + s.hand + ';' : ''}${s.ink ? '--bl-ink:' + s.ink + ';' : ''}${s.eink ? '--bl-eink:' + s.eink + ';' : ''}}[data-skin=${k}] .sk[data-sk=${k}]{display:inline}`; }).join('') +
+      '.ppv-ball[data-skin=soccer] .eye,.ppv-ball[data-skin=bunny] .eye,.ppv-ball[data-skin=penguin] .eye,.ppv-ball[data-skin=basketball] .eye{stroke:#b4b8c6;stroke-width:.8}';
+    document.head.appendChild(blSkinCss);
+    // small drawn preview of a skin for the menu (no key = the default Bloopy)
+    const blSkinIcon = k => { const s = BL_SKINS[k], g = 'ppvs' + (++blIcId), ink = (s && s.ink) || '#1a1a22';
+      return `<svg class="bl-ic"${s ? ` data-skin="${k}"` : ''} viewBox="-8 -14 80 80" width="22" height="22" aria-hidden="true" style="vertical-align:-6px;margin-right:5px;overflow:visible"><defs>${BL_DEFS(g)}<radialGradient id="${g}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient></defs>${s ? blSkinOne(k, 'rear', g) : ''}<circle cx="32" cy="34" r="24" style="fill:${s ? s.color : 'var(--accent,#7c5cff)'}"/>${s ? blSkinOne(k, 'body', g) : ''}<circle cx="32" cy="34" r="24" fill="url(#${g})"/><circle cx="24" cy="31" r="5.5" fill="#fff" stroke="#b4b8c6" stroke-width=".8"/><circle cx="40" cy="31" r="5.5" fill="#fff" stroke="#b4b8c6" stroke-width=".8"/><circle cx="25" cy="32" r="2.6" fill="#1a1a22"/><circle cx="41" cy="32" r="2.6" fill="#1a1a22"/><path d="M25 43q7 6 14 0" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linecap="round"/>${s ? blSkinOne(k, 'front', g) : ''}</svg>`; };
+    // ---------- Skin voices: each skin has its own lines for greetings, pokes, status, results and command replies. A skin line is used about two times in three; the normal lines fill the rest. ----------
+    const BL_SKIN_SAY = {
+      orange: { open: ["Hey there! It's me, Bloopy, fresh and juicy!", "Zest in time! Bloop here. What are we listening to?"], ready: ["Squeezed and ready.", "Peeled and ready when you are."],
+        tap: ["Careful, I am ripe!", "Hey, no squeezing!", "That was a citrus-y poke."], poke: ["Hey, watch the peel!", "Squeeze me and you get juice. Do you want juice?", "I am full of vitamin C and opinions.", "Okay, okay, I am pith-ed off. Just kidding!"],
+        dizzy: ["I am so dizzy I might turn into juice!", "Stop shaking me, I will make a smoothie out of myself!"], idle: ["Just hanging on the tree.", "Soaking up some sun.", "Orange you glad I am here?"],
+        click: ["Click! Zesty.", "Nice press. Very fresh.", "Squeeze, click, done."], start: ["Zest in time!", "Let's squeeze this out!"], busy: ["Still squeezing, almost there!", "Juicing the data, one sec!"],
+        done: ["Fresh squeezed and done!", "Easy peasy, orange squeezy!", "All peeled and ready."], err: ["Oops, I got squashed.", "That one turned out sour."], dl: ["Downloading my vitamins..."],
+        sep: ["Peeling the song apart, segment by segment.", "Separating the segments gently."], tag: ["Tasting the song for flavour notes...", "Checking if this one is sweet or sour."],
+        wh: ["Writing every word, nice and juicy.", "Catching every word like a drop of juice."], gen: ["Working on it, still juicy.", "Rolling along, round and orange."], panel: ["Stems menu! A song is just segments, like me.", "Pick your segments, I mean stems."],
+        t: { play: ["Juicy beats incoming."], skip: ["Next slice!"], volume: ["Turned up the zest."], shuffle: ["Shaken, not squeezed."], playlist: ["A whole basket of songs!"], tag: ["Tasted it. Notes of bass and sunshine."], split: ["Peeled apart, segment by segment."], lyrics: ["Every word, fresh squeezed."], sleep: ["Sleep tight, I will keep the vitamins."], eq: ["Sweet tuning."], missing: ["Not in this orchard."] } },
+      pumpkin: { open: ["Boo! Just kidding, it's Bloopy. Ask me anything!", "Happy spooky season! Bloop here. What are we playing?"], ready: ["Carved and ready.", "Candle is lit. Ready when you are."],
+        tap: ["Boo!", "Careful, I have a candle inside!", "Do not carve me!"], poke: ["Hey! I am not a pie yet.", "Poking a pumpkin is bad luck. Probably.", "My seeds are rattling!", "Spooky, but I am a friendly one."],
+        dizzy: ["My seeds are all shaken up!", "I am going to go full pumpkin spice!"], idle: ["Just sitting on the porch.", "Waiting for the sun to go down.", "Autumn leaves are my favourite."],
+        click: ["Click! Spooky.", "Nice press. Very festive.", "A pumpkin approves."], start: ["Let us carve this one out!", "Spooky time!"], busy: ["Still carving, almost there!", "Scooping out the data, one sec!"],
+        done: ["Ta-da, carved to perfection!", "All done. Time for pie!", "Spooktacular!"], err: ["Oops, I got smashed.", "That one went bad, like old gourds."], dl: ["Collecting seeds... I mean, downloading."],
+        sep: ["Carving the song into pieces.", "Scooping the vocals out gently."], tag: ["Sniffing out the spooky vibes...", "Listening for ghosts in the track."],
+        wh: ["Writing every word by candlelight.", "Whispering the lyrics, very spooky."], gen: ["Carving away.", "Rolling along, orange and round."], panel: ["Stems menu! Carving time.", "Pick which parts to carve out."],
+        t: { play: ["Spooky tunes on!"], skip: ["Next, before the candle burns out."], volume: ["Louder, so the ghosts can hear."], shuffle: ["Shuffled like a haunted deck."], playlist: ["A whole patch of songs!"], tag: ["Vibes: spooky and sweet."], split: ["Carved it right down the middle."], lyrics: ["Written in candlelight."], sleep: ["Sleep tight, ghosts included."], eq: ["Bass like a creaky door. Perfect."], missing: ["Not in this pumpkin patch."] } },
+      basketball: { open: ["Hey there! It's Bloopy, ready to hoop!", "Tip off! Bloop here. What are we listening to?"], ready: ["Warmed up and ready.", "On the court and ready when you are."],
+        tap: ["Do not dribble me!", "Boing! That was a bounce pass!", "Swish!"], poke: ["Hey! I am not a basketball. Okay, I am a basketball.", "Dribble me again and I will foul you.", "Bounce, bounce, bounce.", "That was a good pass."],
+        dizzy: ["Too much dribbling! I am dizzy!", "Time out, time out!"], idle: ["Just bouncing on the court.", "Waiting for someone to pass me the song.", "Practising my free throws in my head."],
+        click: ["Click! Nothing but net.", "Nice press. Two points.", "Buzzer beater!"], start: ["Tip off!", "Game time!"], busy: ["Still on the court, almost there!", "Dribbling through the data, one sec!"],
+        done: ["Slam dunk!", "Nothing but net!", "And that is the buzzer!"], err: ["Air ball. I missed that one.", "Foul! Something went wrong."], dl: ["Fetching my playbook..."],
+        sep: ["Passing the stems out to the team.", "Splitting the song like a fast break."], tag: ["Scouting the track...", "Reading the play, tempo and key."],
+        wh: ["Taking notes on every word, coach.", "Calling out every lyric from the bench."], gen: ["Working the ball up the court.", "Dribbling along."], panel: ["Stems menu! Pick your starting five.", "Choose which stems make the team."],
+        t: { play: ["Game on!"], skip: ["Next play!"], volume: ["Crowd noise up!"], shuffle: ["Shuffled like a new rotation."], playlist: ["A whole roster of songs!"], tag: ["Scouting report is in."], split: ["Passed right through the defense."], lyrics: ["Every word on the scoreboard."], sleep: ["Final buzzer coming up."], eq: ["Tuned like a good bounce."], missing: ["Not on the roster."] } },
+      soccer: { open: ["Hey there! It's Bloopy, ready to kick off!", "Kick off! Bloop here. What are we playing?"], ready: ["On the pitch and ready.", "Boots laced. Ready when you are."],
+        tap: ["Please do not kick me!", "Goal!", "Boing! That was a header!"], poke: ["Hey! Only the keeper can touch me. Wait, no.", "Do not kick me, kick the song!", "Offside!", "That was a clean tackle."],
+        dizzy: ["I am spinning like a free kick!", "Referee, I need a break!"], idle: ["Just rolling on the pitch.", "Waiting for the next kick.", "Practising my bend."],
+        click: ["Click! Goal!", "Nice press. Top corner.", "And the crowd goes wild!"], start: ["Kick off!", "Let's play!"], busy: ["Still on the ball, almost there!", "Dribbling past the data, one sec!"],
+        done: ["Goal!", "What a strike!", "Full time, and we won!"], err: ["Own goal. Oops.", "Yellow card, something went wrong."], dl: ["Collecting my kit..."],
+        sep: ["Passing each stem to its own player.", "Splitting the song into positions."], tag: ["Studying the match...", "Checking the tempo, like the clock on the pitch."],
+        wh: ["Taking notes on every word, like a commentator.", "Calling every lyric live."], gen: ["Working on the ball.", "Rolling down the pitch."], panel: ["Stems menu! Pick your formation.", "Choose who plays which position."],
+        t: { play: ["Kick off the music!"], skip: ["Substitution!"], volume: ["Crowd noise up!"], shuffle: ["Shuffled the line-up."], playlist: ["A whole squad of songs!"], tag: ["Scouting report is in."], split: ["Split like a through ball."], lyrics: ["Every word, like live commentary."], sleep: ["Full time soon."], eq: ["Tuned for the stadium."], missing: ["Not in the squad."] } },
+      earth: { open: ["Hello, world! It's me, Bloopy!", "Greetings from orbit! Bloop here. What are we listening to?"], ready: ["Orbiting and ready.", "Spinning and ready when you are."],
+        tap: ["Hello, world!", "You just caused a small earthquake!", "Spin me again!"], poke: ["Careful, you poked a continent.", "I was in the middle of an orbit!", "That is how tides start.", "Poking Earth. Bold."],
+        dizzy: ["I rotate once a day, not once a second!", "Too fast! The seasons are all mixed up!"], idle: ["Just orbiting the sun.", "Spinning slowly, nothing to see.", "Thinking about oceans."],
+        click: ["Click! A tiny tremor.", "Nice press. Felt it in Asia.", "That moved the plates."], start: ["Here we go around the sun!", "Spinning up!"], busy: ["Still in orbit, almost there!", "Crossing time zones, one sec!"],
+        done: ["Sunrise! All done!", "Mission accomplished, planet-wide!", "One small step for stems!"], err: ["Houston, we have a problem.", "Hit a meteor, oops."], dl: ["Beaming it down from space..."],
+        sep: ["Splitting the song into continents.", "Separating the oceans from the land."], tag: ["Scanning the track from orbit...", "Reading the tempo like a weather map."],
+        wh: ["Charting every word like a map.", "Mapping out the lyrics."], gen: ["Working on it, still spinning.", "Rolling around the sun."], panel: ["Stems menu! Pick your continents.", "Choose which parts of the planet to keep."],
+        t: { play: ["Music across the globe!"], skip: ["Next stop on the world tour!"], volume: ["Loud enough to hear from space."], shuffle: ["Shuffled across time zones."], playlist: ["A whole atlas of songs!"], tag: ["Mapped out the vibes."], split: ["Split like tectonic plates."], lyrics: ["Every word on the map."], sleep: ["Night is falling, sleep well."], eq: ["Tuned to the planet."], missing: ["Not on any map."] } },
+      cat: { open: ["Meow! It's me, Bloopy. Ask me anything!", "Hello, human. Bloop here. What are we listening to?"], ready: ["Stretched and ready.", "Awake from my nap and ready."],
+        tap: ["Meow!", "Purr... I mean, hello.", "I will knock something off the table now."], poke: ["Hey! I am not a toy. Well, maybe a little.", "You may pet me. Once.", "I was napping!", "Do that again and I will sit on your keyboard."],
+        dizzy: ["The zoomies hit me!", "I am dizzy, and I blame the dog."], idle: ["Just napping in a sunbeam.", "Staring at nothing. Very important work.", "Plotting something small and mischievous."],
+        click: ["Click! Meow.", "Nice press. I approve.", "Paws up for that one."], start: ["On it, human!", "Pounce!"], busy: ["Still hunting, almost there!", "Chasing the data, one sec!"],
+        done: ["Purrfect!", "Caught it! Got the data.", "Another mouse, I mean job, done."], err: ["Hiss! That did not work.", "I knocked it off the table by accident."], dl: ["Fetching my toys..."],
+        sep: ["Clawing the song apart, gently.", "Pulling the vocals out, like a ball of yarn."], tag: ["Sniffing out the vibe...", "Whiskers twitching, reading the tempo."],
+        wh: ["Writing every word with my paw.", "Listening with both ears, very closely."], gen: ["Working on it, with my tail up.", "Stalking along."], panel: ["Stems menu! Pick your catnip.", "Choose which stems to chase."],
+        t: { play: ["Purr-fect tune."], skip: ["Next, I got bored."], volume: ["Loud enough to wake me from a nap."], shuffle: ["Shuffled like a cat in a box."], playlist: ["A whole cat tree of songs!"], tag: ["Sniffed it. Smells like bass."], split: ["Clawed right through it."], lyrics: ["Wrote it all down with my paw."], sleep: ["Time for a cat nap."], eq: ["Tuned like a purr."], missing: ["Not in the box, I checked."] } },
+      bunny: { open: ["Hop hop! It's me, Bloopy!", "Hi hi! Bloop here. What are we listening to?"], ready: ["Hopped over and ready.", "Ears up and ready."],
+        tap: ["Hop hop!", "My nose twitched!", "Boing boing!"], poke: ["Hey! My ears are sensitive!", "Careful, I will thump my foot.", "Do not squish the fluff!", "I did a binky!"],
+        dizzy: ["I am all hopped out!", "My ears are spinning!"], idle: ["Just nibbling a carrot.", "Twitching my nose at nothing.", "Dreaming of clover."],
+        click: ["Click! Hop.", "Nice press. Fluffy.", "My ears perked up."], start: ["Hop to it!", "Hopping in!"], busy: ["Still hopping, almost there!", "Digging a burrow through the data, one sec!"],
+        done: ["Hoppy to report it is done!", "Carrot cake time!", "All done, with a binky!"], err: ["Oops, I tripped over my ears.", "That did not hop right."], dl: ["Hopping off to fetch it..."],
+        sep: ["Splitting the song, hop by hop.", "Separating the stems carefully, with soft paws."], tag: ["Twitching my nose to find the vibe...", "Listening with my big ears."],
+        wh: ["Writing every word with my paw.", "My long ears caught every word."], gen: ["Working on it, hop by hop.", "Bouncing along."], panel: ["Stems menu! Pick your carrots.", "Choose which stems to nibble."],
+        t: { play: ["Hoppy tunes!"], skip: ["Hop, next song!"], volume: ["Loud enough for long ears."], shuffle: ["Shuffled like a hop in the grass."], playlist: ["A whole garden of songs!"], tag: ["My nose says it is a good one."], split: ["Split with a hop and a skip."], lyrics: ["Every word, in my burrow notes."], sleep: ["Sleep tight in the burrow."], eq: ["Fine tuned for big ears."], missing: ["Not in this burrow."] } },
+      panda: { open: ["Hey there! It's Bloopy. I was just having a snack.", "Hello! Bloop here. What are we listening to? I have time."], ready: ["Fed and ready.", "Bamboo break over. Ready."],
+        tap: ["Mmm, snack time?", "I was napping!", "Roll with it!"], poke: ["Hey! I am not a pillow.", "Careful, I am fluffy and sleepy.", "I rolled over. Bye.", "You poked a panda. Bold."],
+        dizzy: ["I rolled too much!", "I am so dizzy I forgot my bamboo!"], idle: ["Just chewing bamboo.", "Taking a nap, with my eyes open.", "Thinking about the next snack."],
+        click: ["Click! Bamboo.", "Nice press. Very chill.", "A panda approves."], start: ["Okay, after this snack.", "Rolling in!"], busy: ["Still chewing on it, almost there!", "Slow and steady, one sec!"],
+        done: ["Done! Time for a nap.", "Nice and easy, like bamboo.", "All done, and I did not even spill my snack."], err: ["Oops, I dropped my bamboo.", "That one rolled away."], dl: ["Fetching more bamboo... I mean data."],
+        sep: ["Splitting the song, like a bamboo stalk.", "Peeling the stems apart, one leaf at a time."], tag: ["Chewing on the vibes...", "Slowly figuring out the tempo."],
+        wh: ["Writing each word, one bite at a time.", "Listening to every word, slowly."], gen: ["Working on it, slowly.", "Rolling along."], panel: ["Stems menu! Pick your bamboo.", "Choose which stems to chew."],
+        t: { play: ["Chill tunes on."], skip: ["Next, after a stretch."], volume: ["A little louder, for the bamboo grove."], shuffle: ["Rolled the order around."], playlist: ["A whole bamboo forest of songs!"], tag: ["Chewed on it. Tastes good."], split: ["Peeled like a bamboo shoot."], lyrics: ["Every word, one slow bite at a time."], sleep: ["Nap time, finally."], eq: ["Nice and mellow."], missing: ["Not in this bamboo forest."] } },
+      penguin: { open: ["Hello! It's Bloopy, dressed for the occasion.", "Waddle waddle! Bloop here. What are we listening to?"], ready: ["Waddled over and ready.", "Slid in on my belly, ready."],
+        tap: ["Waddle waddle!", "Squawk!", "Brr, that was a cold poke."], poke: ["Hey! I am not an ice cube.", "Careful, I will slide away.", "My tuxedo is wrinkled now.", "That tickled my flippers."],
+        dizzy: ["I slid on the ice and spun!", "I waddled in circles!"], idle: ["Just standing on the ice.", "Thinking about fish.", "Waiting for the iceberg to drift."],
+        click: ["Click! Brr.", "Nice press. Very cool.", "A penguin approves."], start: ["Sliding in!", "Off we waddle!"], busy: ["Still sliding, almost there!", "Swimming through the data, one sec!"],
+        done: ["Done, and I did not even slip!", "Fish for everyone!", "All done, nice and cool."], err: ["Oops, I slipped on the ice.", "That one fell through the ice."], dl: ["Waddling off to fetch it..."],
+        sep: ["Splitting the colony, I mean the stems.", "Separating the stems, nice and neat."], tag: ["Waddling around the vibes...", "Checking the tempo, flipper by flipper."],
+        wh: ["Writing every word, like a tuxedo scribe.", "Listening with my flippers on my hips."], gen: ["Working on it, with a waddle.", "Sliding along."], panel: ["Stems menu! Pick your fish.", "Choose which stems to slide."],
+        t: { play: ["Cool tunes, coming right up."], skip: ["Next iceberg!"], volume: ["Loud enough for the whole colony."], shuffle: ["Shuffled like a huddle."], playlist: ["A whole colony of songs!"], tag: ["Waddled through the vibes."], split: ["Split, slid and done."], lyrics: ["Every word, on ice."], sleep: ["Time to huddle up and sleep."], eq: ["Tuned like a cold, clear day."], missing: ["Not on this iceberg."] } },
+      mint: { open: ["Hey there! It's Bloopy, cool and fresh!", "Fresh start! Bloop here. What are we listening to?"], ready: ["Cool and ready.", "Fresh and ready when you are."],
+        tap: ["Cool!", "That was refreshing.", "Ahh, minty fresh."], poke: ["Hey! You will make me melt.", "Cool as a cucumber, but ticklish.", "Poke me and you get fresh breath.", "That was refreshing, actually."],
+        dizzy: ["I am so dizzy I forgot to be cool!", "My freshness is spinning!"], idle: ["Just chilling.", "Staying fresh.", "Cool and calm, as usual."],
+        click: ["Click! Fresh.", "Nice press. Very cool.", "Minty approval."], start: ["Cool, let's go!", "Fresh start!"], busy: ["Still cool, almost there!", "Keeping fresh, one sec!"],
+        done: ["Cool and done!", "Fresh as ever!", "All done, with a minty finish."], err: ["Oops, I lost my cool.", "That one went stale."], dl: ["Fetching something fresh..."],
+        sep: ["Splitting the song, nice and clean.", "Separating the stems, crisp and clear."], tag: ["Sniffing out a fresh vibe...", "Reading the tempo, cool and calm."],
+        wh: ["Writing every word, clean and clear.", "Catching every word, crisp."], gen: ["Working on it, still cool.", "Rolling along, fresh."], panel: ["Stems menu! Keep it clean.", "Pick your stems, nice and fresh."],
+        t: { play: ["Fresh tunes on."], skip: ["Next, fresh and cool."], volume: ["Crisp and loud."], shuffle: ["Fresh shuffle."], playlist: ["A fresh batch of songs!"], tag: ["Cool vibes, noted."], split: ["Clean split."], lyrics: ["Every word, crisp and clear."], sleep: ["Sleep cool."], eq: ["Fresh tuning."], missing: ["Not in this fresh batch."] } },
+      sunset: { open: ["Hey there! It's Bloopy, glowing at golden hour.", "Good vibes only. Bloop here. What are we listening to?"], ready: ["Glowing and ready.", "Warm and ready when you are."],
+        tap: ["Warm greetings!", "That was a golden poke.", "Glow glow!"], poke: ["Hey! You are blocking my light.", "Poke me again and I will blush.", "I am already pink, stop making it worse.", "That felt warm."],
+        dizzy: ["The horizon is spinning!", "I turned all the colours at once!"], idle: ["Just watching the horizon.", "Glowing softly.", "Thinking about the golden hour."],
+        click: ["Click! Warm.", "Nice press. Golden.", "That was smooth."], start: ["Let us catch the light!", "Off to the horizon!"], busy: ["Still glowing, almost there!", "Chasing the horizon, one sec!"],
+        done: ["Golden! All done.", "Beautiful, just like the sky.", "Done, and the sky is pink."], err: ["Oops, the clouds got in the way.", "That one faded away."], dl: ["Fetching a little more light..."],
+        sep: ["Splitting the song into layers of colour.", "Separating the stems, like bands of sky."], tag: ["Reading the song's colours...", "Feeling the tempo, soft and warm."],
+        wh: ["Writing every word in warm light.", "Catching each lyric as the light fades."], gen: ["Working on it, with a glow.", "Rolling toward the horizon."], panel: ["Stems menu! Pick your colours.", "Choose which stems to light up."],
+        t: { play: ["Golden hour playlist, now playing."], skip: ["Next, as the sun sets."], volume: ["Turned up the glow."], shuffle: ["Mixed like a sky full of colours."], playlist: ["A whole horizon of songs!"], tag: ["The vibes are warm."], split: ["Split like light through clouds."], lyrics: ["Every word, painted on the sky."], sleep: ["Goodnight, the sun is down."], eq: ["Tuned like a warm evening."], missing: ["Not on this horizon."] } },
+      midnight: { open: ["Hello, night owl. It's Bloopy.", "Under the stars... Bloop here. What are we listening to?"], ready: ["Awake and ready.", "The stars are out. Ready when you are."],
+        tap: ["Shh, the stars are sleeping.", "Twinkle twinkle.", "You woke me up!"], poke: ["Hey! I was counting stars.", "Careful, you will wake the moon.", "That tickled my crescent.", "I was dreaming."],
+        dizzy: ["The stars are spinning!", "I am so dizzy I lost the moon!"], idle: ["Just counting stars.", "Watching the moon.", "Thinking quiet thoughts."],
+        click: ["Click! Twinkle.", "Nice press. Quiet and clean.", "The stars approve."], start: ["Into the night!", "Off we go, under the stars."], busy: ["Still up, almost there!", "Counting stars, one sec!"],
+        done: ["Done, and the stars are out.", "All done, quietly.", "Mission complete. Time to dream."], err: ["Oops, a cloud covered the moon.", "That one went dark."], dl: ["Fetching it from the night sky..."],
+        sep: ["Splitting the song, star by star.", "Separating the stems in the dark, carefully."], tag: ["Reading the song like a night sky...", "Counting the beats like stars."],
+        wh: ["Writing every word by moonlight.", "Listening in the quiet of the night."], gen: ["Working on it, quietly.", "Rolling through the night."], panel: ["Stems menu! Pick your stars.", "Choose which stems stay up late."],
+        t: { play: ["Night tunes, softly."], skip: ["Next star."], volume: ["Not too loud, the neighbours are asleep."], shuffle: ["Shuffled like constellations."], playlist: ["A whole night sky of songs!"], tag: ["The vibes are deep and quiet."], split: ["Split like the Milky Way."], lyrics: ["Every word, by moonlight."], sleep: ["Goodnight, and sweet dreams."], eq: ["Tuned like a quiet night."], missing: ["Lost in the dark."] } },
+      gold: { open: ["Hello there! It's Bloopy, 24 karat.", "Shiny day! Bloop here. What are we listening to?"], ready: ["Polished and ready.", "Gleaming and ready when you are."],
+        tap: ["Ooh, shiny!", "Careful, do not smudge the gold.", "Ka-ching!"], poke: ["Hey! I am very valuable.", "Careful, that is solid gold. Maybe hollow.", "You can see your face in me.", "Poke me again and I will charge a fee."],
+        dizzy: ["I am so dizzy I lost my shine!", "Stop spinning, I am worth more standing up!"], idle: ["Just sitting in the vault.", "Gleaming quietly.", "Counting my coins."],
+        click: ["Click! Ka-ching.", "Nice press. Golden.", "Worth every click."], start: ["Time to mine some gold!", "Let us make this shine!"], busy: ["Still polishing, almost there!", "Mining the data, one sec!"],
+        done: ["Pure gold!", "All done, and worth every second.", "Another gold medal!"], err: ["Oops, I tarnished that one.", "That one turned out to be fool's gold."], dl: ["Fetching more gold..."],
+        sep: ["Refining the song, layer by layer.", "Separating the gold from the rest."], tag: ["Appraising the track...", "Weighing the tempo, carat by carat."],
+        wh: ["Engraving every word.", "Writing the lyrics in gold ink."], gen: ["Working on it, with a gleam.", "Rolling along, shiny."], panel: ["Stems menu! Pick your nuggets.", "Choose which stems are gold."],
+        t: { play: ["Golden tunes!"], skip: ["Next treasure!"], volume: ["Turned up the bling."], shuffle: ["Shuffled the treasure chest."], playlist: ["A whole vault of songs!"], tag: ["Appraised it. Very valuable."], split: ["Refined it into gold."], lyrics: ["Engraved every word."], sleep: ["Lock the vault, sleep well."], eq: ["Polished the sound."], missing: ["Not in the vault."] } }
+    };
+    const BL_QUIP_TOPICS = ['volume', 'skip', 'play', 'shuffle', 'playlist', 'tag', 'split', 'lyrics', 'sleep', 'eq', 'speed', 'screen', 'missing', 'silent', 'undo', 'empty'];
+    const blSkinKey = () => lsGet('ppvSkin') || '';
+    // the skin's pool for a kind of line (about two times in three), else the normal one
+    const blPool = (name, base) => { const p = (BL_SKIN_SAY[blSkinKey()] || {})[name]; return p && p.length && Math.random() < 0.65 ? p : base; };
+    const blLine = (name, base) => pick(blPool(name, base));
+    const blTopic = (name, base) => { const p = ((BL_SKIN_SAY[blSkinKey()] || {}).t || {})[name]; return p && p.length && Math.random() < 0.7 ? p : base; };
+    const blSkinNote = () => { const s = BL_SKINS[blSkinKey()]; return s ? ' You are dressed as a ' + s.name.toLowerCase() + ' right now, and you can make a tiny joke about it, but only sometimes.' : ''; };
     // the parts that sit behind his body (back of a hat brim, the headband, the back of the crown)
     const BL_REAR = g => ['headphones', 'wizard', 'crown'].map(k => `<g class="prop" data-p="${k}">${BL_ART[k].rear(g)}</g>`).join('');
     // small drawn icon of the item alone, for the accessories menu
@@ -1644,14 +1810,14 @@
       return `<svg class="bl-ic" viewBox="${a.vb}" width="18" height="18" aria-hidden="true" style="vertical-align:-4px;margin-right:5px;overflow:visible"><defs>${BL_DEFS(g)}</defs>${a.rear ? a.rear(g) : ''}${a.item(g)}</svg>`; };
     function ball() {
       const g = 'ppvg' + (++uid), d = document.createElement('div');
-      d.className = 'ppv-ball m-idle'; d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Bloop, the mascot');
+      d.className = 'ppv-ball m-idle'; d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Bloop, the mascot'); { const sk = lsGet('ppvSkin'); if (sk && BL_SKINS[sk]) d.dataset.skin = sk; }
       d.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="${g}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>${BL_DEFS(g)}</defs>
         <ellipse class="sh" cx="32" cy="60" rx="15" ry="3"/>
-        <g class="behind"><g class="burst"><circle cx="8" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="56" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="6" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="58" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="32" cy="62" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="18" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><circle cx="46" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(2 8) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(60 6) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(62 30) scale(1.3)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(0 30) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(12 64) scale(1.1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(54 62) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(30 -2) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(64 50) scale(0.9)" fill="#ffd95a"/></g></g><g class="gear">${BL_REAR(g)}</g><g class="body"><circle class="bd" cx="32" cy="34" r="24"/><circle cx="32" cy="34" r="24" fill="url(#${g})"/>
+        <g class="behind"><g class="burst"><circle cx="8" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="56" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="6" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="58" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="32" cy="62" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="18" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><circle cx="46" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(2 8) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(60 6) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(62 30) scale(1.3)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(0 30) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(12 64) scale(1.1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(54 62) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(30 -2) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(64 50) scale(0.9)" fill="#ffd95a"/></g></g><g class="gear">${blSkinPart('rear', g)}${BL_REAR(g)}</g><g class="body"><circle class="bd" cx="32" cy="34" r="24"/>${blSkinPart('body', g)}<circle cx="32" cy="34" r="24" fill="url(#${g})"/>
         <g class="eyes" data-fe="round"><circle class="eye" cx="24" cy="31" r="5.5"/><circle class="eye" cx="40" cy="31" r="5.5"/><circle class="pu" cx="25" cy="32" r="2.6"/><circle class="pu" cx="41" cy="32" r="2.6"/></g>
         <path class="xe" data-fe="dizzy" d="M20 27l8 8M28 27l-8 8M36 27l8 8M44 27l-8 8"/>
         <path class="m smile" data-fm="smile" d="M25 43q7 6 14 0"/><ellipse class="m open" data-fm="open" cx="32" cy="44" rx="4" ry="3.2"/><path class="m flat" data-fm="flat" d="M27 44h10"/><path class="m wavy" data-fm="wavy" d="M25 44q3-3 7 0t7 0"/>
-        <path class="fs" data-fe="happy" style="display:none" d="M18 33q6-7 12 0M34 33q6-7 12 0"/><path class="fs" data-fe="focus" style="display:none" d="M19 31h10M35 31h10"/><path class="fs" data-fe="sad" style="display:none" d="M18 35q6-5 12 0M34 35q6-5 12 0M17 26l8 2M47 26l-8 2"/><path class="fs" data-fe="sleepy" style="display:none" d="M18 32h12M34 32h12"/><path class="fs" data-fe="squint" style="display:none" d="M18 31l12-2M34 29l12 2"/><path class="fs" data-fe="worry" style="display:none" d="M17 24l9-3M47 24l-9-3"/><g data-fe="wide" style="display:none"><circle class="eye" cx="24" cy="31" r="7"/><circle class="eye" cx="40" cy="31" r="7"/><circle class="pu" cx="24" cy="32" r="3"/><circle class="pu" cx="40" cy="32" r="3"/></g><path class="fm" data-fm="grin" style="display:none" d="M24 41q8 10 16 0z"/><path class="fs" data-fm="frown" style="display:none" d="M25 47q7-6 14 0"/><circle class="pu" data-fm="o" style="display:none" cx="32" cy="44" r="2.4"/><path class="fs" data-fm="tiny" style="display:none" d="M29 44h6"/><path class="fs" data-fm="clench" style="display:none" d="M25 44h14M28 41v6M32 41v6M36 41v6"/><path class="sw" data-fx="sweat" style="display:none" d="M50 20q3 5 0 7q-3-2 0-7z"/><text class="zz" data-fx="zz" style="display:none" x="50" y="14">z</text><g class="spark" data-fx="spark">${star(8, 14, 1.3)}${star(56, 10, 1)}${star(58, 36, .8)}</g></g><g class="gear">${BL_GEAR(g)}</g></svg>`;
+        <path class="fs" data-fe="happy" style="display:none" d="M18 33q6-7 12 0M34 33q6-7 12 0"/><path class="fs" data-fe="focus" style="display:none" d="M19 31h10M35 31h10"/><path class="fs" data-fe="sad" style="display:none" d="M18 35q6-5 12 0M34 35q6-5 12 0M17 26l8 2M47 26l-8 2"/><path class="fs" data-fe="sleepy" style="display:none" d="M18 32h12M34 32h12"/><path class="fs" data-fe="squint" style="display:none" d="M18 31l12-2M34 29l12 2"/><path class="fs" data-fe="worry" style="display:none" d="M17 24l9-3M47 24l-9-3"/><g data-fe="wide" style="display:none"><circle class="eye" cx="24" cy="31" r="7"/><circle class="eye" cx="40" cy="31" r="7"/><circle class="pu" cx="24" cy="32" r="3"/><circle class="pu" cx="40" cy="32" r="3"/></g><path class="fm" data-fm="grin" style="display:none" d="M24 41q8 10 16 0z"/><path class="fs" data-fm="frown" style="display:none" d="M25 47q7-6 14 0"/><circle class="pu" data-fm="o" style="display:none" cx="32" cy="44" r="2.4"/><path class="fs" data-fm="tiny" style="display:none" d="M29 44h6"/><path class="fs" data-fm="clench" style="display:none" d="M25 44h14M28 41v6M32 41v6M36 41v6"/><path class="sw" data-fx="sweat" style="display:none" d="M50 20q3 5 0 7q-3-2 0-7z"/><text class="zz" data-fx="zz" style="display:none" x="50" y="14">z</text><g class="spark" data-fx="spark">${star(8, 14, 1.3)}${star(56, 10, 1)}${star(58, 36, .8)}</g></g><g class="gear">${blSkinPart('front', g)}${BL_GEAR(g)}</g></svg>`;
       return d;
     }
 
@@ -1691,7 +1857,7 @@
     let blLastOpen = '';
     function blOpenLine() {
       const h = new Date().getHours(), pool = h < 5 || h >= 22 ? BL_OPEN.night : h < 12 ? BL_OPEN.morning : h < 18 ? BL_OPEN.day : BL_OPEN.any;
-      const all = pool.concat(BL_OPEN.any), fresh = all.filter(x => x !== blLastOpen), line = pick(fresh.length ? fresh : all);
+      const all = pool.concat(BL_OPEN.any), sp = (BL_SKIN_SAY[blSkinKey()] || {}).open, from = sp && Math.random() < 0.7 ? sp : all, fresh = from.filter(x => x !== blLastOpen), line = pick(fresh.length ? fresh : from);
       blLastOpen = line; return line;
     }
     function set(m, text, hold) {
@@ -1699,7 +1865,7 @@
       mood = m; clearTimeout(tmr);
       [pb, fb].forEach(x => { x.className = 'ppv-ball m-' + m; blFace(x, m); });
       if (text != null) bub.textContent = fbub.textContent = text;
-      if (hold) tmr = setTimeout(() => { key = ''; set('idle', pick(L.idle)); }, hold);
+      if (hold) tmr = setTimeout(() => { key = ''; set('idle', blLine('idle', L.idle)); }, hold);
     }
     function pop() {
       if (!on || panel.style.display === 'block') return;
@@ -1719,15 +1885,15 @@
       else if (/^(Tagging|Analysing|Finding|Listening)/.test(text)) { k = 'tag'; lines = L.tag; }
       else if (/transcrib|whisper|lyrics/i.test(text)) { k = 'wh'; lines = L.wh; }
       else if (!/…|\d+%\s*$/.test(text)) {                         // "Ready", "Model not downloaded yet"... = nothing running
-        if (mood === 'work') { key = ''; set('idle', pick(L.idle)); }
-        else if (panel.style.display === 'block' && key !== 'panel') { key = 'panel'; set('idle', pick(L.panel)); }
+        if (mood === 'work') { key = ''; set('idle', blLine('idle', L.idle)); }
+        else if (panel.style.display === 'block' && key !== 'panel') { key = 'panel'; set('idle', blLine('panel', L.panel)); }
         return;
       }
       try { blEquip(blPropOfJob(k) || (m === 'err' ? 'phone' : null)); } catch (e) { console.error(e); }
       if (k === key) return;                                       // same phase, keep the current animation going
       key = k;
-      if (m === 'work') { set('work', pick(lines)); return; }
-      set(m, pick(lines), 6000); pop();
+      if (m === 'work') { set('work', blLine(k, lines)); return; }
+      set(m, blLine(k, lines), 6000); pop();
     }
 
     // ---------- Chat with Bloop: a tiny on-device language model (SmolLM2-135M-Instruct via transformers.js) ----------
@@ -1906,7 +2072,7 @@
     }
     const sysPrompt = () => {
       const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], c = t && loadTags()[t.dbId];
-      return "You are Bloop, a small bouncy ball who lives in a music player. You are friendly, playful, gentle and a little silly. Reply in one or two short, plain sentences. No lists, no markdown, no emoji. Only state music facts you are sure of. If you are not sure, say so. Only name songs, artists and tags that appear in LIBRARY DATA below. Never invent them. You cannot press buttons or change the player, so never say you did something in the app. If the user wants an action, tell them what to type, such as play something chill, or say help for the full list. The app can split songs into stems, tag songs by mood, genre, tempo and key, write lyrics and subtitles with Whisper, make smart playlists, and set an equaliser. You are not a doctor, lawyer or financial adviser, and not a counselor. If someone sounds distressed, be kind and suggest talking to someone they trust. Keep everything suitable for all ages. If asked about your favourites, answer in character as Bloop and have fun with it." +
+      return "You are Bloop, a small bouncy ball who lives in a music player." + blSkinNote() + " You are friendly, playful, gentle and a little silly. Reply in one or two short, plain sentences. No lists, no markdown, no emoji. Only state music facts you are sure of. If you are not sure, say so. Only name songs, artists and tags that appear in LIBRARY DATA below. Never invent them. You cannot press buttons or change the player, so never say you did something in the app. If the user wants an action, tell them what to type, such as play something chill, or say help for the full list. The app can split songs into stems, tag songs by mood, genre, tempo and key, write lyrics and subtitles with Whisper, make smart playlists, and set an equaliser. You are not a doctor, lawyer or financial adviser, and not a counselor. If someone sounds distressed, be kind and suggest talking to someone they trust. Keep everything suitable for all ages. If asked about your favourites, answer in character as Bloop and have fun with it." +
         (A && A.tracks().filter(x => !x.stem).length ? " The library has " + A.tracks().filter(x => !x.stem).length + " tracks, e.g. " + A.tracks().filter(x => !x.stem).slice(0, 5).map(x => x.title).join("; ") + "." : "") +
         (favSong() ? " Your favorite song is " + songLine(favSong()) + (favArtist() ? " and your favorite artist is " + favArtist() : "") + "." : "") +
         (t ? " Now playing: " + t.title + (c ? " (" + vibes(c).join(', ') + ")." : ".") : "");
@@ -3602,12 +3768,30 @@
       if (cur && !out.includes('shuffle on')) add('shuffle on');
       return out;
     }
+    const BL_SKIN_ALIAS = { orange: 'orange', pumpkin: 'pumpkin', basketball: 'basketball', 'basket ball': 'basketball', soccer: 'soccer', 'soccer ball': 'soccer', football: 'soccer', earth: 'earth', planet: 'earth', world: 'earth', cat: 'cat', kitty: 'cat', kitten: 'cat', bunny: 'bunny', rabbit: 'bunny', panda: 'panda', penguin: 'penguin', mint: 'mint', green: 'mint', sunset: 'sunset', midnight: 'midnight', night: 'midnight', gold: 'gold', golden: 'gold' };
+    const BL_SKIN_DEFAULT = /^(?:default|normal|original|plain|regular|reset|none|usual|bloopy|bloop)$/;
+    function blSkinSet(k) {
+      document.querySelectorAll('.ppv-ball').forEach(b => { if (k) b.dataset.skin = k; else delete b.dataset.skin; });
+      lsSet('ppvSkin', k || '');
+    }
+    // "skin cat", "become a pumpkin", "look like the earth", "default skin", "skins" (list)
+    function blSkinCmd(t) {
+      const x = String(t).toLowerCase().trim().replace(/[.!?]+$/, '');
+      if (/^(?:skins?|list skins|what skins(?: do you have)?|show (?:me )?(?:the )?skins)$/.test(x)) return blSay('Skins: ' + BL_SKIN_KEYS.map(k => BL_SKINS[k].name.toLowerCase()).join(', ') + '. Say skin and a name, or open Skins under the chat.');
+      const m = x.match(/^(?:skin|become|turn into|change into|look like|dress as|switch to)\s+(?:a |an |the |my )?(.+?)(?: skin)?$/) || x.match(/^(?:a |an |the )?(.+?) skin$/);
+      if (!m) return false;
+      const w = m[1].trim();
+      if (BL_SKIN_DEFAULT.test(w)) { blSkinSet(''); return blSay('Back to my usual self.'); }
+      const k = BL_SKIN_ALIAS[w]; if (!k) return false;
+      blSkinSet(k); return blSay(BL_SKINS[k].say);
+    }
     // ---------- Dressing Bloopy up: naming an item ("wizard", "party hat") puts it on, "take off the crown" takes it off. ----------
     const BL_ITEM = { wizard: ['wand', 'wizard'], 'wizard hat': ['wand', 'wizard'], wand: ['wand', 'wizard'], hat: ['wizard'], 'party hat': 'party', party: 'party', crown: 'crown', glasses: 'glasses', sunglasses: 'glasses', headphones: 'headphones', phone: 'phone', pencil: 'pencil', note: 'note', 'music note': 'note', timer: 'timer', stopwatch: 'timer', scissors: 'scissors' };
     const BL_ITEM_SAY = { wand: 'Wand out! Abracadabra.', wizard: 'Wizard hat on. Something magical is coming.', party: 'Party time! Hat on.', crown: 'Your majesty, the crown suits you.', glasses: 'Glasses on. Time to read the numbers.', headphones: 'Headphones on. Let the music in.', phone: 'Phone out. Technical mode.', pencil: 'Pencil ready. Let\u2019s write some words.', note: 'Music note in hand.', timer: 'Stopwatch on. Ticking.', scissors: 'Scissors ready. Careful, I cut stems.' };
     const blItem = w => BL_ITEM[String(w).toLowerCase().trim()] || null;
     // Puts on the named item, or takes it off. Returns true when it handled the text.
     function blDress(t) {
+      const skc = blSkinCmd(t); if (skc) return skc;
       const x = String(t).toLowerCase().trim().replace(/[.!?]+$/, '');
       let m = x.match(/^(?:put on|wear|equip|try on|use|bring out|pull out|show me|dress up in|get|add)\s+(?:the |my |a |an |your )?(.+?)(?: please)?$/) || x.match(/^(?:the |my |a |an |your )?(.+?)(?: please)?$/);
       const it = m && blItem(m[1]);
@@ -3640,9 +3824,9 @@
     ];
     function blTone(s) {
       const t = String(s);
-      if (t.includes('\n') || t.length > 120 || Math.random() > 0.4) return t;
-      const h = BL_QUIPS.find(([re]) => re.test(t));
-      return h ? t + ' ' + pick(h[1]) : t;
+      if (t.includes('\n') || t.length > 120 || Math.random() > (blSkinKey() ? 0.55 : 0.4)) return t;
+      const hi = BL_QUIPS.findIndex(([re]) => re.test(t));
+      return hi < 0 ? t : t + ' ' + pick(blTopic(BL_QUIP_TOPICS[hi], BL_QUIPS[hi][1]));
     }
     // ---------- Bloopy reacts to clicks and taps: a speech bubble over the page, his face changes, and poking him gets a different reaction each time. ----------
     const blReactCss = document.createElement('style');
@@ -3695,8 +3879,8 @@
     const blPokes = [];
     function blPoke(ball) {
       const now = Date.now(); blPokes.push(now); while (blPokes.length && now - blPokes[0] > 3500) blPokes.shift();
-      if (blPokes.length >= 5) { blPokes.length = 0; blFace(ball, 'err'); blSpeak(pick(BL_DIZZY), 'err', true); setTimeout(() => blFace(ball, 'idle'), 2200); return; }
-      blSpeak(blFresh(BL_POKE), 'greet');
+      if (blPokes.length >= 5) { blPokes.length = 0; blFace(ball, 'err'); blSpeak(blLine('dizzy', BL_DIZZY), 'err', true); setTimeout(() => blFace(ball, 'idle'), 2200); return; }
+      blSpeak(blFresh(blPool('poke', BL_POKE)), 'greet');
     }
     document.addEventListener('click', e => {
       if (Date.now() < blSuppress || !e.target || !e.target.closest) return;
@@ -3709,7 +3893,7 @@
         const kind = el.hasAttribute('data-sidebar-tab') ? 'tab' : el.matches('input[type=range]') ? 'slider' : el.matches('input[type=checkbox], label, select') ? 'toggle' : el.matches('button') ? 'button' : null;
         pool = kind ? BL_CLICK_GEN[kind] : null;
       }
-      if (pool && Math.random() < 0.6) blSpeak(blFresh(pool), 'excited');
+      if (pool && Math.random() < 0.6) blSpeak(blFresh(blPool('click', pool)), 'excited');
     }, true);
     // ---------- Named songs: questions about a song you name ("bpm of Hello", "tell me about Hello") are answered from its tags. ----------
     // Library tracks whose title appears as whole words in the text, longest title first, at most three.
@@ -3956,13 +4140,18 @@
     const lcWorn = () => ((typeof pb !== 'undefined' && pb && pb.dataset.props) || '').split(',').filter(Boolean);
     function lcDrawMenu() {
       lcMenuBtns.textContent = ''; lcMenuBar.textContent = '';
-      [['rec', 'Recommended'], ['acc', 'Accessories']].forEach(([k, label]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (lcMenu === k) b.className = 'on'; b.onclick = () => { lcMenu = lcMenu === k ? '' : k; lcDrawMenu(); }; lcMenuBtns.appendChild(b); });
-      const mk = (label, fn, on, ic) => { const b = document.createElement('button'); b.type = 'button'; if (ic) b.insertAdjacentHTML('beforeend', blIcon(ic)); b.append(label); if (on) b.className = 'on'; b.onclick = fn; lcMenuBar.appendChild(b); };
+      [['rec', 'Recommended'], ['acc', 'Accessories'], ['skin', 'Skins']].forEach(([k, label]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (lcMenu === k) b.className = 'on'; b.onclick = () => { lcMenu = lcMenu === k ? '' : k; lcDrawMenu(); }; lcMenuBtns.appendChild(b); });
+      const mk = (label, fn, on, ic) => { const b = document.createElement('button'); b.type = 'button'; if (ic) b.insertAdjacentHTML('beforeend', ic.charAt(0) === '<' ? ic : blIcon(ic)); b.append(label); if (on) b.className = 'on'; b.onclick = fn; lcMenuBar.appendChild(b); };
       if (lcMenu === 'rec') { lcChips(true); lcAll.forEach(([label, act]) => mk(label, () => { typeof act === 'function' ? act() : send(act); })); }
       if (lcMenu === 'acc') {
         const worn = lcWorn();
         LC_ACC.forEach(([label, name, ic]) => { const need = [].concat(blItem(name) || []), on = need.length && need.every(p => worn.includes(p)); mk(label, () => { blDress(on ? 'take off ' + name : name); lcDrawMenu(); }, on, ic); });
         mk('Take all off', () => { blDress('take off everything'); lcDrawMenu(); });
+      }
+      if (lcMenu === 'skin') {
+        const cur = lsGet('ppvSkin') || '';
+        mk('Default', () => { blSkinCmd('skin default'); lcDrawMenu(); }, !cur, blSkinIcon(''));
+        BL_SKIN_KEYS.forEach(k => mk(BL_SKINS[k].name, () => { blSkinCmd('skin ' + k); lcDrawMenu(); }, cur === k, blSkinIcon(k)));
       }
     }
     lcDrawMenu();
@@ -4070,15 +4259,15 @@
     return {
       react,
       chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain, memory: { get: memN, set: setMem, max: MEM_MAX } },
-      start() { key = ''; set('start', pick(L.start), 900); },
+      start() { key = ''; set('start', blLine('start', L.start), 900); },
       opened() {
         if (greeted || !on) return; greeted = true;
         const h = new Date().getHours(), hi = h < 5 ? 'Up late?' : h < 12 ? 'Good morning!' : h < 18 ? 'Hey there!' : 'Good evening!';
         let met = lsGet('ppvMascotMet'); lsSet('ppvMascotMet', '1');
-        set('greet', met ? hi + ' ' + pick(['Ready when you are.', 'What are we working on?', 'Got a song for me?'])
+        set('greet', met ? hi + ' ' + blLine('ready', ['Ready when you are.', 'What are we working on?', 'Got a song for me?'])
                          : blOpenLine() + " I split songs, tag them and write lyrics. Pick a track and tap a button!", 5000);
       },
-      tap() { if (mood === 'work') bub.textContent = fbub.textContent = pick(L.busy); else set('start', pick(L.tap), 2500); },
+      tap() { if (mood === 'work') bub.textContent = fbub.textContent = blLine('busy', L.busy); else set('start', blLine('tap', L.tap), 2500); },
       isOn: () => on,
       setOn(v) { on = !!v; lsSet('ppvMascot', on ? '1' : '0'); row.style.display = on ? 'flex' : 'none'; if (!on) fl.style.display = 'none'; else set('greet', 'Hi again!', 3000); },
       ball: pb
