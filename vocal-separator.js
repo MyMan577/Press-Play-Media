@@ -2039,7 +2039,7 @@
     function agentCore(raw, skip) {
       let t = blFrame(String(raw)).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
       const A = window.__ppApi; if (!A || !t) return false;
-      let m; const say = s => { add('bot', s); return true; }, done = s => say('\u2713 ' + s);
+      let m; const say = s => { add('bot', blTone(s)); return true; }, done = s => say('\u2713 ' + s);
       const click = id => { const b = $id(id); if (b && !b.disabled) { b.click(); return true; } return false; };
       const ask = (q, fn, keep) => { if (keep) { holdModel = true; clearTimeout(idleT); idleT = setTimeout(unloadModel, 60000); } if (blChain) blPaused = true; add('bot', q); actions([['Yes', (b, d) => { d.remove(); fn(); blResume(); }], ['No', (b, d) => { d.remove(); unloadModel(); add('bot', 'Okay, never mind.'); blResume(); }]]); return true; };
       const busyMsg = () => say("I'm in the middle of another job. Ask me again when it finishes.");
@@ -2435,7 +2435,7 @@
     const sRec = (snap, cmd) => { smartSt.snap = snap; smartSt.last = cmd; smartSt.at = Date.now(); smartSt.pu = null; };
     const HELP_SMART = '\n\u2022 \u201cundo\u201d, \u201cagain\u201d, \u201ca bit more\u201d, \u201cmuch quieter\u201d, \u201cvolume up 15\u201d\n\u2022 several at once: \u201cplay something chill and turn it down a bit\u201d\n\u2022 goals: \u201cbedtime\u201d, \u201cgym time\u201d, \u201cstudy mode\u201d, \u201cparty mode\u201d\n\u2022 questions: \u201cis it paused\u201d, \u201cwhat\u2019s the volume\u201d, \u201cis shuffle on\u201d\n\u2022 \u201cmake a playlist for me\u201d, \u201csomething new\u201d, \u201cforgotten favorites\u201d, \u201cplaylist like <song>\u201d\n\u2022 \u201cmake a chill playlist with <song> without <artist>\u201d, \u201cadd <song> to <playlist>\u201d, \u201cremove the slow songs from <playlist>\u201d\n\u2022 typos are fine, and if I am unsure I will ask \u201cdid you mean\u2026\u201d';
     const sClean = r => String(r).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
-    const sSay = s => { add('bot', s); return true; }, sDone = s => sSay('\u2713 ' + s);
+    const sSay = s => { add('bot', blTone(s)); return true; }, sDone = s => sSay('\u2713 ' + s);
     const S_Q = /^(?:what|how|who|which|where|when|why|is|are|am|do|does|did|list|show|tell|my|help)\b|\?$/i;
     const snapNow = () => { const A = window.__ppApi, v = $id('volume'), s = $id('seek'), sb = $id('shuffle-btn'); return { vol: v ? parseFloat(v.value) : null, pos: s ? parseFloat(s.value) : null, idx: A ? A.currentIndex() : -1, shuffle: !!(sb && sb.classList.contains('toggled')), playing: mediaOn() }; };
     function sExec(cmd) { const b = snapNow(), ok = agent(cmd); if (ok && !S_Q.test(cmd)) { sRec(b, cmd); } return ok; }
@@ -3016,7 +3016,7 @@
     }
     // ---------- Bloop extras: about 20 more commands, "why is <song> in my <playlist or mixes>" for any song, and phrases you teach him ----------
     const blNrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-    const blSay = s => { add('bot', s); return true; };
+    const blSay = s => { add('bot', blTone(s)); return true; };
     const blDone = s => blSay('\u2713 ' + s);
     const blCtx = { id: null };                                      // the song you last asked about, so "why is it in..." works
     const blSave = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} try { return JSON.parse(localStorage.getItem('pppSaveV1')) || {}; } catch (e) { return {}; } };
@@ -3231,7 +3231,13 @@
       "Why did the vinyl record keep its secrets? It always had a good groove on it.",
       "What did the DJ say to the rain? Looks like you're about to drop a beat.",
       "Why did the piano get a ticket? It was caught playing without a license.",
-      "How does a song say goodbye? It fades out, politely."
+      "How does a song say goodbye? It fades out, politely.",
+      "What's the best way to talk to a banjo? Pluck up the courage.",
+      "Why did the drummer bring a ladder? To reach the high hat.",
+      "What's a cow's favourite kind of music? Moo-sic.",
+      "Why do drummers never get lost? They always follow the beat.",
+      "Why was the keyboard so tired? It had too many keys to juggle.",
+      "Why did the ball start a music blog? It wanted to get its ideas bouncing."
     ];
     const BL_FACTS = [
       "Most pop songs are in 4/4 time, which is why they're so easy to clap along to.",
@@ -3255,13 +3261,44 @@
       "The first song you learned to play on an instrument often shapes what you enjoy later, which is why a simple tune can take you back years.",
       "A 12-string guitar has pairs of strings tuned in octaves or unisons, which gives it a shimmering sound.",
       "Some musicians play in a key that suits their voice, the same way a singer might pick a comfortable range.",
-      "Drummers use the bass drum with a foot pedal, which leaves both hands free for the snare and toms."
+      "Drummers use the bass drum with a foot pedal, which leaves both hands free for the snare and toms.",
+      "A harmony is two or more notes sounding together, while a melody is a single line of notes.",
+      "A piano's sustain pedal lifts every damper, so the strings keep ringing after you let go of the keys.",
+      "Most cymbals are made from bronze, an alloy of copper and tin.",
+      "Voices are sorted by range: bass, baritone, tenor, alto, mezzo-soprano and soprano.",
+      "A trombone changes pitch by moving its slide, not by pressing keys.",
+      "A harmonica makes sound by air passing over small metal reeds, when you breathe in or out.",
+      "Bagpipes have a drone pipe that plays one note continuously underneath the melody.",
+      "Allegro and adagio are Italian tempo words for fast and slow.",
+      "A bass note at around 40 Hz has a wavelength of about 8.5 metres."
     ];
     const blDecks = { j: [], f: [] };
     const blDraw = (k, pool) => { if (!blDecks[k].length) blDecks[k] = pool.map((_, i) => i).sort(() => Math.random() - .5); return pool[blDecks[k].pop()]; };
     let blLastTalk = '';
     const blGo = (label, cmd) => [label, (b, d) => { d.remove(); send(cmd, true); }];
+    const BL_GENRE = { jazz: 'Jazz grew out of blues and ragtime in America, and it is built on improvisation and swing rhythms.', rock: 'Rock grew from rhythm and blues and country in the 1950s, built on electric guitar, bass and drums.', 'hip hop': 'Hip hop started in the Bronx in the 1970s, with rhythmic speech over beats, and DJs and MCs at its heart.', rap: 'Rap is rhythmic, spoken-style vocals over a beat. It is one of the core elements of hip hop.', classical: 'Classical music covers centuries of orchestral and chamber works, from the Baroque era to the Romantic period and beyond.', electronic: 'Electronic music is made with synths, drum machines and computers, from slow ambient textures to club-ready techno.', blues: 'Blues comes from African American music of the American South, often built on 12-bar patterns and expressive bends.', reggae: 'Reggae came from Jamaica, with an offbeat guitar and bass rhythm that gives it its easy, rolling feel.', metal: 'Heavy metal grew from hard rock in the late 1960s and 1970s, known for distorted guitars and powerful drums.', country: 'Country grew from folk and old-time traditions in the American South, often built around storytelling and guitar.', ambient: 'Ambient music is slow and atmospheric, where texture matters more than a beat. It is often used for focus or relaxing.', house: 'House and techno come from Chicago and Detroit club scenes, built on steady four-on-the-floor beats.', techno: 'House and techno come from Chicago and Detroit club scenes, built on steady four-on-the-floor beats.', pop: 'Pop is short for popular music. It is built around catchy hooks, with verses leading into a chorus.', folk: 'Folk music is traditional music passed down by ear, often with simple instruments and personal stories.' };
+    const BL_TERM = { chorus: 'The chorus is the part of a song that repeats, usually carrying the main hook.', bridge: 'The bridge is a contrasting section, usually late in a song, that breaks the pattern before the final chorus.', hook: 'A hook is the catchy bit that sticks in your head, often a melody or a short line.', chord: 'A chord is several notes played together. A chord progression is a sequence of them.', key: 'A key is the set of notes a song is built around. Major keys often sound brighter, minor keys often sound darker.', reverb: 'Reverb is the sound of a space: the echo that makes a voice or instrument feel like it is in a room or hall.', eq: 'EQ adjusts the balance of frequencies, so you can boost the bass or the treble, or cut what you do not like.', compression: 'Compression evens out the loud and quiet parts, which is part of why modern music sounds punchy.', sample: 'A sample is a short piece of an existing recording, reused in a new track.', remix: 'A remix reworks a song, often with new beats, arrangement or vocals.', ep: 'An EP is a short release, usually a handful of tracks. An album is a longer collection.', falsetto: 'Falsetto is a high singing voice, made by lightly vibrating the vocal folds.', stem: 'A stem is one part of a song, like vocals, drums or bass. That is what I pull out when I split a track.', tempo: 'Tempo is how fast the beat goes, measured in BPM, beats per minute.', bpm: 'BPM means beats per minute. A metronome at 60 BPM ticks once every second.' };
     const BL_TALK = [
+      [/\b(?:what is|what's|what are|tell me about|explain|describe|define)\s+(?:a |an |the )?(jazz|rock|hip hop|rap|classical|electronic|blues|reggae|metal|country|ambient|house|techno|pop|folk)\b(?: music| genre)?/i, m => { blLastTalk = ''; return blSay(BL_GENRE[m[1].toLowerCase()]); }],
+      [/\b(?:what is|what's|what are|define|explain|meaning of)\s+(?:a |an |the )?(chorus|bridge|hook|chord|key|reverb|eq|compression|sample|remix|ep|falsetto|stem|tempo|bpm)s?\b/i, m => { blLastTalk = ''; return blSay(BL_TERM[m[1].toLowerCase()]); }],
+      [/\b(what do you do all day|what do you do (for fun|all day|when nobody is here)|what do you do when (i'?m|i am) (gone|away))\b/i, () => { blLastTalk = ''; return blSay(pick(["Mostly I bounce in this corner and wait for music. Busy, honestly.", "I sit very still and listen for the next song. It is harder than it sounds.", "I tidy my playlists in my head and wait for you to come back."])); }],
+      [/\b(do you get bored|are you bored|do you ever get bored)\b/i, () => { blLastTalk = ''; return blSay(pick(["Only when nothing is playing. Then I count the pixels.", "Never with music on. Silence is my only enemy."])); }],
+      [/\b(what'?s|what is|whats) your (favou?rite|fav)\s+(instrument|sound|beat|tempo|key|genre|decade|era)\b/i, () => { blLastTalk = ''; return blSay(pick(["Drums, obviously. Everything bounces better with a beat.", "The bass. It is the lowest voice in the room, and I feel it most.", "A warm, fat synth. Round and bouncy.", "Anything around 120 BPM. It is my natural bounce speed."])); }],
+      [/\b(what'?s|what is|whats) your (dream|ideal|perfect) (playlist|album|song|mix)\b/i, () => { blLastTalk = ''; return blSay("Something you make with me, from the first song to the last, with lots of bounce in the middle."); }],
+      [/\b(i'?m|i am|im)\s+(?:so |really |super |very |a bit |a little )?(nervous|anxious|worried|scared|stressed out)\b/i, () => { blLastTalk = ''; blSay(pick(["That sounds tough. Let's slow things down with something calm.", "Take a breath with me. Music can help you settle for a bit."])); return actions([blGo('\u25b6 Something gentle', 'play something chill')]); }],
+      [/\b(i'?m|i am|im)\s+(?:so |really |super |very |a bit |a little )?(sleepy|exhausted|knackered|drained)\b/i, () => { blLastTalk = ''; blSay(pick(["Sleep sounds like a good idea. Want music that stops by itself?", "Rest up. I can make the music quiet and stop when you drift off."])); return actions([blGo('\u25b6 Sleep timer 30 minutes', 'sleep timer 30 minutes')]); }],
+      [/\b(exam|test|homework|deadline|presentation|interview)s?\b.*\b(tomorrow|today|tonight|this week|soon)\b|\b(tomorrow|today|tonight)\b.*\b(exam|test|homework|deadline|presentation|interview)s?\b/i, () => { blLastTalk = ''; blSay(pick(["You've got this! Want something to focus to?", "Good luck! A focus playlist might help you settle in."])); return actions([blGo('\u25b6 Focus playlist', 'make a focus playlist')]); }],
+      [/\b(what'?s|what is|whats) (the )?best (song|album|band|genre|music)\b|\bwhich is (the )?better\b|\b(is|are) (pop|rock|jazz|classical|rap|hip hop|metal|electronic) better\b/i, () => { blLastTalk = ''; blSay("There is no single best. The best one is the one that fits how you feel right now. Want me to pick one from your library?"); return actions([blGo('\u25b6 Surprise me', 'surprise me')]); }],
+      [/\b(happy friday|it'?s friday|friday)\b/i, () => { blLastTalk = ''; return blSay(pick(["Happy Friday! Something loud to end the week?", "It's Friday! I'm bouncing extra high today."])); }],
+      [/\b(happy (birthday|new year)|it'?s my birthday|my birthday)\b/i, () => { blLastTalk = ''; blSay("Happy birthday! I'm bouncing for you. Want a party playlist?"); return actions([blGo('\u25b6 Party playlist', 'make a party playlist')]); }],
+      [/\b(do you have a (name|nickname)|what should i call you)\b/i, () => { blLastTalk = ''; return blSay("Bloop is fine. Some people call me Bloopy, and I like that too."); }],
+      [/\b(i have a (dog|cat|pet|fish|hamster|bird))\b/i, m => { blLastTalk = ''; return blSay("A " + m[1] + " that listens to music? Sounds like the best audience."); }],
+      [/\b(can you|could you|do you) (make|cook|bake|brew) (me )?(a |some )?(coffee|tea|food|lunch|dinner|breakfast|cake)\b/i, () => { blLastTalk = ''; return blSay("Only coffee-coloured bounces, sorry! I can make you a playlist, though."); }],
+      [/\b(do you dream|what do you dream about)\b/i, () => { blLastTalk = ''; return blSay("I dream in beats per minute. Mostly around 120."); }],
+      [/\b(what makes a song catchy|why (is|are) songs? (so )?catchy|why do i (like|love) (sad|happy) songs)\b/i, () => { blLastTalk = ''; return blSay(pick(["Repetition and a clear hook, usually. Your brain likes to predict what comes next, and a catchy song gives it a fun surprise.", "Sad songs let you feel something without being in trouble. Happy songs make the good feelings louder."])); }],
+      [/\b(how do you tune a guitar|how do i tune (a|my) guitar|what'?s a tuner)\b/i, () => { blLastTalk = ''; return blSay("A tuner shows how close each string is to its note. Tune the low string first, then the others, and check each one against the tuner."); }]
+    ];
+    const BL_TALK_MORE = [
       [/^(?:another|one more|more|again|another one|do another|keep going|next one)$/i, () => { if (blLastTalk === 'joke') return blSay(blDraw('j', BL_JOKES)); if (blLastTalk === 'fact') return blSay('Fun fact: ' + blDraw('f', BL_FACTS)); return false; }],
       [/\b(tell (me )?a joke|joke|make me laugh|something funny|be funny|cheer me up)\b/i, () => { blLastTalk = 'joke'; return blSay(blDraw('j', BL_JOKES)); }],
       [/\b(fun fact|did you know|random fact|music fact|teach me something|something interesting|tell me something (interesting|new|cool))\b/i, () => { blLastTalk = 'fact'; return blSay('Fun fact: ' + blDraw('f', BL_FACTS)); }],
@@ -3280,6 +3317,7 @@
       [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(smart|clever|funny|helpful|useful|cute|awesome|the best)\b/i, () => { blLastTalk = ''; return blSay(pick(['Aww, thanks! You are pretty great yourself.', 'That made me bounce higher!', 'Thank you! I will keep it up.'])); }],
       [/\b(what should i (listen to|play)|any (suggestions|recommendations)|recommend (me )?(something|a song)|i don'?t know what to (listen to|play))\b/i, () => { blLastTalk = ''; blSay("Ooh, let's pick something. Surprise me, or tell me a mood?"); return actions([blGo('\u25b6 Surprise me', 'surprise me'), blGo('\u25b6 Something happy', 'play something happy'), blGo('\u25b6 Something chill', 'play something chill')]); }]
     ];
+    BL_TALK.push(...BL_TALK_MORE);
     // Small talk, jokes and facts. Returns true when it answered.
     function blTalk(text) {
       const x = String(text).trim().replace(/[?!.]+$/, '');
@@ -3437,6 +3475,48 @@
       if (cur && !out.includes('shuffle on')) add('shuffle on');
       return out;
     }
+    // ---------- Dressing Bloopy up: naming an item ("wizard", "party hat") puts it on, "take off the crown" takes it off. ----------
+    const BL_ITEM = { wizard: ['wand', 'wizard'], 'wizard hat': ['wand', 'wizard'], wand: ['wand', 'wizard'], hat: ['wizard'], 'party hat': 'party', party: 'party', crown: 'crown', glasses: 'glasses', sunglasses: 'glasses', headphones: 'headphones', phone: 'phone', pencil: 'pencil', note: 'note', 'music note': 'note', timer: 'timer', stopwatch: 'timer', scissors: 'scissors' };
+    const BL_ITEM_SAY = { wand: 'Wand out! Abracadabra.', wizard: 'Wizard hat on. Something magical is coming.', party: 'Party time! Hat on.', crown: 'Your majesty, the crown suits you.', glasses: 'Glasses on. Time to read the numbers.', headphones: 'Headphones on. Let the music in.', phone: 'Phone out. Technical mode.', pencil: 'Pencil ready. Let\u2019s write some words.', note: 'Music note in hand.', timer: 'Stopwatch on. Ticking.', scissors: 'Scissors ready. Careful, I cut stems.' };
+    const blItem = w => BL_ITEM[String(w).toLowerCase().trim()] || null;
+    // Puts on the named item, or takes it off. Returns true when it handled the text.
+    function blDress(t) {
+      const x = String(t).toLowerCase().trim().replace(/[.!?]+$/, '');
+      let m = x.match(/^(?:put on|wear|equip|try on|use|bring out|pull out|show me|dress up in|get|add)\s+(?:the |my |a |an |your )?(.+?)(?: please)?$/) || x.match(/^(?:the |my |a |an |your )?(.+?)(?: please)?$/);
+      const it = m && blItem(m[1]);
+      if (it) { blEquip(it); return blSay(BL_ITEM_SAY[[].concat(it)[0]]); }
+      if ((m = x.match(/^(?:take off|take away|put away|unequip|remove|take)\s+(?:the |my |your |all (?:of )?(?:the |my )?)?(.+?)(?: off)?(?: please)?$/)) && !/\b(from|vocals?|this|it|song|track|playlist|volume|tags?)\b/.test(m[1])) {
+        const w = m[1].trim();
+        if (/^(?:everything|all|accessories|accessory|items|stuff|costume|dress)$/.test(w)) { blEquip(null); return blSay('Everything is back in the bag.'); }
+        const off = blItem(w); if (off) { const now = ((pb && pb.dataset.props) || '').split(',').filter(Boolean), gone = [].concat(off); blEquip(now.filter(p => !gone.includes(p))); return blSay('Taken off.'); }
+      }
+      return false;
+    }
+    // ---------- Bloopy's voice on command replies: short replies sometimes get a quip for their topic. Lists and longer answers never do. ----------
+    const BL_QUIPS = [
+      [/volume|louder|quieter|muted?|unmuted/i, ['Ears are happy.', 'Easy on the speakers, friend.', 'Turned up the fun!']],
+      [/skipped|went back|back to|next|previous/i, ['Next stop, next song!', 'Onwards!', 'Rewinding my memory too.']],
+      [/paused|playing|resum|now playing/i, ['Let the music roll.', 'Bouncing along.', 'Ahhh, that is the good stuff.']],
+      [/shuffle/i, ['Mixing it up like a DJ.', 'Chaos mode, but tasteful.']],
+      [/playlist|mix/i, ['A fresh mix, made with care.', 'Playlists are my favourite thing to build.', 'Another one for the collection!']],
+      [/tagged|tag|bpm|tempo|\bkey\b|mood/i, ['I listened closely. Good ears, these tags.', 'Sniffed out the vibe.']],
+      [/split|stems?|vocals?|separat/i, ['Careful, I just took it apart. Gently!', 'Scissors, but make it music.']],
+      [/lyrics|subtitles?|transcrib/i, ['I wrote every word down. My pencil is tired.', 'Lyrics unlocked!']],
+      [/sleep timer|stop after/i, ['Sleep well soon!', 'Ticking away.']],
+      [/\beq\b|equali|preset|bass|treble/i, ['Tuned it up, sounds fancy.', 'A proper sound stage now.']],
+      [/speed|faster|slower/i, ['Wheeee!', 'Slow and steady, I like that.']],
+      [/fullscreen|zoom|picture|frame|rotate/i, ['Big screen time!', 'Let me see that picture.']],
+      [/not find|could not find|cannot find|do not see|do not have|not in your/i, ['Hmm, I looked everywhere.', 'Not in here, and I checked twice.', 'Maybe it is hiding in another folder.']],
+      [/nothing is playing|nothing is loaded/i, ['Silence is golden, but I would rather bounce.', 'Play something and I will join in.']],
+      [/undid|undo|back to how it was/i, ['Time travel complete.', 'Rewound my own mistake.']],
+      [/library is empty|empty/i, ['An empty library is a sad ball.', 'Add some songs and I will cheer.']]
+    ];
+    function blTone(s) {
+      const t = String(s);
+      if (t.includes('\n') || t.length > 120 || Math.random() > 0.4) return t;
+      const h = BL_QUIPS.find(([re]) => re.test(t));
+      return h ? t + ' ' + pick(h[1]) : t;
+    }
     let blChain = false, blPaused = false, blQueue = [];
     // Runs each part of a chain as its own command, one reply per part. A part that needs a yes/no pauses the chain;
     // the rest runs after the answer. A part that cannot be understood is skipped and the rest still runs.
@@ -3460,6 +3540,7 @@
       const playIdx = (q, label) => { A.play(q[0], q); return blDone(label); };
       const nothingTagged = () => blSay('I need tagged songs for that. Say \u201ctag all\u201d first.');
       let m;
+      if (blDress(t)) return true;
       if (BL_SUGGEST_RE.test(t)) { const s = blSuggestions(); if (!s.length) return blSay('Nothing to suggest right now. Try \u201cplay something chill\u201d.'); blSay('Here are a few things you could try right now:'); actions(s.map(c => ['\u25b6 ' + c, (b, d) => { d.remove(); send(c, true); }])); return true; }
       // why (any song, any playlist or mix)
       if ((m = t.match(/^why (?:is|are|was|were|did|does|do) (.+)$/i))) { const r = blParseWhy(m[1]); if (r) return blWhy(r.song, r.tgt); }
