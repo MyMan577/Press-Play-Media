@@ -1538,6 +1538,9 @@
       .ppv-ball .m.open{fill:#1a1a22;stroke:none}
       .ppv-ball .xe{display:none;fill:none;stroke:#1a1a22;stroke-width:2.4;stroke-linecap:round}
       .ppv-ball .spark{display:none}.ppv-ball .spark path{fill:#ffd95a}
+      .ppv-ball .fs{fill:none;stroke:#1a1a22;stroke-width:2.4;stroke-linecap:round}.ppv-ball .fm{fill:#1a1a22}.ppv-ball .sw{fill:#9fd8ff;opacity:.9}.ppv-ball .zz{font:700 9px system-ui,sans-serif;fill:#e9e4ff}
+      .ppv-ball[data-face=talk] [data-fm=open]{animation:blMouth .28s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:center}.ppv-ball[data-face=sleep] .zz{animation:blZ 2.4s ease-in-out infinite}
+      @keyframes blMouth{from{transform:scaleY(.35)}to{transform:scaleY(1.25)}}@keyframes blZ{0%,100%{opacity:.2;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
       .m-idle .m.smile,.m-greet .m.smile,.m-start .m.open,.m-work .m.flat,.m-done .m.open,.m-err .m.wavy{display:block}
       .m-err .eyes{display:none}.m-err .xe{display:block}
       .m-done .spark{display:block;animation:ppvTw .6s ease-in-out infinite alternate}
@@ -1571,11 +1574,11 @@
       d.className = 'ppv-ball m-idle'; d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Bloop, the mascot');
       d.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="${g}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient></defs>
         <ellipse class="sh" cx="32" cy="60" rx="15" ry="3"/>
-        <g class="body"><circle class="bd" cx="32" cy="34" r="24"/><circle cx="32" cy="34" r="24" fill="url(#${g})"/>
-        <g class="eyes"><circle class="eye" cx="24" cy="31" r="5.5"/><circle class="eye" cx="40" cy="31" r="5.5"/><circle class="pu" cx="25" cy="32" r="2.6"/><circle class="pu" cx="41" cy="32" r="2.6"/></g>
-        <path class="xe" d="M20 27l8 8M28 27l-8 8M36 27l8 8M44 27l-8 8"/>
-        <path class="m smile" d="M25 43q7 6 14 0"/><ellipse class="m open" cx="32" cy="44" rx="4" ry="3.2"/><path class="m flat" d="M27 44h10"/><path class="m wavy" d="M25 44q3-3 7 0t7 0"/>
-        <g class="spark">${star(8, 14, 1.3)}${star(56, 10, 1)}${star(58, 36, .8)}</g></g></svg>`;
+        <g class="behind"><g class="prop" data-p="glass"><circle cx="52" cy="14" r="7" fill="#cfe9ff" stroke="#1a1a22" stroke-width="2.4"/><path d="M57 19l6 6" stroke="#1a1a22" stroke-width="3.2" stroke-linecap="round"/></g><g class="prop" data-p="phone"><rect x="50" y="6" width="11" height="18" rx="2.5" fill="#2b2c36" stroke="#1a1a22" stroke-width="1"/><rect x="52" y="9" width="7" height="11" rx="1" fill="#8fd3ff"/></g><g class="prop" data-p="headphones"><path d="M14 26q18-24 36 0" fill="none" stroke="#2b2c36" stroke-width="3" stroke-linecap="round"/><rect x="9" y="25" width="7" height="11" rx="3" fill="#2b2c36"/><rect x="48" y="25" width="7" height="11" rx="3" fill="#2b2c36"/></g><g class="prop" data-p="pencil"><path d="M50 22l10-12l4 4l-10 12l-6 2z" fill="#ffd95a" stroke="#1a1a22" stroke-width="1.2"/></g><g class="prop" data-p="note"><ellipse cx="52" cy="12" rx="3.5" ry="2.8" fill="#1a1a22"/><path d="M55.5 12V3" stroke="#1a1a22" stroke-width="1.8"/><path d="M55.5 3q4 2 5 6" fill="none" stroke="#1a1a22" stroke-width="1.8"/></g><g class="prop" data-p="timer"><circle cx="52" cy="14" r="7" fill="#fff" stroke="#1a1a22" stroke-width="2"/><path d="M52 14V10M52 14l3 2" stroke="#1a1a22" stroke-width="1.6" stroke-linecap="round"/><rect x="50" y="3" width="4" height="3" fill="#1a1a22"/></g><g class="prop" data-p="scissors"><circle cx="6" cy="44" r="3" fill="none" stroke="#1a1a22" stroke-width="1.6"/><circle cx="6" cy="54" r="3" fill="none" stroke="#1a1a22" stroke-width="1.6"/><path d="M8 42L18 52M8 56L18 46" stroke="#1a1a22" stroke-width="1.8" stroke-linecap="round"/></g><g class="prop" data-p="wand"><path d="M50 20L60 10" stroke="#1a1a22" stroke-width="2.4" stroke-linecap="round"/><path d="M61 4l1.5 3 3 1.5-3 1.5-1.5 3-1.5-3-3-1.5 3-1.5z" fill="#ffd95a"/></g><g class="prop" data-p="wizard"><path d="M32-8L47 16Q32 21 17 16Z" fill="#3b2a6b" stroke="#1a1a22" stroke-width="1.2"/><ellipse cx="32" cy="16" rx="18" ry="4" fill="#3b2a6b" stroke="#1a1a22" stroke-width="1.2"/><path d="M30 2l1 2.4 2.5.3-1.9 1.6.6 2.5-2.2-1.3-2.2 1.3.6-2.5-1.9-1.6 2.5-.3z" fill="#ffd95a"/></g><g class="prop" data-p="party"><path d="M32-10L43 16H21Z" fill="#ff7ab6" stroke="#1a1a22" stroke-width="1.2"/><path d="M27 6h10M24 11h16" stroke="#ffd95a" stroke-width="2"/><circle cx="32" cy="-10" r="3" fill="#ffd95a"/></g><g class="prop" data-p="crown"><path d="M17 16V6l7 6 8-9 8 9 7-6v10z" fill="#ffd95a" stroke="#1a1a22" stroke-width="1.2"/><circle cx="32" cy="10" r="1.6" fill="#ff7ab6"/></g><g class="burst"><circle cx="8" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="56" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="6" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="58" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="32" cy="62" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="18" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><circle cx="46" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(2 8) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(60 6) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(62 30) scale(1.3)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(0 30) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(12 64) scale(1.1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(54 62) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(30 -2) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(64 50) scale(0.9)" fill="#ffd95a"/></g></g><g class="body"><circle class="bd" cx="32" cy="34" r="24"/><circle cx="32" cy="34" r="24" fill="url(#${g})"/>
+        <g class="eyes" data-fe="round"><circle class="eye" cx="24" cy="31" r="5.5"/><circle class="eye" cx="40" cy="31" r="5.5"/><circle class="pu" cx="25" cy="32" r="2.6"/><circle class="pu" cx="41" cy="32" r="2.6"/></g>
+        <path class="xe" data-fe="dizzy" d="M20 27l8 8M28 27l-8 8M36 27l8 8M44 27l-8 8"/>
+        <path class="m smile" data-fm="smile" d="M25 43q7 6 14 0"/><ellipse class="m open" data-fm="open" cx="32" cy="44" rx="4" ry="3.2"/><path class="m flat" data-fm="flat" d="M27 44h10"/><path class="m wavy" data-fm="wavy" d="M25 44q3-3 7 0t7 0"/>
+        <path class="fs" data-fe="happy" style="display:none" d="M18 33q6-7 12 0M34 33q6-7 12 0"/><path class="fs" data-fe="focus" style="display:none" d="M19 31h10M35 31h10"/><path class="fs" data-fe="sad" style="display:none" d="M18 35q6-5 12 0M34 35q6-5 12 0M17 26l8 2M47 26l-8 2"/><path class="fs" data-fe="sleepy" style="display:none" d="M18 32h12M34 32h12"/><path class="fs" data-fe="squint" style="display:none" d="M18 31l12-2M34 29l12 2"/><path class="fs" data-fe="worry" style="display:none" d="M17 24l9-3M47 24l-9-3"/><g data-fe="wide" style="display:none"><circle class="eye" cx="24" cy="31" r="7"/><circle class="eye" cx="40" cy="31" r="7"/><circle class="pu" cx="24" cy="32" r="3"/><circle class="pu" cx="40" cy="32" r="3"/></g><path class="fm" data-fm="grin" style="display:none" d="M24 41q8 10 16 0z"/><path class="fs" data-fm="frown" style="display:none" d="M25 47q7-6 14 0"/><circle class="pu" data-fm="o" style="display:none" cx="32" cy="44" r="2.4"/><path class="fs" data-fm="tiny" style="display:none" d="M29 44h6"/><path class="fs" data-fm="clench" style="display:none" d="M25 44h14M28 41v6M32 41v6M36 41v6"/><path class="sw" data-fx="sweat" style="display:none" d="M50 20q3 5 0 7q-3-2 0-7z"/><text class="zz" data-fx="zz" style="display:none" x="50" y="14">z</text><g class="prop" data-p="glasses"><circle cx="24" cy="32" r="5" fill="#cfe9ff" fill-opacity=".6" stroke="#1a1a22" stroke-width="2"/><circle cx="40" cy="32" r="5" fill="#cfe9ff" fill-opacity=".6" stroke="#1a1a22" stroke-width="2"/><path d="M29 32h6" stroke="#1a1a22" stroke-width="2"/></g><g class="spark" data-fx="spark">${star(8, 14, 1.3)}${star(56, 10, 1)}${star(58, 36, .8)}</g></g></svg>`;
       return d;
     }
 
@@ -1589,24 +1592,39 @@
     fl.onclick = () => { fl.style.display = 'none'; panel.style.display = 'block'; };
 
     const L = {
-      start: ['On it!', "Let's go!", 'Rolling up my sleeves… well, my ball.', 'Here we go!'],
-      dl: ['Fetching the brains (one time only)…', 'Downloading my homework…', 'Grabbing the model, hang tight!'],
-      dec: ['Listening closely…', 'Giving the track a good listen…'],
-      sep: ['Pulling the song apart…', 'Teasing the vocals from the beat…', 'Sorting voice from band…'],
-      enc: ['Wrapping up the stems…', 'Packing it all up…'],
-      tag: ['Sniffing out the vibe…', 'Checking the tempo and key…', 'Tapping my foot to find the BPM…'],
-      wh: ['Writing down every word…', 'Listening for lyrics…'],
-      gen: ['Working on it…', 'Rolling along…'],
-      done: ['Ta-da!', 'All done!', 'Nailed it!', 'Fresh out of the oven!'],
-      err: ['Oops, I got dizzy.', 'Hmm, that did not work.', 'Uh-oh. Check the message in the panel.'],
-      idle: ['Ready for the next one!', 'What else can I do?', 'Got another song for me?'],
-      tap: ['Boing!', 'Hehe, that tickles!', "I'm Bloop!", 'Need stems? Lyrics? Tags?'],
+      start: ['On it!', "Let's go!", 'Rolling up my sleeves… well, my ball.', 'Here we go!', 'Bounce time!', 'Okay, I am on it!'],
+      dl: ['Fetching the brains (one time only)…', 'Downloading my homework…', 'Grabbing the model, hang tight!', 'Loading my brain, it will not take long!'],
+      dec: ['Listening closely…', 'Giving the track a good listen…', 'Reading the waveform like a map…'],
+      sep: ['Pulling the song apart…', 'Teasing the vocals from the beat…', 'Sorting voice from band…', 'Unmixing the mix, carefully…', 'Every drum hit gets its own place…'],
+      enc: ['Wrapping up the stems…', 'Packing it all up…', 'Putting each stem in its own box…'],
+      tag: ['Sniffing out the vibe…', 'Checking the tempo and key…', 'Tapping my foot to find the BPM…', 'Asking the tags how they feel…'],
+      wh: ['Writing down every word…', 'Listening for lyrics…', 'Catching every word, one line at a time…'],
+      gen: ['Working on it…', 'Rolling along…', 'Still bouncing on it…'],
+      done: ['Ta-da!', 'All done!', 'Nailed it!', 'Fresh out of the oven!', 'Tada! Your stems are ready.', 'Crisp as a fresh bounce!'],
+      err: ['Oops, I got dizzy.', 'Hmm, that did not work.', 'Uh-oh. Check the message in the panel.', 'That one slipped through my fingers.'],
+      idle: ['Ready for the next one!', 'What else can I do?', 'Got another song for me?', 'Psst, try saying "make a playlist"!', 'Want a joke? Just ask!', 'Still here, still bouncing.'],
+      panel: ['Stems menu! Pick a model and the tracks you want.', 'Vocals, drums, bass? Your call.', 'Tick the stems you want, then tap split.', 'Splitting is my favourite kind of surgery.', 'Heavier model, better split. Lighter model, faster split.', 'Pick a track first, then I can take it apart.'],
+      night: ['Still up? Tell me if you want something soft.', 'Late-night stems? Bold choice.', 'Shh, quiet hours. I can keep it low.'],
+      tap: ['Boing!', 'Hehe, that tickles!', "I'm Bloop!", 'Need stems? Lyrics? Tags?', 'Boing! Did you need something?', 'Hehe, do it again!'],
       busy: ['Busy rolling, one sec!', 'Almost there!', 'Working, working…']
     };
+    // ---------- Opening lines (chat box and first greeting). Picked by time of day, never the same line twice in a row. ----------
+    const BL_OPEN = {
+      any: ["Hey there! It's me, It's Bloopy! Ask me anything!", "Hi! Bloop here, bouncing in to help. What do you need?", "Yo! It's Bloop. Songs, stems, lyrics, playlists: pick one!", "Hello! I'm Bloop, and I'm ready when you are.", "Boing! Hi, it's Bloop. What are we listening to?", "Hey! Want to chat, or should I just play something?"],
+      morning: ["Good morning! It's Bloopy, ready for a new day of music!", "Morning! Bloop here. Coffee first, or a song first?"],
+      day: ["Hey there, it's Bloopy! How's your day going?", "Afternoon! Bloop here. Want something to keep you going?"],
+      night: ["Up late? It's me, Bloopy! Want something soft?", "Good evening! Bloop here. Tell me what you need, I'm all ears."]
+    };
+    let blLastOpen = '';
+    function blOpenLine() {
+      const h = new Date().getHours(), pool = h < 5 || h >= 22 ? BL_OPEN.night : h < 12 ? BL_OPEN.morning : h < 18 ? BL_OPEN.day : BL_OPEN.any;
+      const all = pool.concat(BL_OPEN.any), fresh = all.filter(x => x !== blLastOpen), line = pick(fresh.length ? fresh : all);
+      blLastOpen = line; return line;
+    }
     function set(m, text, hold) {
       if (!on) return;
       mood = m; clearTimeout(tmr);
-      [pb, fb].forEach(x => x.className = 'ppv-ball m-' + m);
+      [pb, fb].forEach(x => { x.className = 'ppv-ball m-' + m; blFace(x, m); });
       if (text != null) bub.textContent = fbub.textContent = text;
       if (hold) tmr = setTimeout(() => { key = ''; set('idle', pick(L.idle)); }, hold);
     }
@@ -1629,8 +1647,10 @@
       else if (/transcrib|whisper|lyrics/i.test(text)) { k = 'wh'; lines = L.wh; }
       else if (!/…|\d+%\s*$/.test(text)) {                         // "Ready", "Model not downloaded yet"... = nothing running
         if (mood === 'work') { key = ''; set('idle', pick(L.idle)); }
+        else if (panel.style.display === 'block' && key !== 'panel') { key = 'panel'; set('idle', pick(L.panel)); }
         return;
       }
+      try { blEquip(blPropOfJob(k) || (m === 'err' ? 'phone' : null)); } catch (e) { console.error(e); }
       if (k === key) return;                                       // same phase, keep the current animation going
       key = k;
       if (m === 'work') { set('work', pick(lines)); return; }
@@ -1669,15 +1689,16 @@
     cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Helper on your device. Free chat uses a tiny AI, so it can be wrong. Not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="send">Send</button></div>';
     document.body.append(cfab, cbox);
     const clist = cbox.querySelector('.ch-l'), cin = cbox.querySelector('input');
-    const cm = m => { cball.className = 'ppv-ball m-' + m; };
+    const cm = m => { cball.className = 'ppv-ball m-' + m; blFace(cball, m); };
     const scrollDown = () => { clist.scrollTop = clist.scrollHeight; };
-    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); return d; };
+    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); if (who === 'bot') blReact(text); return d; };
     const actions = btns => { const d = document.createElement('div'); d.className = 'ch-a'; btns.forEach(([t, fn]) => { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { fn(b, d); }; d.appendChild(b); }); clist.appendChild(d); scrollDown(); return d; };
     const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; };
     cfab.style.display = chatOn ? 'block' : 'none';
     cfab.onclick = () => {
-      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none'; if (open) delete cfab.dataset.unread;
-      if (open) { if (!clist.children.length) add('bot', pick(["Hi! I'm Bloop. Ask me about the app, or tell me how you're feeling.", "Hey! Want to chat about the app, or about your day?"])); cm('greet'); setTimeout(() => cm('idle'), 1300); cin.focus(); }
+      if (Date.now() < blSuppress) return;
+      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none'; if (open) { delete cfab.dataset.unread; blPlace(cbox, 'ppvBloopBox'); }
+      if (open) { if (!clist.children.length) add('bot', blOpenLine()); cm('greet'); setTimeout(() => cm('idle'), 1300); cin.focus(); }
     };
     cbox.addEventListener('click', e => {
       const a = e.target.closest && e.target.closest('[data-a]'); if (!a) return;
@@ -2751,7 +2772,7 @@
       if (!cand.length && !forced.length) throw new Error('Nothing in your library fits that. Tagging more tracks helps me match moods and styles.');
       const seeds = sp.kind === 'similar' ? sp.seeds : sp.kind === 'custom' ? inc : taste.anchors.map(a => a[0]), wts = sp.kind === 'similar' || sp.kind === 'custom' ? null : taste.anchors.map(a => a[1]);
       let emb = null; if (seeds.length && sp.kind !== 'redisc') { try { emb = await sEmbScores(seeds, wts); } catch (e) { console.warn(e); } }
-      if (sp.kind === 'similar' && !emb && sp.seeds.every(i => !F.get(i))) throw new Error('Tag \u201c' + tr[sp.seeds[0]].title + '\u201d first, so I can tell what it sounds like.');
+      if (sp.kind === 'similar' && !emb && sp.seeds.every(i => !F.get(i))) throw new Error('Tag \u201c' + (sp.seeds.length ? tr[sp.seeds[0]].title : 'that song') + '\u201d first, so I can tell what it sounds like.');
       let lo = 9, hi = -9; if (emb) cand.forEach(i => { const e = emb.get(i); if (e != null) { if (e < lo) lo = e; if (e > hi) hi = e; } }); const span = (hi - lo) || 1, R = new Map(), nPlay = i => taste.count.get(i) || 0;
       cand.forEach(i => {
         let r;
@@ -2778,7 +2799,7 @@
     }
     async function sMakePl(sp, note, again) {
       const A = window.__ppApi, r = await sBuild(sp), tr = A.tracks(), day = new Date().toLocaleDateString(undefined, { weekday: 'short' }), th = sp.theme ? sp.theme.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 28) : '';
-      const name = (sp.name || ({ foryou: '\u2728 For you \u00b7 ' + (th || day), discover: '\ud83e\udded Discover' + (th ? ' \u00b7 ' + th : ''), redisc: '\ud83d\udd70\ufe0f Forgotten favorites', similar: '\ud83d\udd17 Like ' + tr[sp.seeds[0]].title.slice(0, 26) + (sp.seeds.length > 1 && !sp.said.seed[0].startsWith('\u201c') ? '' : sp.seeds.length > 1 ? ' +' + (sp.seeds.length - 1) : ''), custom: '\ud83e\udd16 ' + (th || 'Custom mix') }[sp.kind])).slice(0, 60);
+      const name = (sp.name || ({ foryou: '\u2728 For you \u00b7 ' + (th || day), discover: '\ud83e\udded Discover' + (th ? ' \u00b7 ' + th : ''), redisc: '\ud83d\udd70\ufe0f Forgotten favorites', similar: '\ud83d\udd17 Like ' + (sp.seeds.length ? tr[sp.seeds[0]].title.slice(0, 26) : 'songs') + (sp.seeds.length > 1 && !(sp.said.seed[0] || '').startsWith('\u201c') ? '' : sp.seeds.length > 1 ? ' +' + (sp.seeds.length - 1) : ''), custom: '\ud83e\udd16 ' + (th || 'Custom mix') }[sp.kind])).slice(0, 60);
       const pl = A.createPlaylist(name); r.ids.forEach(id => A.addToPlaylist(id, pl.id)); pl.order = r.ids.slice(); pl.bloop = sp.kind; pl.bname = pl.name; pl.bat = Date.now();
       if (sp.kind === 'foryou' || sp.kind === 'discover' || sp.kind === 'redisc') A.playlists().filter(p => p.bloop === sp.kind && p.id !== pl.id && p.name === p.bname).sort((x, y) => (y.bat || 0) - (x.bat || 0)).slice(2).forEach(p => A.deletePlaylistQuiet(p.id));
       A.commitPlaylists();
@@ -3183,6 +3204,239 @@
       actions(list.map(c => ['\u25b6 ' + c, (b, d) => { d.remove(); sExec(c); }]).concat([['Neither', (b, d) => { d.remove(); add('bot', 'Okay. Tell me another way, or say \u201chelp\u201d.'); }]]));
       return true;
     }
+    // ---------- Bloop's personality: jokes, fun facts and small talk. Jokes and facts come from shuffled decks, so none repeats until all have been told. ----------
+    const BL_JOKES = [
+      "Why did the song go to therapy? It had too many issues with its bridge.",
+      "What do you call a fake noodle? An impasta.",
+      "Why don't pianos ever get lost? They always know their keys.",
+      "Why did the metronome go to school? To improve its timing.",
+      "How do you make a tissue dance? Put a little boogie in it.",
+      "What do you call a sheep with a musical talent? A baa-ritone.",
+      "Why did the saxophone bring a ladder? To reach the high notes.",
+      "Why do cows wear bells? Because their horns don't work.",
+      "What's a skeleton's favourite instrument? The trombone.",
+      "What kind of music do planets listen to? Nep-tunes.",
+      "I wrote a song about a tortilla. It was a bit flat, but it grew on me.",
+      "Why did the music teacher go to jail? She was caught with too many sharps.",
+      "What's the difference between a piano and a fish? You can tune a piano, but you can't tuna fish.",
+      "Why did the speaker go to bed early? It wanted some sound sleep.",
+      "Why did the trumpet player fail his exam? He couldn't work out how to blow it.",
+      "What did the bass guitar say to the violin? You're far too high-strung.",
+      "Why did the ball join a band? It was tired of being kicked around.",
+      "Why do balls never win music contests? They always get bounced in the first round.",
+      "I'd tell you a joke about my shape, but I'd roll away from it.",
+      "Why did the drummer break up with the bassist? Too much tension in the rhythm section.",
+      "Why was the guitar so calm? It had already been through a lot of strings attached.",
+      "What do you call a dinosaur that listens to music? A Tyrannosaurus Rex-ing.",
+      "Why did the vinyl record keep its secrets? It always had a good groove on it.",
+      "What did the DJ say to the rain? Looks like you're about to drop a beat.",
+      "Why did the piano get a ticket? It was caught playing without a license.",
+      "How does a song say goodbye? It fades out, politely."
+    ];
+    const BL_FACTS = [
+      "Most pop songs are in 4/4 time, which is why they're so easy to clap along to.",
+      "A standard piano has 88 keys: 52 white and 36 black.",
+      "Vinyl records usually play at 33 1/3 or 45 RPM.",
+      "Human hearing covers roughly 20 Hz to 20 kHz, and the top end fades with age.",
+      "Middle A is usually tuned to 440 Hz, which is the standard reference pitch for orchestras.",
+      "Sound travels about 343 metres per second through air at room temperature.",
+      "A standard guitar has six strings, tuned E, A, D, G, B, E from low to high.",
+      "A metronome at 60 BPM ticks once every second.",
+      "Many of the finest violins ever made came from Cremona, in Italy, in the 1600s and early 1700s.",
+      "The word piano is short for pianoforte, which means soft-loud, because the instrument could play quietly or loudly.",
+      "Beethoven kept composing for years after he began losing his hearing.",
+      "A song stuck in your head has a name of its own: an earworm.",
+      "Minor keys often sound sadder to listeners, although that's a tendency, not a rule.",
+      "The Doppler effect is why a siren sounds higher as it comes toward you and lower as it leaves.",
+      "Listening to music lights up many parts of the brain at once, including areas for movement and emotion.",
+      "Absolute pitch, the ability to name a note without a reference, is rare.",
+      "The hi-hat is played with a foot pedal as well as sticks.",
+      "A pure sine wave is the simplest sound there is: a single tone with no overtones.",
+      "The first song you learned to play on an instrument often shapes what you enjoy later, which is why a simple tune can take you back years.",
+      "A 12-string guitar has pairs of strings tuned in octaves or unisons, which gives it a shimmering sound.",
+      "Some musicians play in a key that suits their voice, the same way a singer might pick a comfortable range.",
+      "Drummers use the bass drum with a foot pedal, which leaves both hands free for the snare and toms."
+    ];
+    const blDecks = { j: [], f: [] };
+    const blDraw = (k, pool) => { if (!blDecks[k].length) blDecks[k] = pool.map((_, i) => i).sort(() => Math.random() - .5); return pool[blDecks[k].pop()]; };
+    let blLastTalk = '';
+    const blGo = (label, cmd) => [label, (b, d) => { d.remove(); send(cmd, true); }];
+    const BL_TALK = [
+      [/^(?:another|one more|more|again|another one|do another|keep going|next one)$/i, () => { if (blLastTalk === 'joke') return blSay(blDraw('j', BL_JOKES)); if (blLastTalk === 'fact') return blSay('Fun fact: ' + blDraw('f', BL_FACTS)); return false; }],
+      [/\b(tell (me )?a joke|joke|make me laugh|something funny|be funny|cheer me up)\b/i, () => { blLastTalk = 'joke'; return blSay(blDraw('j', BL_JOKES)); }],
+      [/\b(fun fact|did you know|random fact|music fact|teach me something|something interesting|tell me something (interesting|new|cool))\b/i, () => { blLastTalk = 'fact'; return blSay('Fun fact: ' + blDraw('f', BL_FACTS)); }],
+      [/\b(bored|this is boring|so boring)\b/i, () => { blLastTalk = ''; blSay(pick(["Bored? Let's fix that. I can make a surprise playlist, or find songs you've never played.", "Boredom is my favourite thing to fix. Want a surprise mix?", "Oh no! Let's shake things up. Pick one?"])); return actions([blGo('\u25b6 Surprise me', 'surprise me'), blGo('\u25b6 Songs I never played', 'play songs I have never played')]); }],
+      [/\b(i'?m|i am|i feel|feeling|im)\s+(?:so |really |super |very |kinda |a bit |a little )?(sad|down|lonely|low|tired|stressed|anxious|overwhelmed|upset|heartbroken|blue|worn out)\b/i, () => { blLastTalk = ''; blSay(pick(["I'm sorry you're feeling that way. Music can help a little, if you want some.", "That sounds rough. I'm only a little ball, but I can find something gentle for you.", "Hang in there. Want something soft to sit with for a while?"])); return actions([blGo('\u25b6 Something gentle', 'play something chill')]); }],
+      [/\b(i'?m|i am|i feel|feeling|im)\s+(?:so |really |super |very |pretty )?(happy|great|excited|amazing|awesome|pumped|hyped|fantastic)\b/i, () => { blLastTalk = ''; blSay(pick(["Yay! I'm bouncing already. Want something to match?", "That's great to hear! Let's keep it going.", "Love that energy!"])); return actions([blGo('\u25b6 Something happy', 'play something happy')]); }],
+      [/^(?:good )?(?:morning|good morning)\b/i, () => { blLastTalk = ''; return blSay(pick(['Good morning! Coffee first, or music first?', 'Morning! Want something bright to start the day?'])); }],
+      [/\b(good afternoon|good evening)\b/i, () => { blLastTalk = ''; return blSay(pick(['Good afternoon! How is your day going?', 'Good evening! Want something mellow for tonight?'])); }],
+      [/\bgood night\b|\bnight night\b/i, () => { blLastTalk = ''; blSay('Good night! Sleep well. Want the music to stop by itself?'); return actions([blGo('\u25b6 Sleep timer 30 minutes', 'sleep timer 30 minutes')]); }],
+      [/^(?:hi|hello|hey|yo|hiya|hey there|hi there|hello there|howdy)$/i, () => { blLastTalk = ''; return blSay(pick(['Hi! Ready for some music?', 'Hey you! What are we listening to today?', 'Hello, friend! Bouncing and ready.', 'Yo! Want a song, a joke, or a fun fact?'])); }],
+      [/^(?:thanks?|thank you|thx|ty|cheers)(?: so| very)?(?: much| a lot)?$/i, () => { blLastTalk = ''; return blSay(pick(["You're welcome! Bouncing with pleasure.", 'Anytime! That is what balls are for.', "No problem. I'd do a happy bounce if I could.", 'Glad I could help!'])); }],
+      [/\b(can you|could you|do you|will you|sing me|sing a|sing something|let'?s sing)\b.*\bsing\b|^sing\b/i, () => { blLastTalk = ''; blSay("I can only manage a very wobbly boing. Want me to play a song instead?"); return actions([blGo('\u25b6 Something happy', 'play something happy')]); }],
+      [/\b(do you have feelings|do you feel|are you happy|are you sad|are you lonely|do you like me)\b/i, () => { blLastTalk = ''; return blSay(pick(["I don't feel things the way you do, but I do bounce when the beat is good. That counts, right?", "Honestly? I'm a ball in a music player. I'm happiest when there's music playing."])); }],
+      [/\bmeaning of life\b/i, () => { blLastTalk = ''; return blSay(pick(['42, obviously. Or maybe the perfect chorus.', 'The answer is 42. The question is probably "what should I play next?"'])); }],
+      [/\b(who (made|created|built|coded) you)\b/i, () => { blLastTalk = ''; return blSay("A developer put me in this player. I'm just the bouncy ball in the corner, and I'm proud of it."); }],
+      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(smart|clever|funny|helpful|useful|cute|awesome|the best)\b/i, () => { blLastTalk = ''; return blSay(pick(['Aww, thanks! You are pretty great yourself.', 'That made me bounce higher!', 'Thank you! I will keep it up.'])); }],
+      [/\b(what should i (listen to|play)|any (suggestions|recommendations)|recommend (me )?(something|a song)|i don'?t know what to (listen to|play))\b/i, () => { blLastTalk = ''; blSay("Ooh, let's pick something. Surprise me, or tell me a mood?"); return actions([blGo('\u25b6 Surprise me', 'surprise me'), blGo('\u25b6 Something happy', 'play something happy'), blGo('\u25b6 Something chill', 'play something chill')]); }]
+    ];
+    // Small talk, jokes and facts. Returns true when it answered.
+    function blTalk(text) {
+      const x = String(text).trim().replace(/[?!.]+$/, '');
+      for (const [re, fn] of BL_TALK) { const m = x.match(re); if (m && fn(m, x) !== false) return true; }
+      return false;
+    }
+    // ---------- Bloopy marks: a small Bloopy badge on every AI feature (labels, sections and buttons). Tap it to open the chat with a short explanation. ----------
+    const blMarkCss = document.createElement('style');
+    blMarkCss.textContent = '.bl-mark{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:1px 7px 1px 5px;border-radius:10px;background:rgba(124,92,255,.18);color:#b9a8ff;font-size:11px;font-weight:600;cursor:pointer;vertical-align:middle;white-space:nowrap}.bl-mark i,.bl-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#7c5cff;flex:none}.bl-dot{margin-left:4px;vertical-align:middle;cursor:pointer}';
+    document.head.appendChild(blMarkCss);
+    const BL_AI_TIP = {
+      tagging: "AI tagging: I listen to each track and note its mood, genre, tempo and key. Tags stay on this device. Say \u201ctag all\u201d to tag your whole library.",
+      smart: "Smart features use those tags, plus your listening history, to build playlists. Try \u201cmake a playlist for when I'm stressed\u201d.",
+      lyrics: "Lyrics and subtitles: Whisper writes the words from the audio, on your device. Songs get synced lyrics, videos get subtitles.",
+      moods: "Mood models are a few small extra files that sharpen the mood tags. They download once, and you can switch them off here.",
+      mixes: "Auto mixes update as you listen: For You, Ones You May Like and Your Pattern. Songs you add yourself are never touched.",
+      assistant: "I'm the helper in the corner. I play music, make playlists and answer questions about the app. The chat brain is optional and downloads once.",
+      stems: "Stems: I pull a song apart into vocals, drums, bass and the rest, on your device. Pick a model, tick the stems you want, then tap split.",
+      bgtag: "Background tagging tags your songs while the app is idle, so your moods and smart playlists get better over time.",
+      eq: "Auto EQ picks an equaliser preset for each song from its genre tags. You can still change it for any track."
+    };
+    const BL_AI_RULES = [[/mood model/i, 'moods'], [/background tagging/i, 'bgtag'], [/auto ?eq/i, 'eq'], [/auto mix|for you|live mix/i, 'mixes'], [/lyric|subtitle|whisper|caption/i, 'lyrics'], [/smart|playlist/i, 'smart'], [/tagging|library tools|\btags?\b/i, 'tagging'], [/assistant|chat brain|bloop/i, 'assistant'], [/stem|split/i, 'stems']];
+    const BL_AI_BTN = { 'ppv-btn': 'stems', 'ppv-go': 'stems', 'ppv-tag': 'tagging', 'ppv-wgo': 'lyrics', 'subtitle-btn': 'lyrics', 'ppv-simgo': 'smart', 'ppv-surpnow': 'smart', 'ppv-eqall': 'eq' };
+    function blAiTip(key) { cbox.style.display = 'flex'; if (!clist.children.length) add('bot', blOpenLine()); add('bot', BL_AI_TIP[key]); cin.focus(); }
+    function blAiMark() {
+      const mk = (el, key) => {
+        if (!el || el.dataset.blMark || el.closest('#ppv-chat')) return; el.dataset.blMark = key;
+        const s = document.createElement('span'); s.className = 'bl-mark'; s.innerHTML = '<i></i>Bloopy'; s.title = 'Ask Bloopy about this';
+        s.onclick = e => { e.preventDefault(); e.stopPropagation(); blAiTip(key); }; el.appendChild(s);
+      };
+      document.querySelectorAll('details > summary').forEach(sm => { const k = BL_AI_RULES.find(([re]) => re.test(sm.textContent)); if (k) mk(sm, k[1]); });
+      document.querySelectorAll('label').forEach(lb => { const k = BL_AI_RULES.find(([re]) => re.test(lb.textContent)); if (k) mk(lb, k[1]); });
+      Object.keys(BL_AI_BTN).forEach(id => {
+        const b = document.getElementById(id); if (!b || b.dataset.blMark || b.closest('#ppv-chat')) return;
+        b.dataset.blMark = BL_AI_BTN[id]; const d = document.createElement('i'); d.className = 'bl-dot'; d.title = 'Ask Bloopy about this';
+        d.onclick = e => { e.preventDefault(); e.stopPropagation(); blAiTip(BL_AI_BTN[id]); }; b.appendChild(d);
+      });
+    }
+    blAiMark(); setInterval(blAiMark, 2000);
+    // ---------- Draggable Bloopy: drag the floating ball or the chat box anywhere on screen. Bloopy strains while you pull him and springs back when you let go. ----------
+    const blDragCss = document.createElement('style');
+    blDragCss.textContent = '@keyframes blStrain{0%,100%{transform:scale(1.1,.9)}50%{transform:scale(.9,1.1)}}@keyframes blSnap{0%{transform:scale(1.25,.75)}40%{transform:scale(.85,1.15)}70%{transform:scale(1.05,.95)}100%{transform:scale(1)}}#ppv-cfab.bl-strain{animation:blStrain .16s ease-in-out infinite}#ppv-cfab.bl-snap{animation:blSnap .45s ease-out}#ppv-chat.bl-strain .ch-h{box-shadow:0 0 0 2px #7c5cff inset}#ppv-cfab,#ppv-chat .ch-h{touch-action:none;cursor:grab}#ppv-cfab.bl-strain,#ppv-chat.bl-strain .ch-h{cursor:grabbing}';
+    document.head.appendChild(blDragCss);
+    let blSuppress = 0;                                              // a drag must not also count as a tap on the ball
+    const blPosGet = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } };
+    const blPosSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+    const blClamp = (x, y, w, h) => ({ x: Math.max(4, Math.min(innerWidth - w - 4, x)), y: Math.max(4, Math.min(innerHeight - h - 4, y)) });
+    function blMove(el, x, y) { const r = el.getBoundingClientRect(), c = blClamp(x, y, r.width, r.height); el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; return c; }
+    function blPlace(el, key) { const p = blPosGet(key); if (p) blMove(el, p.x, p.y); }
+    // handle: the part you grab; el: what moves; key: where its position is saved
+    function blDrag(el, handle, key) {
+      let sx, sy, ox, oy, moved = false, on = false;
+      const move = e => {
+        if (!on) return; const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; el.classList.remove('bl-snap'); el.classList.add('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'strain'); }
+        blMove(el, ox + dx, oy + dy);
+      };
+      const end = () => {
+        if (!on) return; on = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end);
+        el.classList.remove('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'idle');
+        if (moved) { el.classList.add('bl-snap'); setTimeout(() => el.classList.remove('bl-snap'), 500); const r = el.getBoundingClientRect(); blPosSet(key, { x: r.left, y: r.top }); blSuppress = Date.now() + 300; }
+      };
+      handle.addEventListener('pointerdown', e => {
+        if (e.button > 0) return; const r = el.getBoundingClientRect(); on = true; moved = false; sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+        if (el.id === 'ppv-chat') el.style.width = r.width + 'px';
+        window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+      });
+    }
+    blPlace(cfab, 'ppvBloopBall');
+    blDrag(cfab, cfab, 'ppvBloopBall');
+    blDrag(cbox, cbox.querySelector('.ch-h'), 'ppvBloopBox');
+    addEventListener('resize', () => { blPlace(cfab, 'ppvBloopBall'); if (cbox.style.display === 'flex') blPlace(cbox, 'ppvBloopBox'); });
+    // ---------- Bloopy's face: each state (mood, working, straining, talking) picks the eyes, mouth and extras to show. ----------
+    function blFace(el, face) {
+      if (!el) return;
+      const h = new Date().getHours(); if (face === 'idle' && (h >= 22 || h < 5)) face = 'sleep';
+      const F = { idle: ['round', 'smile'], greet: ['happy', 'grin'], start: ['happy', 'open'], work: ['focus', 'flat'], think: ['round', 'o'], gen: ['round', 'o'], tag: ['round', 'o'], wh: ['round', 'o'], dl: ['round', 'o'], dec: ['round', 'o'], busy: ['focus', 'flat'], enc: ['focus', 'flat'],
+        done: ['happy', 'grin', 'spark'], err: ['dizzy', 'wavy'], worry: ['round', 'worry', 'wavy', 'sweat'], sad: ['sad', 'frown', 'sweat'], sleep: ['sleepy', 'tiny', 'zz'], bored: ['sleepy', 'flat'], excited: ['wide', 'grin'], tap: ['wide', 'open'], talk: ['round', 'open'], sep: ['squint', 'clench', 'sweat'], strain: ['squint', 'clench', 'sweat'] };
+      const f = F[face] || F.idle; el.dataset.face = face;
+      el.querySelectorAll('[data-fe],[data-fm],[data-fx]').forEach(n => { const v = n.dataset.fe || n.dataset.fm || n.dataset.fx; n.style.display = f.includes(v) ? 'inline' : 'none'; });
+    }
+    // What the chat says sets his expression for a few seconds, then he goes back to idle
+    function blReact(text) {
+      if (!cball) return; const s = String(text); let f = null;
+      if (/\b(sorry|couldn'?t|could not|cannot|can'?t|oops|not sure|did not work|didn'?t work|slipped)\b/i.test(s)) f = 'worry';
+      else if (/\b(sad|rough|hang in there|gentle|lonely|feel(ing)? down)\b/i.test(s)) f = 'sad';
+      else if (/\b(joke|funny|laugh|fun fact|ta-da|tada|ha)\b/i.test(s)) f = 'excited';
+      else if (/\b(bored|boring|shake things up)\b/i.test(s)) f = 'bored';
+      else if (/\b(good night|sleep well|sleep timer|quiet hours)\b/i.test(s)) f = 'sleep';
+      else if (/^\u2713|\b(learned|made|added|saved|all done)\b/i.test(s)) f = 'done';
+      else if (/\b(love|great|thanks|yay|awesome|happy|bounce|nice)\b/i.test(s)) f = 'greet';
+      if (!f) return;
+      blFace(cball, f); clearTimeout(blReact.t); blReact.t = setTimeout(() => blFace(cball, 'idle'), 4000);
+    }
+    // ---------- Bloopy's props: a magnifying glass, phone, headphones and more. Equipping flies the item onto him; unequipping flies it off. ----------
+    const blPropCss = document.createElement('style');
+    blPropCss.textContent = '.ppv-ball .prop{opacity:0;transform-box:fill-box;transform-origin:center;--fx:0px;--fy:14px}.ppv-ball .prop[data-p=glass],.ppv-ball .prop[data-p=phone],.ppv-ball .prop[data-p=pencil],.ppv-ball .prop[data-p=note],.ppv-ball .prop[data-p=timer],.ppv-ball .prop[data-p=wand]{--fx:-14px;--fy:8px}.ppv-ball .prop[data-p=scissors]{--fx:14px;--fy:-4px}.ppv-ball .prop[data-p=glasses]{--fx:0px;--fy:0px}.ppv-ball .prop.on{opacity:1;animation:blPull .6s cubic-bezier(.2,1.4,.4,1) both}.ppv-ball .prop.off{animation:blPush .35s ease-in both}@keyframes blPull{0%{opacity:0;transform:translate(var(--fx),var(--fy)) scale(.5)}15%{opacity:1}65%{transform:translate(0,-2px) scale(1.06)}100%{opacity:1;transform:none}}@keyframes blPush{0%{opacity:1;transform:none}100%{opacity:0;transform:translate(var(--fx),var(--fy)) scale(.5)}}.ppv-ball .burst{opacity:0}.ppv-ball .burst.go{animation:blBurst 1s ease-out both}@keyframes blBurst{0%{opacity:0;transform:scale(.4)}25%{opacity:1;transform:scale(1.05)}100%{opacity:0;transform:scale(1.45) rotate(25deg)}}.ppv-ball.bl-eq .body{animation:ppvHop .5s ease-out 1}';
+    document.head.appendChild(blPropCss);
+    let blEqT = 0;
+    // Which item fits a message or a task
+    function blPropFor(s) {
+      const x = String(s).toLowerCase();
+      if (/\b(surprise|random|sparkle|magic|wizard)\b/.test(x)) return ['wand', 'wizard'];
+      if (/\b(party|celebrate|birthday|hooray|tada|ta-da)\b/.test(x)) return 'party';
+      if (/\b(top|most played|favou?rite|best|number one|#1)\b/.test(x)) return 'crown';
+      if (/\b(stats?|numbers?|summary|details?|analysis|portfolio|listening|recap)\b/.test(x)) return 'glasses';
+      if (/\b(lyrics?|subtitles?|captions?|whisper|transcrib\w*)\b/.test(x)) return 'pencil';
+      if (/\b(split|stems?|karaoke|vocals?|instrumental|separate|isolate)\b/.test(x)) return 'scissors';
+      if (/\b(sleep|timer|stop after|wake)\b/.test(x)) return 'timer';
+      if (/\b(playlists?|mix|mixes|mixtape)\b/.test(x)) return 'note';
+      if (/\b(settings?|eq|equali[sz]er|speed|download\w*|model|errors?|bugs?|fix|technical|install\w*|storage|cache|memory|option\w*)\b/.test(x)) return 'phone';
+      if (/\b(find|search|look up|where is|what is|who is|info\w*|tell me about|tag|tags|analy[sz]e|bpm|tempo|key|genre\w*|stats?|how many|library|mood\w*)\b/.test(x)) return 'glass';
+      if (/\b(play|pause|skip|next|previous|volume|louder|quieter|shuffle|repeat|seek|rewind|forward|mute|music|song|track|listen\w*|fullscreen|zoom)\b/.test(x)) return 'headphones';
+      return null;
+    }
+    // What the splitting / tagging / lyrics jobs hold
+    function blPropOfJob(k) { return ({ sep: 'scissors', enc: 'scissors', wh: 'pencil', tag: 'glass', dec: 'glass', dl: 'phone', err: 'phone' })[k] || null; }
+    // Equip items (one name, or a list). Anything not in the list goes back in. It all goes back off after a few quiet seconds.
+    function blBurst(b) { const g = b.querySelector('.burst'); if (!g) return; g.classList.remove('go'); void g.getBoundingClientRect(); g.classList.add('go'); setTimeout(() => g.classList.remove('go'), 1100); }
+    function blEquip(want) {
+      clearTimeout(blEqT);
+      const W = want ? [].concat(want).filter(Boolean) : [];
+      if (W.length) blEqT = setTimeout(() => blEquip(null), 6000);
+      [pb, fb, cball].forEach(b => {
+        if (!b) return;
+        const cur = (b.dataset.props || '').split(',').filter(Boolean);
+        if (!cur.length && !W.length) return;
+        cur.filter(p => !W.includes(p)).forEach(p => { const o = b.querySelector('.prop[data-p="' + p + '"]'); if (o) { o.classList.remove('on'); o.classList.add('off'); } });
+        const add = W.filter(p => !cur.includes(p));
+        add.forEach(p => { const n = b.querySelector('.prop[data-p="' + p + '"]'); if (n) { n.classList.remove('off'); n.classList.add('on'); } if (p === 'wizard') blBurst(b); });
+        b.dataset.props = W.join(',');
+        if (add.length) { b.classList.remove('bl-eq'); void b.offsetWidth; b.classList.add('bl-eq'); setTimeout(() => b.classList.remove('bl-eq'), 600); }
+      });
+    }
+    // ---------- Recommended actions: up to five things to try, chosen from what is happening right now (not the full list). ----------
+    const BL_SUGGEST_RE = /^(?:what (?:can|could|should) i (?:do|say|try|ask)(?: now| here| next| with this(?: song| track)?)?|what (?:else )?(?:can|should) i (?:do|try)|suggest(?: me)?(?: something| a command| an action| an option| some commands)?|recommend(?: me)? (?:an? )?(?:action|command|option)s?|recommended (?:actions?|commands?|options?)|any (?:ideas|suggestions)(?: for (?:what|commands?|something to do))?|what are my options|what can you do (?:now|here|with this))$/i;
+    function blSuggestions() {
+      const A = window.__ppApi, tr = A.tracks(), ci = A.currentIndex(), cur = ci >= 0 ? tr[ci] : null, tg = loadTags(), real = sReal(), out = [];
+      const add = c => { if (!out.includes(c) && out.length < 5) out.push(c); };
+      const untagged = real.filter(i => !tg[tr[i].dbId]).length, pls = blPls().filter(p => !p.liveKey);
+      if (!cur) {
+        add('play something chill'); add('surprise me');
+        if (pls.length) add('play my ' + pls[0].name + ' playlist');
+        add('library stats');
+        if (!pls.length) add('make a chill playlist');
+      } else if (cur.kind === 'video') {
+        add('fullscreen'); add('picture in picture'); add('zoom in'); add('frame forward'); add('speed 1.5x');
+      } else if (!tg[cur.dbId]) {
+        add('tag this song'); add('split this song'); add('get the lyrics');
+      } else {
+        add('more like this'); add('split this song'); add('what mood is this'); add('get the lyrics');
+        if (pls.length) add('add this to ' + pls[0].name);
+      }
+      if (cur && untagged > 0) add('tag all');
+      if (cur && !out.includes('shuffle on')) add('shuffle on');
+      return out;
+    }
     let blChain = false, blPaused = false, blQueue = [];
     // Runs each part of a chain as its own command, one reply per part. A part that needs a yes/no pauses the chain;
     // the rest runs after the answer. A part that cannot be understood is skipped and the rest still runs.
@@ -3198,7 +3452,7 @@
       } finally { blChain = was; }
     }
     function blResume() { const q = blQueue; blQueue = []; if (q.length) blRunChain(q); }
-    const HELP_MORE = '\n\u2022 \u201cwhy is <song> in my <playlist>\u201d, \u201cwhy is <song> in my mixes\u201d, \u201cwhy is it in my for you\u201d\n\u2022 \u201cteach yourself \u201cchill out\u201d means \u201cplay something chill\u201d\u201d, \u201cwhen I say play * vibes, play something *\u201d, \u201cforget chill out\u201d, \u201cwhat have you learned\u201d\n\u2022 \u201cwhich playlists is this in\u201d, \u201cwhich song is in the most playlists\u201d, \u201cduplicate playlist Gym as Gym 2\u201d, \u201cempty playlist Old\u201d\n\u2022 \u201cplay my top 10 songs\u201d, \u201cplay songs I have never played\u201d, \u201chow many songs have I never played\u201d\n\u2022 \u201cplay the last song I added\u201d, \u201cplay the first song I added\u201d\n\u2022 \u201chow much did I listen yesterday\u201d, \u201chow much in the last 7 days\u201d\n\u2022 \u201cwhat genres do I have\u201d, \u201cmost common moods\u201d, \u201caverage tempo\u201d, \u201cmost common key\u201d, \u201chow many songs are untagged\u201d\n\u2022 \u201cwhat time is it\u201d, \u201cwhat is today\u2019s date\u201d, \u201cflip a coin\u201d, \u201croll a d20\u201d, \u201cpick a number from 1 to 50\u201d\n\u2022 Put several together with commas or \u201cthen\u201d, for any commands: \u201csplit <song>, play <song> then raise volume\u201d. Bloop answers each one in its own message, and pauses to ask when something needs a yes or no.';
+    const HELP_MORE = '\n\u2022 \u201cwhy is <song> in my <playlist>\u201d, \u201cwhy is <song> in my mixes\u201d, \u201cwhy is it in my for you\u201d\n\u2022 \u201cteach yourself \u201cchill out\u201d means \u201cplay something chill\u201d\u201d, \u201cwhen I say play * vibes, play something *\u201d, \u201cforget chill out\u201d, \u201cwhat have you learned\u201d\n\u2022 \u201cwhich playlists is this in\u201d, \u201cwhich song is in the most playlists\u201d, \u201cduplicate playlist Gym as Gym 2\u201d, \u201cempty playlist Old\u201d\n\u2022 \u201cplay my top 10 songs\u201d, \u201cplay songs I have never played\u201d, \u201chow many songs have I never played\u201d\n\u2022 \u201cplay the last song I added\u201d, \u201cplay the first song I added\u201d\n\u2022 \u201chow much did I listen yesterday\u201d, \u201chow much in the last 7 days\u201d\n\u2022 \u201cwhat genres do I have\u201d, \u201cmost common moods\u201d, \u201caverage tempo\u201d, \u201cmost common key\u201d, \u201chow many songs are untagged\u201d\n\u2022 \u201cwhat time is it\u201d, \u201cwhat is today\u2019s date\u201d, \u201cflip a coin\u201d, \u201croll a d20\u201d, \u201cpick a number from 1 to 50\u201d\n\u2022 \u201cwhat can I do now?\u201d, \u201csuggest something\u201d: five things to try for what is playing right now\n\u2022 Put several together with commas or \u201cthen\u201d, for any commands: \u201csplit <song>, play <song> then raise volume\u201d. Bloop answers each one in its own message, and pauses to ask when something needs a yes or no.';
     // The extra commands. Returns true when it handled the text.
     function blExtra(t) {
       const A = window.__ppApi, tr = A.tracks(), ids = sReal(), cu = A.currentIndex();
@@ -3206,6 +3460,7 @@
       const playIdx = (q, label) => { A.play(q[0], q); return blDone(label); };
       const nothingTagged = () => blSay('I need tagged songs for that. Say \u201ctag all\u201d first.');
       let m;
+      if (BL_SUGGEST_RE.test(t)) { const s = blSuggestions(); if (!s.length) return blSay('Nothing to suggest right now. Try \u201cplay something chill\u201d.'); blSay('Here are a few things you could try right now:'); actions(s.map(c => ['\u25b6 ' + c, (b, d) => { d.remove(); send(c, true); }])); return true; }
       // why (any song, any playlist or mix)
       if ((m = t.match(/^why (?:is|are|was|were|did|does|do) (.+)$/i))) { const r = blParseWhy(m[1]); if (r) return blWhy(r.song, r.tgt); }
       // teach / forget / list his commands
@@ -3468,10 +3723,12 @@
     async function send(raw, noEcho) {
       const text = String(raw || '').trim().slice(0, 400); if (!text || chatBusy) return;
       if (!noEcho) add('me', text);
+      try { blEquip(blPropFor(text)); } catch (e) { console.error(e); }
       if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
       try { if (roleplay(text)) return; } catch (e) { console.error(e); }
       if (agentOn()) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
       try { if (tagTalk(text)) return; } catch (e) { console.error(e); }
+      try { if (blTalk(text)) return; } catch (e) { console.error(e); }
       const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
       if (agentOn()) { try { if (routeIntent(text)) return; } catch (e) { console.error(e); } }
       if (!brainOn()) { fallbackReply(text); return; }
@@ -3507,7 +3764,7 @@
         const h = new Date().getHours(), hi = h < 5 ? 'Up late?' : h < 12 ? 'Good morning!' : h < 18 ? 'Hey there!' : 'Good evening!';
         let met = lsGet('ppvMascotMet'); lsSet('ppvMascotMet', '1');
         set('greet', met ? hi + ' ' + pick(['Ready when you are.', 'What are we working on?', 'Got a song for me?'])
-                         : hi + " I'm Bloop. I split songs, tag them and write lyrics. Pick a track and tap a button!", 5000);
+                         : blOpenLine() + " I split songs, tag them and write lyrics. Pick a track and tap a button!", 5000);
       },
       tap() { if (mood === 'work') bub.textContent = fbub.textContent = pick(L.busy); else set('start', pick(L.tap), 2500); },
       isOn: () => on,
