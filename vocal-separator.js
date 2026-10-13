@@ -3356,7 +3356,40 @@
         d.onclick = e => { e.preventDefault(); e.stopPropagation(); blAiTip(BL_AI_BTN[id]); }; b.appendChild(d);
       });
     }
-    blAiMark(); setInterval(blAiMark, 2000);
+    // Bloopy sits once at the top of each AI area, like the stems menu. No dots or badges on buttons and labels.
+    const blTopCss = document.createElement('style');
+    blTopCss.textContent = '.bl-top{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:3;background:#1b1c20;padding:6px 10px;margin-bottom:6px}.bl-top .ppv-ball{width:40px;height:40px;flex:none;cursor:pointer}.bl-top .ppv-bub{font-size:12px;line-height:1.35;opacity:.9}';
+    document.head.appendChild(blTopCss);
+    // Where Bloopy sits: a panel by id ('id'), an element by selector ('q'), or a collapsible section by its title ('sum').
+    const BL_TOP = [
+      ['id', 'sidebar-pane-playlist', 'tagging', 'Library: AI tagging and smart playlists live here. Tap me to learn more.'],
+      ['id', 'sidebar-pane-settings', 'assistant', 'Settings: the AI features switch on and off here. Tap me for the details.'],
+      ['id', 'subtitle-dropdown', 'lyrics', 'Captions: I can write subtitles for a video with Whisper, on this device. Tap me for more.'],
+      ['q', '#extras-panel .pp-pane[data-pp="ly"]', 'lyrics', 'Lyrics: Whisper writes the words for a song, and they line up with the music. Tap me for more.'],
+      ['sum', /lyrics|subtitles|whisper/i, 'lyrics', 'Lyrics and subtitles: Whisper writes the words from the audio, on this device. Tap me for details.'],
+      ['sum', /ai tagging|library tools/i, 'tagging', 'Tagging: I listen to each track and note its mood, genre, tempo and key. Tap me to learn more.'],
+      ['sum', /background tagging/i, 'bgtag', 'Background tagging: I tag songs while the app is idle, so smart playlists get sharper over time.'],
+      ['sum', /smart features/i, 'smart', 'Smart features: I build playlists from your tags and listening. Ask me for an idea.']
+    ];
+    function blTopRows() {
+      BL_TOP.forEach(([kind, where, key, line]) => {
+        let found = [];
+        if (kind === 'id') { const e = document.getElementById(where); if (e) found = [e]; }
+        else if (kind === 'q') { const e = document.querySelector(where); if (e) found = [e]; }
+        else found = [...document.querySelectorAll('details > summary')].filter(sm => where.test(sm.textContent));
+        found.forEach(el => {
+          const host = kind === 'sum' ? el.parentElement : el;
+          if (!host || host.querySelector(':scope > .bl-top')) return;
+          const r = document.createElement('div'); r.className = 'bl-top';
+          const bl = ball(); bl.title = 'Ask Bloopy'; bl.onclick = () => blAiTip(key);
+          const bub = document.createElement('div'); bub.className = 'ppv-bub'; bub.textContent = line;
+          r.append(bl, bub);
+          if (kind === 'sum') el.after(r); else host.prepend(r);
+        });
+      });
+    }
+    document.querySelectorAll('.bl-mark,.bl-dot').forEach(e => e.remove());
+    blTopRows(); setInterval(blTopRows, 2000);
     // ---------- Draggable Bloopy: drag the floating ball or the chat box anywhere on screen. Bloopy strains while you pull him and springs back when you let go. ----------
     const blDragCss = document.createElement('style');
     blDragCss.textContent = '@keyframes blStrain{0%,100%{transform:scale(1.1,.9)}50%{transform:scale(.9,1.1)}}@keyframes blSnap{0%{transform:scale(1.25,.75)}40%{transform:scale(.85,1.15)}70%{transform:scale(1.05,.95)}100%{transform:scale(1)}}#ppv-cfab.bl-strain{animation:blStrain .16s ease-in-out infinite}#ppv-cfab.bl-snap{animation:blSnap .45s ease-out}#ppv-chat.bl-strain .ch-h{box-shadow:0 0 0 2px #7c5cff inset}#ppv-cfab,#ppv-chat .ch-h{touch-action:none;cursor:grab}#ppv-cfab.bl-strain,#ppv-chat.bl-strain .ch-h{cursor:grabbing}';
@@ -3517,6 +3550,73 @@
       const h = BL_QUIPS.find(([re]) => re.test(t));
       return h ? t + ' ' + pick(h[1]) : t;
     }
+    // ---------- Bloopy reacts to clicks and taps: a speech bubble over the page, his face changes, and poking him gets a different reaction each time. ----------
+    const blReactCss = document.createElement('style');
+    blReactCss.textContent = '#bl-react{position:fixed;left:50%;bottom:100px;transform:translate(-50%,8px);opacity:0;transition:opacity .25s,transform .25s;background:#23242a;color:#eee;border:1px solid #444;border-radius:12px;padding:7px 12px;font:13px system-ui,sans-serif;z-index:99990;pointer-events:none;max-width:86vw;text-align:center;box-shadow:0 6px 18px #0008}#bl-react.show{opacity:1;transform:translate(-50%,0)}';
+    document.head.appendChild(blReactCss);
+    let blBubble = null, blSpeakT = 0, blFaceT = 0, blLastSpeak = 0, blLastLine = '';
+    const BL_CLICK = {
+      'play-btn': ['Play, pause, play. I never get tired of that button.', 'Ooh, the big button! Something is about to happen.', 'Pressed play. Bounce engaged.'],
+      'next-btn': ['Next song! Bye bye, last one.', 'Skipping ahead. Very brave.', 'Next! I hope you like the next one.'],
+      'prev-btn': ['Back we go! Time travel is my favourite.', 'Previous song. A little nostalgia never hurt.'],
+      'shuffle-btn': ['Shuffle on! Let the chaos begin.', 'Shuffle toggled. Your playlists will never be the same twice.'],
+      'repeat-btn': ['Again, again! Round and round we go.', 'Repeat mode. I like a song I can hear twice.'],
+      'volume': ['Volume slider! Careful, my ears are sensitive.', 'Sliding the sound. Nice and steady.'],
+      'seek': ['Scrubbing through! Wheeee.', 'Jumping around the song like a bouncing ball.'],
+      'eq-btn': ['Equaliser! Let me bring out the bass.', 'Tuning the sound. Very professional.'],
+      'speed-btn': ['Speed menu! Gotta go fast.', 'Speedy choices.'],
+      'sleep-btn': ['Sleep timer? Good plan. I will nap too.', 'Tucking the music in.'],
+      'fx-btn': ['Effects! Ooh, shiny.', 'Effects menu. Let\u2019s get fancy.'],
+      'subtitle-btn': ['Captions! I can read along with you.', 'Subtitles on the menu. Good call.'],
+      'menu-btn': ['Menu! The big list of things.', 'Opening the menu. What are we after?'],
+      'pip-btn': ['Picture in picture! Tiny screen, big fun.'],
+      'rotate-btn': ['Rotating! Wheee, I feel a bit dizzy.', 'Turning the picture around. Careful now.'],
+      'ppv-go': ['Splitting now. Scissors out!', 'Here we go, pulling the song apart.'],
+      'ppv-tag': ['Tagging! Sniffing out the vibe.', 'Listening carefully. Good tags take a moment.'],
+      'ppv-wgo': ['Lyrics! Pencil ready.', 'Writing down every word.'],
+      'ppv-simgo': ['Finding songs that sound alike. Good hunt!'],
+      'ppv-surpnow': ['Surprise! I love a good surprise.'],
+      'ppv-eqall': ['Auto EQ on all tagged tracks. Very tidy.'],
+      'ppv-del': ['Deleting the model. Bye bye, big file.'],
+      'ppv-heads': ['Mood models again? I will be right here.']
+    };
+    const BL_CLICK_GEN = {
+      button: ['Click! Nice.', 'Ooh, pressed it.', 'Button pressed. Bouncing approves.', 'Good click.', 'Tap, tap. I felt that.', 'Done, whatever that was!'],
+      toggle: ['Switched! Flip, flip.', 'On or off, I trust you.', 'Toggle time!', 'Clicky click. Nice switch.', 'That one changes things, huh?'],
+      tab: ['A new tab! Let\u2019s see what\u2019s in here.', 'Switching panes. Looking around.', 'Tab hop!', 'Ooh, a new room.'],
+      slider: ['Sliding! Nice and smooth.', 'Watch the numbers move.', 'Slide, slide.']
+    };
+    const BL_POKE = ['Boing!', 'Hehe, that tickles!', 'Hey! I was bouncing.', 'Poke me again and I will wobble.', 'That is my nose... I think?', 'Okay, okay, I am awake!', 'Stop poking, I am trying to think!', 'You really like me, huh?'];
+    const BL_DIZZY = ['Whoa, I am so dizzy!', 'The room is spinning. Give me a second.', 'Okay, that is enough poking for now!'];
+    const blFresh = pool => { const fresh = pool.filter(x => x !== blLastLine); const l = pick(fresh.length ? fresh : pool); blLastLine = l; return l; };
+    // A speech bubble over the page. Quick repeats are skipped unless forced (dizzy).
+    function blSpeak(line, face, force) {
+      if (!force && Date.now() - blLastSpeak < 1200) return;
+      blLastSpeak = Date.now();
+      if (!blBubble) { blBubble = document.createElement('div'); blBubble.id = 'bl-react'; document.body.appendChild(blBubble); }
+      blBubble.textContent = line; blBubble.classList.add('show');
+      clearTimeout(blSpeakT); blSpeakT = setTimeout(() => blBubble.classList.remove('show'), 2600);
+      if (face) { [fb, cball].forEach(b => blFace(b, face)); clearTimeout(blFaceT); blFaceT = setTimeout(() => [fb, cball].forEach(b => blFace(b, 'idle')), 1800); }
+    }
+    const blPokes = [];
+    function blPoke(ball) {
+      const now = Date.now(); blPokes.push(now); while (blPokes.length && now - blPokes[0] > 3500) blPokes.shift();
+      if (blPokes.length >= 5) { blPokes.length = 0; blFace(ball, 'err'); blSpeak(pick(BL_DIZZY), 'err', true); setTimeout(() => blFace(ball, 'idle'), 2200); return; }
+      blSpeak(blFresh(BL_POKE), 'greet');
+    }
+    document.addEventListener('click', e => {
+      if (Date.now() < blSuppress || !e.target || !e.target.closest) return;
+      const ball = e.target.closest('.ppv-ball');
+      if (ball) { if (ball !== pb) blPoke(ball); return; }
+      const el = e.target.closest('button, input, label, select, [data-sidebar-tab]');
+      if (!el || el.closest('#ppv-chat, #bl-react')) return;
+      let pool = el.id && BL_CLICK[el.id] ? BL_CLICK[el.id] : null;
+      if (!pool) {
+        const kind = el.hasAttribute('data-sidebar-tab') ? 'tab' : el.matches('input[type=range]') ? 'slider' : el.matches('input[type=checkbox], label, select') ? 'toggle' : el.matches('button') ? 'button' : null;
+        pool = kind ? BL_CLICK_GEN[kind] : null;
+      }
+      if (pool && Math.random() < 0.6) blSpeak(blFresh(pool), 'excited');
+    }, true);
     let blChain = false, blPaused = false, blQueue = [];
     // Runs each part of a chain as its own command, one reply per part. A part that needs a yes/no pauses the chain;
     // the rest runs after the answer. A part that cannot be understood is skipped and the rest still runs.
