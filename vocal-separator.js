@@ -1577,8 +1577,11 @@
     // ---------- Chat with Bloop: a tiny on-device language model (SmolLM2-135M-Instruct via transformers.js) ----------
     // Off by default. App questions and crisis messages are answered from fixed text (no model needed, always reliable);
     // everything else goes to the small model. Chat is kept in memory only.
-    const CHAT_MODEL = 'onnx-community/SmolLM2-135M-Instruct';
+    const CHAT_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
     let pendingJob = null, holdModel = false, idleT = 0, chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [];
+    // How many past exchanges (your message + Bloop's reply) he remembers during a chat. 0 = none. More memory = slower and more RAM on a tiny model.
+    const MEM_MAX = 8, memN = () => { const v = parseInt(lsGet('ppvMem'), 10); return isNaN(v) ? 2 : Math.max(0, Math.min(MEM_MAX, v)); };
+    const setMem = v => { v = Math.max(0, Math.min(MEM_MAX, parseInt(v, 10) || 0)); lsSet('ppvMem', String(v)); hist = memN() ? hist.slice(-2 * memN()) : []; return v; };
     const cstyle = document.createElement('style');
     cstyle.textContent = `
       #ppv-cfab{position:fixed;left:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:99997;display:none;filter:drop-shadow(0 4px 10px #0007)}
@@ -1628,6 +1631,19 @@
       [/^\s*(thanks?|thank you|thx|ty|cheers)\W*$/i, "You're welcome!"],
       [/^\s*(ok(ay)?|cool|nice|great|good|lol|haha|k|yes|yeah|no|nope)\W*$/i, 'Okay! Want me to play something, or tell me how your day is going?'],
       [/^\s*(bye|goodbye|good ?night|see you|cya)\W*$/i, 'Bye! Take care.'],
+      [/^\s*(how are you|how'?s it going|how are you doing|how do you feel|what'?s up|wassup|whats up)\W*$/i, ["I'm doing great, I'm a ball in a music player. How about you?", "Rolling along nicely! How are you?", "Pretty bouncy today. How are you feeling?"]],
+      [/\b(tell (me )?a joke|joke|make me laugh|something funny)\b/i, ["Why did the song go to therapy? It had too many issues with its bridge.", "What's a ball's favorite music? Anything with a good bounce.", "Why was the musician arrested? She got caught with the notes.", "I'd tell you a joke about a drum, but it might be a bit flat. Wait, that's a different instrument."]],
+      [/\b(fun fact|did you know|tell me something|random fact|music fact)\b/i, ["Fun fact: a song's tempo is measured in BPM, and most pop songs sit between 100 and 130.", "Fun fact: the human brain tends to remember songs from your teenage years better than almost any other music.", "Fun fact: a vocal-free version of a song is called an instrumental, and a karaoke track is usually one with the lead vocal removed.", "Fun fact: music at about 60 BPM is often used to help people relax, because it is close to a resting heartbeat."]],
+      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(cute|nice|great|awesome|cool|the best|amazing|funny|smart|sweet)\b|\b(i (like|love) you|good (bot|ball|job))\b/i, ["Aww, thank you! That made my day.", "You're sweet! Back at you.", "Thanks! I'm just a little ball, but I'm glad to help."]],
+      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(dumb|stupid|useless|bad|annoying|terrible|trash)\b|\b(i hate you|shut up)\b/i, ["Sorry about that. I'm a very small bot and I miss things. Tell me what you wanted and I'll try again.", "Fair enough, I'm still learning. Say \u201chelp\u201d and I'll show what I can do for sure."]],
+      [/\b(favou?rite (song|music|band|artist|genre)|what music do you like|what do you listen to)\b/i, ["I like anything with a good beat, but I can't really hear it. I just bounce along. What's yours?", "I'm a ball, so probably anything with bounce. What's your favorite?"]],
+      [/\b(are you (real|human|alive|a (person|robot|bot))|are you ai)\b/i, "I'm Bloop, a little bot mascot in this player. Not a person, not alive, just a ball that likes music."],
+      [/\b(how old are you|where (do you|are you) (live|from)|do you (sleep|eat))\b/i, "I live inside this player, so I'm exactly as old as the page you opened. No sleeping or eating, just bouncing."],
+      [/\b(i'?m|i am) (bored|so bored)\b|\bwhat should i (do|listen to|play)\b/i, ["Want me to play something upbeat? Just say \u201cplay something fun\u201d. Or tell me your mood and I'll pick for it.", "How about a mood playlist? Tell me how you feel and I'll find something from your tagged tracks."]],
+      [/\b(good (morning|evening|night)|gn|gm)\b/i, ["Good one to you too! Want some music to go with it?", "Hey! Hope it's a good one."]],
+      [/\b(what('?s| is) (the )?(time|date)|what time is it|what day is it)\b/i, () => new Date().toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })],
+      [/\b(sorry|my bad|oops)\b/i, ["No worries at all!", "It's all good."]],
+      [/^\s*(help|\?|commands|what can i (say|ask))\W*$/i, "You can ask me to play a mood (\u201cI'm tired\u201d, \u201cplay something happy\u201d), make playlists, tag tracks, split stems, get lyrics, or control the player. You can also ask for a joke or a fun fact."],
       [/\b(stems?|karaoke|separat\w*|split (a |the |this |my )?(song|track|music)|vocal remov\w*)/i, 'Stems: play a track, open the Stems button, pick what to keep, then tap "Split current track". The pieces go to "Split tracks" in the library selector instead of All tracks. In that panel you can also make a playlist or a section for each split song.'],
       [/\bsurprise/i, 'Surprise playlists get put together from your tags while you are away. Turn them on under "Background tagging & surprise playlists" in the Library tab. When one shows up, tap Play to hear it, or Keep so it is not replaced later.'],
       [/\b(smart playlists?|auto(matic)? playlists?|make a playlist)/i, 'Smart playlists live in the Library tab under "AI tagging & smart playlists". Tick the ones you want and tap Create / update. They are real playlists and keep updating as tracks get tagged.'],
@@ -1677,7 +1693,9 @@
         const pcb = p => { if (p && p.status === 'progress' && p.file) say('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); };
         try { gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: gpuOn ? 'fp16' : 'q8', device: gpuOn ? 'webgpu' : 'wasm', progress_callback: pcb }); }   // q4 is too lossy for a 135M model: it prints garbage
         catch (e) { if (!gpuOn) throw e; gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: 'q8', device: 'wasm', progress_callback: pcb }); }
-        lsSet('ppvChatDl', '1'); return gen;
+        lsSet('ppvChatDl', '1');
+        try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}   // ask the browser not to evict the downloaded model files
+        return gen;
       })();
       try { return await genP; } finally { genP = null; }
     }
@@ -1798,7 +1816,7 @@
       });
       return out.sort((a, b) => b[1] - a[1]).map(o => o[0]);
     }
-    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
+    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201cmy playlists\u201d, \u201cplay my gym playlist\u201d, \u201cremove this from <playlist>\u201d, \u201crename playlist X to Y\u201d, \u201cdelete playlist X\u201d\n\u2022 \u201clibrary stats\u201d, \u201cwhat\u2019s the BPM\u201d, \u201cplay the fastest song\u201d, \u201cplay songs around 120 bpm\u201d, \u201cplay slow songs\u201d\n\u2022 \u201copen my portfolio\u201d, \u201cmy top artist\u201d, \u201cmost played song\u201d, \u201ctop 5 songs\u201d, \u201chow much have I listened\u201d, \u201cwhen do I listen most\u201d, \u201cmy streak\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
     // Whenever the agent handles a message (a command, or a loose phrasing it understood), the model is dropped from RAM.
     function agent(raw, skip) { holdModel = false; const hit = agentCore(raw, skip); if (hit && !chatBusy && !holdModel) unloadModel(); return hit; }
     // Loose phrasing -> canonical command, by plain rules (no model needed). Returns {cmd, q} or null. q = ask before acting.
@@ -2045,6 +2063,107 @@
       if (/^how (?:much|long)(?: time)?(?: is)?(?: there)?(?: left| remaining)(?: in (?:this|the) (?:song|track|video))?$|^(?:time|how long) left$|^what'?s left$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say(clock(dur() - pos()) + ' left (' + clock(pos()) + ' of ' + clock(dur()) + ').'); }
       if (/^how long is (?:this|it|the current)(?: song| track| video)?$|^(?:what'?s|what is) the (?:length|duration)(?: of (?:this|it))?$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say('It is ' + clock(dur()) + ' long.'); }
       if (/^(?:where am i|how far in(?: am i)?|what time is it in the (?:song|track)|what'?s the (?:time|position))$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say('You are at ' + clock(pos()) + ' of ' + clock(dur()) + '.'); }
+      // ---- library & playlist management ----
+      const nrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+      const findPl = name => { const w = nrm(name), pls = A.playlists(); return w ? (pls.find(p => nrm(p.name) === w) || pls.find(p => nrm(p.name).includes(w))) : null; };
+      const plIdx = pl => { const tr = A.tracks(); return tr.map((x, i) => i).filter(i => !tr[i].stem && (tr[i].playlistIds || []).includes(pl.id)); };
+      if (/^(?:(?:what|which|list|show)(?: me)?(?: are)?(?: all)?(?: of)?(?: my)? playlists(?: do i have)?|my playlists|how many playlists(?: do i have)?)$/i.test(t)) {
+        const pls = A.playlists().filter(p => !p.libOnly);
+        return say(pls.length ? 'You have ' + pls.length + ' playlist' + (pls.length === 1 ? '' : 's') + ': ' + pls.slice(0, 12).map(p => p.name + ' (' + plIdx(p).length + ')').join(', ') + (pls.length > 12 ? ', and more' : '') + '.' : 'You have no playlists yet. Say \u201cmake a playlist called Favorites\u201d.');
+      }
+      if ((m = t.match(/^(?:play|start|put on|shuffle|shuffle play)(?: my| the)? (?:playlist )?(.+?)(?: playlist)?$/i)) && (/\bplaylist\b/i.test(t) || /^shuffle\b/i.test(t))) {
+        const pl = findPl(m[1]);
+        if (pl) { const q = plIdx(pl); if (!q.length) return say('\u201c' + pl.name + '\u201d is empty.'); if (/^shuffle/i.test(t)) shuffleIn(q); A.play(q[0], q); return done('Playing ' + pl.name + ' (' + q.length + ' tracks' + (/^shuffle/i.test(t) ? ', shuffled' : '') + ').'); }
+      }
+      if ((m = t.match(/^(?:how many (?:songs|tracks) (?:are )?in|what'?s in|what is in|show (?:me )?what'?s in|list (?:the )?(?:songs|tracks) in) (?:my |the )?(.+?)(?: playlist)?$/i))) {
+        const pl = findPl(m[1]);
+        if (pl) { const q = plIdx(pl), tr = A.tracks(); return say(pl.name + ' has ' + q.length + ' track' + (q.length === 1 ? '' : 's') + (q.length ? ': ' + q.slice(0, 8).map(i => tr[i].title).join(', ') + (q.length > 8 ? ', and ' + (q.length - 8) + ' more' : '') : '') + '.'); }
+      }
+      if ((m = t.match(/^(?:remove|take|delete) (?:this|it|the current)(?: song| track)? (?:from|out of) (?:my |the )?(.+?)(?: playlist)?$/i))) {
+        const c = cur(); if (!c) return say('Play or pick a track first.');
+        const pl = findPl(m[1]); if (!pl) return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.');
+        if (!(c.playlistIds || []).includes(pl.id)) return say('\u201c' + c.title + '\u201d is not in ' + pl.name + '.');
+        A.removeFromPlaylist(c.dbId, pl.id); A.commitPlaylists(); return done('Removed \u201c' + c.title + '\u201d from ' + pl.name + '.');
+      }
+      if ((m = t.match(/^rename(?: my| the)? playlist (.+?) (?:to|as) (.+)$/i))) {
+        const pl = findPl(m[1]); if (!pl) return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.');
+        const old = pl.name; pl.name = m[2].trim().slice(0, 60); A.commitPlaylists(); return done('Renamed \u201c' + old + '\u201d to \u201c' + pl.name + '\u201d.');
+      }
+      if ((m = t.match(/^(?:delete|remove|get rid of)(?: my| the)? playlist (.+)$|^(?:delete|remove|get rid of)(?: my| the)? (.+?) playlist$/i))) {
+        const pl = findPl(m[1] || m[2]); if (!pl) return say('I cannot find a playlist called \u201c' + (m[1] || m[2]) + '\u201d.');
+        return ask('Delete the playlist \u201c' + pl.name + '\u201d? Your tracks stay in the library.', () => { A.deletePlaylistQuiet(pl.id); A.commitPlaylists(); done('Deleted ' + pl.name + '.'); });
+      }
+      if (/^(?:(?:show|tell|give)(?: me)?(?: my)? )?(?:library|music) (?:stats|statistics|summary|info)$|^tell me about my (?:library|music)$|^how (?:big|large) is my (?:library|collection)$|^how many (?:songs|tracks|videos|things)(?: do i have| are there| in my library)?$|^(?:what'?s|what is) in my library$/i.test(t)) {
+        const tr = A.tracks().filter(x => !x.stem), vids = tr.filter(x => x.kind === 'video').length, tgc = tr.filter(x => loadTags()[x.dbId]).length, stems = A.tracks().length - tr.length;
+        return say('Your library has ' + tr.length + ' item' + (tr.length === 1 ? '' : 's') + ' (' + (tr.length - vids) + ' audio, ' + vids + ' video), ' + tgc + ' tagged, ' + A.playlists().filter(p => !p.libOnly).length + ' playlists' + (stems ? ', and ' + stems + ' split tracks' : '') + '.');
+      }
+      // tempo and key questions and requests (these use the tags)
+      if (/^(?:what'?s|what is) (?:the )?(?:bpm|tempo|key)(?: of (?:this|it)(?: song| track)?)?$|^how fast is (?:this|it)(?: song| track)?$|^what key is (?:this|it)(?: song| track)?(?: in)?$/i.test(t)) {
+        const c = cur(); if (!c) return say('Play or pick a track first.'); const tgc = loadTags()[c.dbId];
+        if (!tgc || !tgc.bpm) return ask('\u201c' + c.title + '\u201d is not tagged yet. Tag it now to find the tempo and key?', () => tagWith('cur'), true);
+        return say(tgc.bpm + ' BPM' + (tgc.key ? ', key of ' + tgc.key + (tgc.ck ? ' ' + tgc.ck : '') : '') + '.');
+      }
+      if ((m = t.match(/^play (?:the )?(fastest|slowest)(?: (?:song|track))?$|^play (?:songs|tracks|music) (?:at|around|near|about) (\d{2,3}) ?bpm$|^play (?:songs|tracks|music) between (\d{2,3}) and (\d{2,3}) ?bpm$|^play (fast|slow)[- ]?(?:tempo )?(?:songs|tracks|music)$/i))) {
+        const tr = A.tracks(), tgs = loadTags(), q = tr.map((x, i) => i).filter(i => !tr[i].stem && tgs[tr[i].dbId] && tgs[tr[i].dbId].bpm), bp = i => tgs[tr[i].dbId].bpm;
+        if (!q.length) return say('I need tempo tags for that. Tag your library first: say \u201ctag all\u201d.');
+        let r, label;
+        if (m[1]) { r = q.slice().sort((a, b) => m[1].toLowerCase() === 'fastest' ? bp(b) - bp(a) : bp(a) - bp(b)).slice(0, 1); label = 'the ' + m[1].toLowerCase() + ' song (' + bp(r[0]) + ' BPM)'; }
+        else if (m[2]) { const n = +m[2]; r = q.filter(i => Math.abs(bp(i) - n) <= 8); label = r.length + ' tracks near ' + n + ' BPM'; }
+        else if (m[3]) { const lo = Math.min(+m[3], +m[4]), hi = Math.max(+m[3], +m[4]); r = q.filter(i => bp(i) >= lo && bp(i) <= hi); label = r.length + ' tracks between ' + lo + ' and ' + hi + ' BPM'; }
+        else { const fast = /^fast/i.test(m[5]); r = q.filter(i => fast ? bp(i) >= 125 : bp(i) <= 95); label = r.length + (fast ? ' fast' : ' slow') + ' tracks'; }
+        if (!r.length) return say('None of your tagged tracks match that tempo.');
+        shuffleIn(r); r = r.slice(0, 30); A.play(r[0], r); return done('Playing ' + label + '.');
+      }
+      // ---- Press Play Portfolio (the listening stats). Read-only: Bloop reads the Portfolio's own saved stats and can open it. ----
+      const PF = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} try { return JSON.parse(localStorage.getItem('pppSaveV1')) || null; } catch (e) { return null; } };
+      const dur2 = ms => { const mn = Math.round(ms / 60000); return mn < 1 ? 'under a minute' : mn < 60 ? mn + ' min' : Math.floor(mn / 60) + ' h ' + (mn % 60) + ' min'; };
+      const topN = (o, n, f) => Object.entries(o || {}).map(([k, v]) => [k, f ? f(v) : v]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, n);
+      const NOPF = 'The Portfolio has no listening data yet. Play some music first.';
+      if (/^(?:open|show|go to|take me to|bring up|pull up|view|see)(?: me)?(?: my| the)? (?:press ?play )?(?:portfolio|wrapped|listening (?:stats|recap|history)|stats|recap|retrospective)$/i.test(t)) {
+        const r = $id('ppp-entry-row'); if (!r) return say('I cannot find the Portfolio.'); r.click(); return done('Portfolio opened.');
+      }
+      if (/^(?:how (?:much|long) (?:have i|did i) (?:listened?|listening|played|watch\w*)(?: (?:in total|so far|overall|altogether))?|(?:what'?s|what is) my (?:total )?(?:listening|listen|play) time|total (?:listening|listen) time|how much (?:music )?have i (?:listened to|played))$/i.test(t)) {
+        const d = PF(); if (!d || !d.totalListenMs) return say(NOPF);
+        return say('You have listened for ' + dur2(d.totalListenMs) + ' in total (' + dur2(d.totalAudioMs || 0) + ' audio, ' + dur2(d.totalVideoMs || 0) + ' video).');
+      }
+      if (/^(?:how (?:much|long) (?:have i|did i) (?:listened?|played|watch\w*) )?today$|^(?:how much|what'?s my (?:listening|listen)(?: time)?) today$|^how much did i listen today$/i.test(t)) {
+        const d = PF(), x = d && d.x; if (!x) return say(NOPF); const n = new Date(), k = n.getFullYear() + '-' + (n.getMonth() + 1) + '-' + n.getDate();
+        return say('Today you have listened for ' + dur2((x.dayMs || {})[k] || 0) + '.');
+      }
+      if ((m = t.match(/^(?:who(?:'s| is)|what(?:'s| is)) my (?:top|most (?:played|listened(?: to)?)|favou?rite|#1) (artist|song|track|video)s?$|^(?:who|which artist) (?:do i|have i) (?:listen(?:ed)? to|play(?:ed)?) (?:the )?most$|^(?:what|which) (?:song|track) (?:do i|have i) (?:play(?:ed)?|listen(?:ed)? to) (?:the )?most$|^my (?:top|most played) (artist|song|track)s?$/i))) {
+        const d = PF(); if (!d) return say(NOPF); const w = (m[1] || m[2] || m[3] || (/artist/i.test(t) ? 'artist' : 'song')).toLowerCase();
+        if (w === 'artist') { const x = d.x || {}, a = topN(x.artistMs, 1)[0] || topN(x.artistPlays, 1)[0]; return a ? say('Your top artist is ' + a[0] + (x.artistMs && x.artistMs[a[0]] ? ' (' + dur2(x.artistMs[a[0]]) + ' listened)' : '') + '.') : say(NOPF); }
+        const tp = topN(d.trackPlays, 1, v => v.count)[0]; if (!tp) return say(NOPF); const e = d.trackPlays[tp[0]];
+        return say('Your most played ' + (e.kind === 'video' ? 'video' : 'song') + ' is \u201c' + (e.title || 'Unknown') + '\u201d' + (e.artist ? ' by ' + e.artist : '') + ', played ' + e.count + ' time' + (e.count === 1 ? '' : 's') + '.');
+      }
+      if ((m = t.match(/^(?:show |tell |give )?(?:me )?(?:my )?top (\d{1,2}|three|five|ten) (artists?|songs?|tracks?)$|^(?:my )?top (artists|songs|tracks)$/i))) {
+        const d = PF(); if (!d) return say(NOPF); const nm = { three: 3, five: 5, ten: 10 }, n = m[1] ? (nm[m[1].toLowerCase()] || Math.min(10, +m[1])) : 5, art = /artist/i.test(m[2] || m[3]);
+        const r = art ? topN((d.x || {}).artistMs, n).map(a => a[0] + ' (' + dur2(a[1]) + ')') : topN(d.trackPlays, n, v => v.count).map(a => (d.trackPlays[a[0]].title || 'Unknown') + ' (' + a[1] + ' plays)');
+        return say(r.length ? 'Your top ' + (art ? 'artists' : 'songs') + ':\n' + r.map((x, i) => (i + 1) + '. ' + x).join('\n') : NOPF);
+      }
+      if ((m = t.match(/^how many times (?:have i|did i) (?:played|listened to) (?:this|it)(?: song| track)?$|^how often (?:have i|did i) (?:played|listened to) (?:this|it)(?: song| track)?$/i))) {
+        const c = cur(); if (!c) return say('Play or pick a track first.'); const d = PF(), e = d && d.trackPlays && d.trackPlays[c.dbId];
+        return say(e ? 'You have played \u201c' + c.title + '\u201d ' + e.count + ' time' + (e.count === 1 ? '' : 's') + ' (' + dur2(e.totalMs || 0) + ' listened).' : 'I have no plays recorded for \u201c' + c.title + '\u201d yet.');
+      }
+      if (/^when do i (?:listen|play)(?: (?:the )?most| a lot)?$|^(?:what'?s|what is) my (?:peak|busiest|favou?rite) (?:listening )?(?:time|hour|day)(?: of (?:the )?(?:day|week))?$|^what time do i (?:listen|play)(?: (?:the )?most)?$/i.test(t)) {
+        const d = PF(), x = d && d.x; if (!x || !x.hourMs) return say(NOPF); const hm = x.hourMs, h = hm.indexOf(Math.max.apply(null, hm)), wm = x.weekdayMs || [], wd = wm.indexOf(Math.max.apply(null, wm));
+        if (!(hm[h] > 0)) return say(NOPF); const hh = h % 12 || 12, ap = h < 12 ? 'AM' : 'PM', days = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+        return say('You listen most around ' + hh + ' ' + ap + (wm[wd] > 0 ? ', and most of all on ' + days[wd] : '') + '.');
+      }
+      if (/^(?:what'?s|what is|how long is) my (?:listening )?streak$|^(?:how many days|how long) (?:in a row|straight) (?:have i|did i) (?:listened?|played)$|^(?:my )?(?:listening )?streak$/i.test(t)) {
+        const d = PF(), dm = d && d.x && d.x.dayMs; if (!dm || !Object.keys(dm).length) return say(NOPF);
+        const key = dt => dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate(), dd = new Date(); let n = 0;
+        if (!(dm[key(dd)] > 0)) dd.setDate(dd.getDate() - 1);
+        while (dm[key(dd)] > 0) { n++; dd.setDate(dd.getDate() - 1); }
+        return say(n ? 'You are on a ' + n + '-day listening streak.' : 'No current streak. Listen today to start one!');
+      }
+      if (/^how many (?:songs|tracks)? ?(?:have i|did i) (?:skipped|finished|completed)$|^(?:how many )?(?:skips|completions)$|^how many (?:skips|songs skipped)(?: have i (?:done|made))?$|^(?:what'?s|what is) my skip (?:count|rate)$/i.test(t)) {
+        const d = PF(), x = d && d.x; if (!x) return say(NOPF); return say('You have skipped ' + (x.skips || 0) + ' tracks and played ' + (x.completions || 0) + ' all the way to the end.');
+      }
+      if (/^(?:what are |what'?s )?my (?:portfolio|listening) (?:stats|summary|numbers)$|^(?:portfolio|listening) (?:stats|summary)$|^(?:give me |show me )?(?:a )?(?:summary|recap) of my listening$/i.test(t)) {
+        const d = PF(); if (!d || !d.totalListenMs) return say(NOPF); const x = d.x || {}, tp = topN(d.trackPlays, 1, v => v.count)[0], ar = topN(x.artistMs, 1)[0];
+        return say('Listened: ' + dur2(d.totalListenMs) + '. Tracks played: ' + Object.keys(d.trackPlays || {}).length + '.' + (tp ? '\nTop song: ' + (d.trackPlays[tp[0]].title || 'Unknown') + ' (' + tp[1] + ' plays).' : '') + (ar ? '\nTop artist: ' + ar[0] + '.' : '') + '\nSkips: ' + (x.skips || 0) + ', finished: ' + (x.completions || 0) + '.');
+      }
       // play by position
       if ((m = t.match(/^play (?:the )?(first|second|third|last|random|\d+(?:st|nd|rd|th)?) (?:song|track)$/i))) {
         const tr = A.tracks(), q = tr.map((x, i) => i).filter(i => !tr[i].stem); if (!q.length) return say('Your library is empty.');
@@ -2083,7 +2202,7 @@
       if (!noEcho) add('me', text);
       if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
       if (agentOn()) { let hit = false; try { hit = agent(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
-      const f = FAQ.find(x => x[0].test(text)); if (f) { add('bot', f[1]); return; }
+      const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
       if (!brainOn()) { fallbackReply(text); return; }
       if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
       if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
@@ -2095,14 +2214,14 @@
       const el = add('bot', '\u2026');
       try {
         const g = await ensureModel(s => { el.textContent = s; });
-        const msgs = [{ role: 'system', content: sysPrompt() }].concat(hist.slice(-4), [{ role: 'user', content: text }]);
+        const msgs = [{ role: 'system', content: sysPrompt() }].concat(memN() ? hist.slice(-2 * memN()) : [], [{ role: 'user', content: text }]);
         let acc = '', opts = { max_new_tokens: 60, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 };
         if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: t => { acc += t; el.textContent = acc; scrollDown(); } });
         const out = await g(msgs, opts);
         let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
         r = String(r || acc).trim().replace(/\s+\n/g, '\n') || "Hmm, I lost my words. Try again?";
         if (!looksOk(r)) { el.textContent = "Sorry, that came out as gibberish. Try again, or tap Clear."; return void (chatBusy = false); }   // never feed garbage back into the history
-        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = hist.slice(-8);
+        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = memN() ? hist.slice(-2 * memN()) : [];
         moodChip(text);
       } catch (e) { console.error(e); dlOk = false; el.textContent = "Oops, my brain would not load: " + e.message; }
       chatBusy = false; scrollDown(); cm('greet'); setTimeout(() => cm('idle'), 1300);
@@ -2110,7 +2229,7 @@
     }
     return {
       react,
-      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain },
+      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain, memory: { get: memN, set: setMem, max: MEM_MAX } },
       start() { key = ''; set('start', pick(L.start), 900); },
       opened() {
         if (greeted || !on) return; greeted = true;
@@ -2161,12 +2280,17 @@
       '<div class="ppv-note">Adds a Bloop button. He can play music by mood, make mood and smart playlists, tag, split, get lyrics and control the player (volume, seek, speed, EQ, repeat\u2026). That all runs from the tagger and fixed rules, so it needs no chat AI.</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-brain-on"> Chat brain: talk about anything with a tiny AI (optional, ~150 MB download)</label>' +
       '<div class="ppv-note">Off: Bloop only does tasks and answers app questions. On: he can also chat. It is taken out of memory whenever he does a task. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
+      '<label class="ppv-c" style="display:block">Bloop\'s memory: <b id="ppv-mem-val"></b><input type="range" id="ppv-mem" min="0" max="8" step="1" style="width:100%;display:block"></label>' +
+      '<div class="ppv-note">How many of your recent messages and his replies he remembers while chatting. 0 means he forgets each message right away. Higher is more context, but slower and uses more RAM. Tasks and commands never need memory.</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-agent-on"> Let Bloop do things when I ask (play, playlists, tagging, volume\u2026)</label>' +
       '<label id="ppv-chatgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-chatgpu"> Use GPU (experimental, ~270 MB download)</label>' +
       '<button id="ppv-chatfree" class="ppv-sec" type="button">Free up chat download</button>');
     { const co = p.querySelector('#ppv-chat-on'), cg = p.querySelector('#ppv-chatgpu'), cl = p.querySelector('#ppv-chatgpul');
       co.checked = mas.chat.isOn(); co.onchange = () => mas.chat.setOn(co.checked);
       const cbr = p.querySelector('#ppv-brain-on'); cbr.checked = mas.chat.brainOn(); cbr.onchange = () => mas.chat.setBrain(cbr.checked);
+      const ms = p.querySelector('#ppv-mem'), mv = p.querySelector('#ppv-mem-val'), memTxt = n => n === 0 ? 'none' : n + (n === 1 ? ' exchange' : ' exchanges');
+      ms.value = mas.chat.memory.get(); mv.textContent = memTxt(+ms.value);
+      ms.oninput = () => { const n = mas.chat.memory.set(ms.value); mv.textContent = memTxt(n); };
       const ag = p.querySelector('#ppv-agent-on'); try { ag.checked = localStorage.getItem('ppvAgent') !== '0'; } catch (e) { ag.checked = true; }
       ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch (e) {} };
       if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
