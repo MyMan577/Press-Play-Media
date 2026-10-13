@@ -1074,6 +1074,8 @@
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bgplay"> Also while music is playing</label>' +
       '<label class="ppv-c" id="ppv-bgchl" style="display:block"><input type="checkbox" id="ppv-bgchg"> Only while charging</label>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-live"> Keep smart playlists up to date as tracks get tagged</label>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-lmix"> Auto mixes: For You, Ones You May Like, Your Pattern (they change as you listen)</label>' +
+      '<button id="ppv-lmixblk" class="ppv-sec">Block current track from auto mixes</button><div id="ppv-lmixlist" class="ppv-note"></div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-surp"> Assemble surprise playlists</label>' +
       '<select id="ppv-surpev"><option value="6">New surprise every 6 hours</option><option value="24">New surprise every day</option><option value="72">New surprise every 3 days</option><option value="168">New surprise every week</option></select>' +
       '<select id="ppv-surpmax"><option value="3">Keep the newest 3</option><option value="5">Keep the newest 5</option><option value="10">Keep the newest 10</option></select>' +
@@ -1151,7 +1153,7 @@
     const renderSaved = () => {
       const a = A(), box = $('#ppv-slist'), f = $('#ppv-sf').value; if (!a || !box) return;
       const q = ($('#ppv-ss').value || '').trim().toLowerCase(), words = q ? q.split(/\s+/) : [];
-      const tg = loadTags(), all = a.tracks().filter(t => tg[t.dbId] && (f === 'all' || (f === 'video') === (t.kind === 'video')));
+      const tg = loadTags(), vidOk = ls('ppvShowVid') !== '0', all = a.tracks().filter(t => tg[t.dbId] && (vidOk || t.kind !== 'video') && (f === 'all' || (f === 'video') === (t.kind === 'video')));
       const rows = words.length ? all.filter(t => { const hay = (t.title + ' ' + t.artist + ' ' + tagWords(tg[t.dbId])).toLowerCase(); return words.every(w => hay.includes(w)); }) : all;
       $('#ppv-scount').textContent = '(' + (words.length ? rows.length + ' of ' + all.length : all.length) + ')';
       box.textContent = '';
@@ -1335,6 +1337,14 @@
       const el = $('#' + id); el.checked = (ls(k) == null ? def : ls(k)) === '1'; el.onchange = () => ls(k, el.checked ? '1' : '0');
     });
     const lv2 = $('#ppv-live'); lv2.checked = live(); lv2.onchange = () => { ls('ppvLive', lv2.checked ? '1' : '0'); syncSmartLive(); };
+    const lmx = $('#ppv-lmix'); lmx.checked = ls('ppvLiveMix') !== '0'; lmx.onchange = () => { ls('ppvLiveMix', lmx.checked ? '1' : '0'); if (lmx.checked && window.__ppLiveMixes) window.__ppLiveMixes.refresh(); };
+    const lmxList = () => {
+      const box = $('#ppv-lmixlist'), a = A(), api = window.__ppLiveMixes; if (!box || !a || !api) return; const ids = api.blocked(); box.textContent = '';
+      if (!ids.length) { box.textContent = 'No blocked tracks.'; return; }
+      ids.forEach(id => { const t = a.tracks().find(x => String(x.dbId) === id), r = document.createElement('div'), bt = document.createElement('button'); r.textContent = (t ? t.title : 'Removed track') + ' '; bt.textContent = 'Unblock'; bt.className = 'ppv-sec'; bt.onclick = () => { api.unblock(id); lmxList(); }; r.appendChild(bt); box.appendChild(r); });
+    };
+    $('#ppv-lmixblk').onclick = () => { const t = cur(); if (!t || !window.__ppLiveMixes) { h.status('Play or pick a track first.'); return; } window.__ppLiveMixes.block(t.dbId); h.status('\u201c' + t.title + '\u201d is blocked from auto mixes.'); lmxList(); };
+    setTimeout(lmxList, 1500);
     [['ppv-bgidle', 'ppvBgIdle', '5'], ['ppv-surpev', 'ppvSurpEv', '24'], ['ppv-surpmax', 'ppvSurpMax', '5']].forEach(([id, k, def]) => {
       const el = $('#' + id); el.value = ls(k) || def; el.onchange = () => ls(k, el.value);
     });
@@ -1448,6 +1458,59 @@
     // the list is always visible now, so keep it current as the library loads and tags change
     let lastSig = '';
     setInterval(() => { const a = A(); if (!a) return; const sig = a.tracks().length + ':' + tagVer; if (sig !== lastSig) { lastSig = sig; refreshCount(); } }, 1500);
+
+    // ---------- Smart features: one place to switch every smart menu and automation on or off ----------
+    // Menus only get hidden (nothing is deleted); automations stop. Tags, playlists and history stay as they are.
+    // It lives in the app's Settings tab when there is one, otherwise at the bottom of the Stems panel.
+    {
+      const FEATS = [
+        { g: 'Menus', id: 'tagmenu', label: 'Tagging menu (Library tab)', key: 'ppvShowTag', def: 1, ui: 1 },
+        { id: 'savedmenu', label: 'Tagged tracks menu', key: 'ppvShowSaved', def: 1, ui: 1 },
+        { id: 'savedvid', label: 'Tagged videos in that menu', key: 'ppvShowVid', def: 1, ui: 1 },
+        { id: 'lyrics', label: 'Lyrics & subtitles (Whisper) menu', key: 'ppvShowLyr', def: 1, ui: 1 },
+        { g: 'Automatic', id: 'live', label: 'Live smart playlists (follow your tags)', key: 'ppvLive', def: 1, box: 'ppv-live' },
+        { id: 'mixes', label: 'Auto mixes: For You, Ones You May Like, Your Pattern', key: 'ppvLiveMix', def: 1, box: 'ppv-lmix' },
+        { id: 'surp', label: 'Surprise playlists', key: 'ppvSurp', def: 0, box: 'ppv-surp' },
+        { id: 'bg', label: 'Background tagging while I am away', key: 'ppvBg', def: 0, box: 'ppv-bg' },
+        { id: 'aeq', label: 'Auto-EQ when tagging', key: 'ppvAutoEq', def: 0, box: 'ppv-aeq' },
+        { id: 'askip', label: 'Skip long intros', key: 'ppvAutoSkip', def: 0, box: 'ppv-askip' },
+        { g: 'Bloop', id: 'mascot', label: 'Bloop, the mascot', box: 'ppv-mas', def: 1, get: () => h.mas.isOn() },
+        { id: 'assist', label: 'Bloop assistant button', box: 'ppv-chat-on', def: 0, get: () => h.mas.chat.isOn() }
+      ];
+      const isOn = f => { if (f.get) return !!f.get(); const v = ls(f.key); return v == null ? f.def === 1 : v === '1'; };
+      const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+      const F = id => FEATS.find(f => f.id === id), on = id => isOn(F(id));
+      function applyShow() {
+        show(libHost, on('tagmenu')); show(savedHost, on('savedmenu')); show(whHost, on('lyrics'));
+        const hr = whHost.previousElementSibling; if (hr && hr.tagName === 'HR') hr.style.display = on('lyrics') ? '' : 'none';   // the divider the captions menu got
+        const sf = $('#ppv-sf'), vo = sf && sf.querySelector('option[value="video"]'), vid = on('savedvid');
+        if (vo) { vo.hidden = !vid; vo.disabled = !vid; if (!vid && sf.value === 'video') sf.value = 'all'; }
+        try { renderSaved(); } catch (e) {}
+      }
+      const setF = (f, v) => {
+        if (f.key) ls(f.key, v ? '1' : '0');
+        const b = f.box && $('#' + f.box); if (b && b.checked !== v) { b.checked = v; b.dispatchEvent(new Event('change', { bubbles: true })); }   // runs that checkbox's own handler too
+        if (f.ui) applyShow();
+      };
+      const box = document.createElement('div'); box.className = 'ppv-scope'; box.id = 'ppv-smartset';
+      box.innerHTML = '<details open><summary>Smart features</summary>' +
+        '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-fs-all"> <b>All smart features</b></label>' +
+        '<div class="ppv-note">Off hides the smart menus and stops the automatic playlists and background work. Your tags, playlists and listening history are kept. Turning it back on restores what you had.</div>' +
+        FEATS.map(f => (f.g ? '<div style="margin-top:8px"><b>' + f.g + '</b></div>' : '') + '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-fs-' + f.id + '"> ' + f.label + '</label>').join('') + '</details>';
+      const syncBoxes = () => { FEATS.forEach(f => { const el = box.querySelector('#ppv-fs-' + f.id); if (el) el.checked = isOn(f); }); box.querySelector('#ppv-fs-all').checked = FEATS.some(isOn); };
+      FEATS.forEach(f => { box.querySelector('#ppv-fs-' + f.id).onchange = e => { setF(f, e.target.checked); syncBoxes(); }; });
+      box.querySelector('#ppv-fs-all').onchange = e => {
+        if (!e.target.checked) { const snap = {}; FEATS.forEach(f => { snap[f.id] = isOn(f); }); if (Object.values(snap).some(Boolean)) ls('ppvSmartSnap', JSON.stringify(snap)); FEATS.forEach(f => setF(f, false)); }
+        else { let snap = null; try { snap = JSON.parse(ls('ppvSmartSnap')); } catch (er) {} if (snap && !Object.values(snap).some(Boolean)) snap = null; FEATS.forEach(f => setF(f, snap ? !!snap[f.id] : f.def === 1)); }
+        syncBoxes();
+      };
+      // keep these in step when the same switch is changed in its own panel
+      document.addEventListener('change', e => { if (e.target && /^ppv-(live|lmix|surp|bg|aeq|askip|mas|chat-on)$/.test(e.target.id)) syncBoxes(); });
+      (document.getElementById('sidebar-pane-settings') || p).appendChild(box);
+      if (sb) sb.addEventListener('click', () => setTimeout(applyShow, 0));
+      if (eb) eb.addEventListener('click', () => setTimeout(applyShow, 0));
+      syncBoxes(); applyShow();
+    }
   }
 
   // ---------- UI ----------
@@ -1966,7 +2029,7 @@
       const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); runJob('tag', scope === 'all' ? 'tagging your whole library' : 'tagging this track', () => { const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok; }); return true; };
 
       if (!skip) { const ip = interpret(t); if (ip) { if (ip.q) return ask(ip.q, () => agent(ip.cmd, true)); t = ip.cmd; } }
-      if (/^(help|commands|what can you do|what can i ask( you)?|what do you do)$/i.test(t)) return say(HELP);
+      if (/^(help|commands|what can you do|what can i ask( you)?|what do you do)$/i.test(t)) return say(HELP + HELP_SMART + HELP_MIX);
       // transport
       if (/^(pause|stop)( the)?( music| song| track| playing| playback)?$/i.test(t)) { if (!mediaOn()) return say('Nothing is playing right now.'); click('play-btn'); return done('Paused.'); }
       if (/^(resume|unpause|continue|play|keep playing|start( the)? music|play( the)? (music|song|track))$/i.test(t)) { if (mediaOn()) return say('It is already playing.'); if (A.currentIndex() < 0) return say('Nothing is loaded yet. Try \u201cplay something chill\u201d.'); click('play-btn'); return done('Playing.'); }
@@ -2009,6 +2072,7 @@
         const c = cur(); if (!c) return say('Play or pick a track first.');
         return ask('Write lyrics for \u201c' + c.title + '\u201d with Whisper? It downloads a model the first time.', () => { runJob('lyrics', 'writing lyrics for \u201c' + c.title + '\u201d', () => click('ppv-wgo')); }, true);
       }
+      if (lcCmd(t)) return true;
       if (/^(play |find )?(more like (this|it)|similar( songs| tracks| music)?( to this)?)$/i.test(t)) return need() || (click('ppv-simgo') ? done('Looking for similar tracks.') : busyMsg());
       if (/^(skip|jump past|jump over|get past)( the)? intro$|^jump to (the )?first vocals?$/i.test(t)) return need() || (click('ppv-skipgo') ? done('Jumping ahead.') : busyMsg());
       if (/^(surprise me|play (me )?a surprise|make (me )?a surprise( playlist)?)$/i.test(t)) return click('ppv-surpnow') ? done('Putting a surprise together. It needs at least 12 tagged tracks, and I will show it when ready.') : busyMsg();
@@ -2342,6 +2406,692 @@
     }
     // AGENT END
 
+    // SMART START
+    // ---------- Smarter interpreter in front of the agent. It only works out WHAT you meant; every action still runs through the
+    // agent's own safe commands. No chat-model guessing: low confidence asks first, and anything it cannot do it says so. ----------
+    const smartSt = { last: null, at: 0, snap: null, noRoute: '', pu: null };
+    const sRec = (snap, cmd) => { smartSt.snap = snap; smartSt.last = cmd; smartSt.at = Date.now(); smartSt.pu = null; };
+    const HELP_SMART = '\n\u2022 \u201cundo\u201d, \u201cagain\u201d, \u201ca bit more\u201d, \u201cmuch quieter\u201d, \u201cvolume up 15\u201d\n\u2022 several at once: \u201cplay something chill and turn it down a bit\u201d\n\u2022 goals: \u201cbedtime\u201d, \u201cgym time\u201d, \u201cstudy mode\u201d, \u201cparty mode\u201d\n\u2022 questions: \u201cis it paused\u201d, \u201cwhat\u2019s the volume\u201d, \u201cis shuffle on\u201d\n\u2022 \u201cmake a playlist for me\u201d, \u201csomething new\u201d, \u201cforgotten favorites\u201d, \u201cplaylist like <song>\u201d\n\u2022 \u201cmake a chill playlist with <song> without <artist>\u201d, \u201cadd <song> to <playlist>\u201d, \u201cremove the slow songs from <playlist>\u201d\n\u2022 typos are fine, and if I am unsure I will ask \u201cdid you mean\u2026\u201d';
+    const sClean = r => String(r).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
+    const sSay = s => { add('bot', s); return true; }, sDone = s => sSay('\u2713 ' + s);
+    const S_Q = /^(?:what|how|who|which|where|when|why|is|are|am|do|does|did|list|show|tell|my|help)\b|\?$/i;
+    const snapNow = () => { const A = window.__ppApi, v = $id('volume'), s = $id('seek'), sb = $id('shuffle-btn'); return { vol: v ? parseFloat(v.value) : null, pos: s ? parseFloat(s.value) : null, idx: A ? A.currentIndex() : -1, shuffle: !!(sb && sb.classList.contains('toggled')), playing: mediaOn() }; };
+    function sExec(cmd) { const b = snapNow(), ok = agent(cmd); if (ok && !S_Q.test(cmd)) { sRec(b, cmd); } return ok; }
+    const sKind = s => /\b(louder|quieter|softer|volume|loud|turn (?:it |the \w+ )?(?:up|down))\b/i.test(s) ? 'vol' : /\b(faster|slower|speed|slow)\b/i.test(s) ? 'speed' : /\b(rewind|forward|skip (?:\d|ahead|back|forward)|jump|seek|ff)\b/i.test(s) ? 'seek' : '';
+    const sDir = s => /\b(quieter|softer|down|lower|decrease|reduce|slower|slow|rewind|back|backward)\b/i.test(s) ? -1 : /\b(louder|up|raise|increase|higher|faster|forward|ahead|skip|jump)\b/i.test(s) ? 1 : 0;
+    const S_AMT = s => /\b(a lot|much|way|so much|a ton|loads|significantly|really|super)\b/i.test(s) ? 25 : /\b(a little|a bit|a touch|a tad|a notch|slightly|just|barely|little|bit)\b/i.test(s) ? 5 : 10;
+
+    // volume: relative ("a bit louder", "down 15", "2 notches up") or absolute ("set it to 40%")
+    function relVol(t) {
+      const s = t.toLowerCase(); let m;
+      if (/\b(speed|tempo|bass|treble|bright\w*|filter|eq|zoom|playlist|frames?)\b/.test(s)) return null;
+      if ((m = s.match(/^(?:set|put|make|turn|bring|get)(?: the)?(?: volume| sound| music| it)? (?:up |down )?(?:to|at) (\d{1,3}) ?(?:%|percent|volume)$/))) return { abs: +m[1] };
+      const up = /\b(louder|up|higher|raise|increase|boost|crank|bump)\b/.test(s), dn = /\b(quieter|softer|down|lower|decrease|reduce|drop|dim)\b/.test(s);
+      if (up === dn || !/\b(louder|quieter|softer|volume|sound|turn (?:it|the music|the sound)|bring (?:it|the)|crank|bump|make it|dim|it (?:up|down))\b/.test(s)) return null;
+      const dir = up ? 1 : -1;
+      if ((m = s.match(/\bto (\d{1,3})\s*(?:%|percent)/))) return { abs: +m[1] };
+      if ((m = s.match(/\b(\d{1,3})\s*(%|percent|points?|notch(?:es)?)?(?!\w)/))) return { d: dir * Math.min(100, +m[1] * (/^notch/.test(m[2] || '') ? 5 : 1)) };
+      return { d: dir * S_AMT(s) };
+    }
+    function sApplyVol(r) {
+      const e = $id('volume'); if (!e) return false; const was = Math.round(parseFloat(e.value)), v = Math.max(0, Math.min(100, Math.round(r.abs != null ? r.abs : was + r.d)));
+      if (v === was) return sSay('Volume is already at ' + v + '%.');
+      e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
+      return sDone('Volume ' + v + '% (was ' + was + '%).');
+    }
+
+    // undo: puts back what the last action changed (volume, shuffle, which track, position, pause/play)
+    function sUndo() {
+      if (smartSt.pu) { const u = smartSt.pu; smartSt.pu = null; try { u.undo(); } catch (e) { console.error(e); return sSay('I could not undo that: ' + e.message); } return sDone(u.label); }
+      const s = smartSt.snap, A = window.__ppApi; if (!s || !A) return sSay('There is nothing to undo yet. I can undo volume, shuffle, skips, seeking and pause/play.');
+      const now = snapNow(), out = [];
+      if (s.vol != null && now.vol != null && Math.round(s.vol) !== Math.round(now.vol)) { const e = $id('volume'); e.value = s.vol; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); out.push('volume back to ' + Math.round(s.vol) + '%'); }
+      if (s.shuffle !== now.shuffle) { const b = $id('shuffle-btn'); if (b) { b.click(); out.push('shuffle ' + (s.shuffle ? 'on' : 'off')); } }
+      const tr = A.tracks();
+      if (s.idx >= 0 && s.idx !== now.idx && tr[s.idx]) { A.play(s.idx, tr.map((x, i) => i).filter(i => !tr[i].stem)); out.push('back to \u201c' + tr[s.idx].title + '\u201d'); }
+      else if (s.idx === now.idx) {
+        const sk = $id('seek'); if (sk && s.pos != null && now.pos != null && Math.abs(s.pos - now.pos) > 2) { sk.value = s.pos; sk.dispatchEvent(new Event('input', { bubbles: true })); sk.dispatchEvent(new Event('change', { bubbles: true })); out.push('back to ' + Math.floor(s.pos / 60) + ':' + String(Math.round(s.pos) % 60).padStart(2, '0')); }
+        if (s.playing !== now.playing) { const pb = $id('play-btn'); if (pb) { pb.click(); out.push(s.playing ? 'playing again' : 'paused'); } }
+      }
+      smartSt.snap = null;
+      return out.length ? sDone('Undid that: ' + out.join(', ') + '.') : sSay('I could not find anything I can undo. Undo covers volume, shuffle, skips, seeking and pause/play.');
+    }
+
+    // goals -> a short plan of ordinary commands
+    const S_SCENES = [
+      [/\b(bed ?time|time (?:for|to go to) (?:bed|sleep)|night ?mode|sleep mode|lights out|getting ready for bed)\b/i, ['play something sleep', 'sleep timer 30 minutes'], 'Bedtime mode:'],
+      [/\b(?:work ?out|gym|training|exercise) (?:mode|time|session)\b|\b(?:hit|going to|heading to|off to) the gym\b|\btime to (?:work ?out|train|exercise|lift)\b/i, ['play something workout', 'shuffle on'], 'Workout mode:'],
+      [/\b(?:study|focus|homework|deep work|work) (?:mode|time|session)\b|\btime to (?:study|focus|concentrate|get work done)\b|\bhelp me (?:focus|concentrate|study)\b/i, ['play something focus'], 'Focus mode:'],
+      [/\b(?:party|dance) (?:mode|time)\b|\bstart the party\b|\blet'?s party\b|\bget the party started\b/i, ['play something party', 'shuffle on'], 'Party mode:'],
+      [/\b(?:chill|relax(?:ation)?|unwind|wind[- ]down) (?:mode|time)\b|\bi (?:need|want) to (?:relax|unwind|chill|calm down)\b/i, ['play something chill'], 'Chill mode:']
+    ];
+    function sChain(steps, intro) {
+      if (intro) sSay(intro);
+      for (const c of steps) {
+        const sb = $id('shuffle-btn'); if (c === 'shuffle on' && sb && sb.classList.contains('toggled')) continue;
+        let ok = false; try { ok = agent(c, true); } catch (e) { console.error(e); return sSay('Oops, that step did not work: ' + e.message); }
+        if (!ok) return sSay('I could not do \u201c' + c + '\u201d.');
+      }
+      return true;
+    }
+
+    // several commands in one sentence. Only splits when every piece starts like a command, and never inside a song title.
+    const S_VERB = /^(?:play|pause|stop|resume|continue|next|skip|previous|prev|back|shuffle|repeat|loop|mute|unmute|volume|turn|set|make|add|remove|rename|tag|split|open|show|go|jump|rewind|restart|replay|speed|slow|faster|slower|louder|quieter|softer|lower|raise|sleep|eq|enable|disable|search|find|zoom|rotate|surprise|get|put|queue|clear|cancel|crank|bring|dim|bump|fullscreen|full)\b/i;
+    function sSplit(t) {
+      if (t.length > 160 || !/\b(?:and|then|after that)\b|[,;&]/i.test(t)) return null;
+      const parts = t.split(/\s*(?:[,;]\s*(?:and\s+|then\s+)?|\s+&\s+|\s+and\s+then\s+|\s+then\s+|\s+and\s+|\s+after that\s+)/i).map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2 || parts.length > 4 || !parts.every(p => S_VERB.test(p))) return null;
+      const pm = t.match(/^(?:play|put on|queue up)\s+(.+)$/i); if (pm) { try { if (findTracks(wordsOf(pm[1])).length) return null; } catch (e) {} }
+      if (parts.slice(0, -1).some(p => /\b(split|stems?|lyrics|transcribe|tag (?:all|everything)|delete)\b/i.test(p))) return null;
+      return parts;
+    }
+
+    // typo repair: only retried after the exact text failed, never touches song titles, and says what it read
+    const S_VOCAB = 'play pause stop resume continue next skip previous shuffle repeat loop mute unmute volume louder quieter softer restart replay rewind forward speed faster slower fullscreen playlist playlists lyrics split sleep timer equalizer search open show immersive library music track song turn down switch enable disable'.split(' ');
+    const S_TITLEV = /^(?:play|queue|find|search|add|put|make|create|rename|delete|remove|look|locate|where)$/i;
+    function sLev(a, b) {
+      const m = a.length, n = b.length, d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 1; j <= n; j++) d[0][j] = j;
+      for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1); }
+      return d[m][n];
+    }
+    function sFixTypos(t) {
+      const w = t.split(/\s+/); let ch = false;
+      for (let i = 0; i < Math.min(w.length, 4); i++) {
+        const x = w[i].toLowerCase(); if (i > 0 && S_TITLEV.test(w[0])) break;
+        if (x.length < 4 || /\d/.test(x) || S_VOCAB.includes(x)) continue;
+        let best = null, bd = 9;
+        for (const v of S_VOCAB) { if (Math.abs(v.length - x.length) > 2) continue; const d = sLev(x, v); if (d < bd && d <= (x.length >= 7 ? 2 : 1) && (x[0] === v[0] || x.length >= 7)) { bd = d; best = v; } }
+        if (best) { w[i] = best; ch = true; }
+      }
+      return ch ? w.join(' ') : t;
+    }
+
+    // live state questions, answered from the real player (never from memory)
+    function sStatus(t) {
+      const A = window.__ppApi, s = t.toLowerCase(); let m;
+      if (/\b(shuffl\w*)\b/.test(s) && /^(?:is|are|am)\b/.test(s)) { const b = $id('shuffle-btn'); return b ? sSay('Shuffle is ' + (b.classList.contains('toggled') ? 'on.' : 'off.')) : false; }
+      if (/\b(repeat\w*|loop\w*)\b/.test(s) && /^(?:is|are|am)\b/.test(s)) { const b = $id('repeat-btn'); return b ? sSay(b.title === 'Repeat' ? 'Repeat is off.' : b.title + ' is on.') : false; }
+      if (/^(?:what'?s|what is|how loud is)(?: the| my)?(?: current)? ?(?:volume|sound level|it)?(?: level| at)?$|^how loud(?: is it)?$/.test(s) && /volume|loud|level/.test(s)) { const v = $id('volume'); return v ? sSay('Volume is ' + Math.round(parseFloat(v.value)) + '%.') : false; }
+      if (/^(?:is|are)\b.*\b(playing|paused)\b/.test(s) && s.split(/\s+/).length <= 6) return sSay(A.currentIndex() < 0 ? 'Nothing is loaded yet.' : mediaOn() ? 'Yes, it is playing.' : 'No, it is paused.');
+      return false;
+    }
+
+    // did-you-mean router: a catalog of intents with example phrasings, scored with typo-tolerant word overlap
+    const S_CAT = [
+      ['pause', 1, ['pause the music', 'stop the music', 'stop playing', 'hold on', 'pause it']],
+      ['play', 1, ['resume the music', 'continue playing', 'start the music', 'unpause', 'keep going', 'carry on', 'play it']],
+      ['play something', 1, ['play something', 'put something on', 'play anything', 'play whatever', 'just play something']],
+      ['next', 1, ['next song', 'skip song', 'skip track', 'play the next one', 'another song', 'next track', 'skip it', 'play something else']],
+      ['previous', 1, ['previous song', 'go back a song', 'play the last song', 'last track', 'previous track', 'play the one before']],
+      ['louder', 1, ['louder', 'turn it up', 'volume up', 'raise the volume', 'increase the volume', 'i cannot hear', 'too quiet']],
+      ['quieter', 1, ['quieter', 'turn it down', 'volume down', 'lower the volume', 'decrease the volume', 'too loud']],
+      ['mute', 1, ['mute', 'silence', 'mute the sound', 'no sound']],
+      ['unmute', 1, ['unmute', 'sound back on', 'bring the sound back']],
+      ['shuffle on', 1, ['shuffle on', 'turn on shuffle', 'shuffle my music', 'mix it up', 'play in random order', 'randomize']],
+      ['shuffle off', 1, ['shuffle off', 'turn off shuffle', 'stop shuffling', 'play in order', 'no shuffle']],
+      ['restart', 1, ['restart the song', 'play it again', 'start over', 'from the beginning', 'replay this song', 'back to the start']],
+      ['repeat this song', 1, ['repeat this song', 'loop this song', 'keep playing this song', 'repeat one', 'play this on repeat']],
+      ['fullscreen', 1, ['fullscreen', 'full screen', 'make it bigger', 'go full screen', 'enlarge the video']],
+      ["what's this song", 1, ['what song is this', 'what is playing', 'who sings this', 'name of this song', 'whats this song', 'what am i hearing']],
+      ['more like this', 1, ['more like this', 'songs like this', 'similar songs', 'play similar music']],
+      ['faster', 1, ['faster', 'speed up', 'speed it up', 'play faster']],
+      ['slower', 1, ['slower', 'slow down', 'slow it down', 'play slower']],
+      ['time left', 1, ['how much time is left', 'time remaining', 'how long is left', 'how long until it ends', 'how much longer']],
+      ['my playlists', 1, ['show my playlists', 'list my playlists', 'what playlists do i have', 'my playlists']],
+      ['library stats', 1, ['library stats', 'how many songs do i have', 'how big is my library', 'tell me about my library']],
+      ['help', 1, ['help', 'what can you do', 'what can i say', 'show me commands']],
+      ['get the lyrics', 0, ['get the lyrics', 'write the lyrics', 'show me the lyrics', 'transcribe this song', 'lyrics for this song']],
+      ['split this song', 0, ['split this song', 'separate the vocals', 'remove the vocals', 'make a karaoke version', 'get the stems', 'isolate the vocals']],
+      ['tag this song', 0, ['tag this song', 'analyze this song', 'find the bpm', 'what is the key', 'detect the tempo']]
+    ];
+    const S_STOP = new Set(['the', 'a', 'an', 'to', 'of', 'this', 'that', 'it', 'please', 'my', 'me', 'i', 'you', 'can', 'could', 'would', 'now', 'just', 'and', 'for']);
+    const sToks = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w && !S_STOP.has(w)).map(w => w.length > 4 ? w.replace(/(?:ing|ed|es|s)$/, '') : w);
+    function sScore(Q, P) {
+      if (!Q.length || !P.length) return 0; const used = new Set(); let hit = 0;
+      P.forEach(p => { const j = Q.findIndex((q, k) => !used.has(k) && (q === p || (p.length >= 5 && sLev(q, p) <= 1) || (p.length >= 8 && sLev(q, p) <= 2))); if (j >= 0) { used.add(j); hit++; } });
+      const pr = hit / Q.length, rc = hit / P.length; return pr + rc ? 2 * pr * rc / (pr + rc) : 0;
+    }
+    function sRank(t) {
+      const Q = sToks(t); if (!Q.length || Q.length > 7) return [];
+      return S_CAT.map(([cmd, safe, ph]) => ({ cmd, safe, s: Math.max(...ph.map(p => sScore(Q, sToks(p)))) })).filter(x => x.s >= .55).sort((a, b) => b.s - a.s);
+    }
+    // Runs after the exact rules, tag talk and small talk, right before the chat model. Returns true when it answered.
+    function routeIntent(raw) {
+      const t = sClean(raw); if (!t || t.length > 70 || smartSt.noRoute === raw || /\b(?:don'?t|dont|do not|never|without)\b/i.test(t) || !window.__ppApi) return false;
+      const r = sRank(t); if (!r.length) return false;
+      const top = r[0], nxt = r[1];
+      if (top.safe && top.s >= .85 && (!nxt || top.s - nxt.s >= .2)) { const n = add('bot', '(Reading that as \u201c' + top.cmd + '\u201d.)'); if (sExec(top.cmd)) return true; n.remove(); return false; }
+      add('bot', 'Did you mean ' + r.slice(0, 2).map(x => '\u201c' + x.cmd + '\u201d').join(' or ') + '?');
+      actions(r.slice(0, 2).map(x => ['\u25b6 ' + x.cmd, (b, d) => { d.remove(); sExec(x.cmd); }]).concat([['Neither', (b, d) => { d.remove(); smartSt.noRoute = raw; send(raw, true); }]]));
+      return true;
+    }
+
+    function smart(raw) {
+      const A = window.__ppApi, t = sClean(raw); if (!A || !t) return false;
+      if (/^(?:undo|undo (?:that|it|this)|take (?:that|it) back|revert(?: that)?|put it back|go back to how it was)$/i.test(t)) return sUndo();
+      if (/^(?:again|do (?:that|it) again|one more time|once more|same again|repeat that|do the same)$/i.test(t)) return smartSt.last ? smart(smartSt.last) : sSay('I have nothing to repeat yet.');
+      const before = snapNow();
+      const fin = (ok, cmd) => { if (ok && cmd && !S_Q.test(cmd)) { sRec(before, cmd); } return ok; };
+      // "a bit more", "less", "too much": continue or reverse the last volume / speed / seek change
+      const fu = t.match(/^(?:(?:and|even|just|still|some|a little|a bit|a lot|much|slightly)\s+)*(more|less|further|too much|too little|not enough)$/i);
+      if (fu && smartSt.last && Date.now() - smartSt.at < 180000 && sKind(smartSt.last)) {
+        const k = sKind(smartSt.last), dir = (sDir(smartSt.last) || 1) * (/^(less|too much)$/i.test(fu[1]) ? -1 : 1), amt = S_AMT(t);
+        if (k === 'vol') return fin(sApplyVol({ d: dir * amt }), dir > 0 ? 'louder' : 'quieter');
+        if (k === 'speed') return fin(agent(dir > 0 ? 'faster' : 'slower', true), dir > 0 ? 'faster' : 'slower');
+        return fin(agent((dir > 0 ? 'skip forward ' : 'rewind ') + (amt === 25 ? 30 : amt === 5 ? 5 : 10) + ' seconds', true), dir > 0 ? 'skip forward' : 'rewind');
+      }
+      try { if (sPlaylistCmd(t)) return true; } catch (e) { console.error(e); return sSay('Oops, that playlist request did not work: ' + e.message); }
+      if (t.length < 70) { const sc = S_SCENES.find(x => x[0].test(t)); if (sc) return fin(sChain(sc[1], sc[2]), t); }
+      const parts = sSplit(t);
+      if (parts) {
+        for (let i = 0; i < parts.length; i++) {
+          let ok = false; try { ok = agent(parts[i]); } catch (e) { console.error(e); return fin(sSay('Oops, that did not work: ' + e.message), t); }
+          if (!ok) { if (i === 0) break; return fin(sSay('I did the first ' + (i === 1 ? 'part' : i + ' parts') + ' but did not understand \u201c' + parts[i] + '\u201d. Say that part again?'), t); }
+          if (i === parts.length - 1) return fin(true, t);
+        }
+      }
+      if (agent(raw)) { if (!S_Q.test(t)) { sRec(before, t); } return true; }
+      const rv = relVol(t); if (rv && $id('volume')) return fin(sApplyVol(rv), t);
+      const fx = sFixTypos(t);
+      if (fx !== t) { const n = add('bot', '(I read that as \u201c' + fx + '\u201d.)'); if (agent(fx)) { if (!S_Q.test(fx)) { sRec(before, fx); } return true; } n.remove(); }
+      return sStatus(t);
+    }
+    // SMART END
+
+    // PLAYLISTS START
+    // ---------- Smarter playlists: For you / Discover / Forgotten favourites, "like <song>", with / without, add / remove by name ----------
+    // Picks use your tags, the stem-tagger's sound embeddings and your listening history (Portfolio). Selection is diversity-aware
+    // (maximal marginal relevance + a per-artist cap), then ordered so neighbours flow. Nothing here uses the chat model.
+    const sNrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const sReal = () => { const tr = window.__ppApi.tracks(); return tr.map((x, i) => i).filter(i => !tr[i].stem); };
+    let sPFmemo = { at: 0, v: {} };
+    const sPF = () => { if (Date.now() - sPFmemo.at < 2000) return sPFmemo.v; try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} let v = {}; try { v = (JSON.parse(localStorage.getItem('pppSaveV1')) || {}).trackPlays || {}; } catch (e) {} sPFmemo = { at: Date.now(), v }; return v; };
+    function sTaste() {   // what you actually listen to: top tracks weighted by plays, time listened and recency
+      const A = window.__ppApi, tr = A.tracks(), pf = sPF(), now = Date.now(), idx = new Map(tr.map((t, i) => [String(t.dbId), i])), count = new Map(), last = new Map(), an = [];
+      Object.entries(pf).forEach(([id, p]) => {
+        const i = idx.get(String(id)); if (i == null || tr[i].stem || !p || !(p.count > 0)) return;
+        const lp = typeof p.lastPlayed === 'number' ? p.lastPlayed : (Date.parse(p.lastPlayed) || 0), days = lp ? (now - lp) / 864e5 : 0;
+        count.set(i, p.count); last.set(i, lp); an.push([i, (Math.log(1 + p.count) + Math.min(3, (p.totalMs || 0) / 9e5)) * Math.exp(-days / 60)]);
+      });
+      an.sort((a, b) => b[1] - a[1]); return { anchors: an.slice(0, 15), count, last };
+    }
+    const sJac = (x, y) => { if (!x.size || !y.size) return 0; let n = 0; x.forEach(v => { if (y.has(v)) n++; }); return n / (x.size + y.size - n); };
+    function sFeat(c) {
+      if (!c) return null;
+      return { v: new Set(vibes(c).filter(v => !/^(slow|mid-tempo|fast|very-fast|vocals)$/.test(v))), g: new Set((c.gp || []).map(x => x[0]).concat((c.gn || []).slice(0, 2).map(x => x[0]))), i: new Set((c.in || []).slice(0, 5).map(x => x[0])), bpm: c.bpm || 0, ck: c.ck || '' };
+    }
+    function sFSim(a, b) {   // tag similarity 0..1: mood, genre, instruments, tempo (half/double aware), key
+      if (!a || !b) return .1;
+      const bp = a.bpm && b.bpm ? Math.exp(-Math.min(Math.abs(a.bpm - b.bpm), Math.abs(a.bpm * 2 - b.bpm), Math.abs(a.bpm - b.bpm * 2)) / 25) : .3;
+      return .35 * sJac(a.v, b.v) + .3 * sJac(a.g, b.g) + .15 * sJac(a.i, b.i) + .12 * bp + .08 * (camOk(a.ck, b.ck) ? 1 : 0);
+    }
+    async function sEmbScores(seedIdx, wts) {   // cosine to the weighted average of the seeds' sound embeddings; null when the seeds were never analysed
+      const A = window.__ppApi, tr = A.tracks(), embs = await Promise.all(tr.map(t => loadEmb(t.dbId).catch(() => null)));
+      const seeds = seedIdx.map((i, k) => [i, wts ? wts[k] : 1]).filter(x => embs[x[0]]); if (!seeds.length) return null;
+      const have = tr.map((_, i) => i).filter(i => embs[i]), D = embs[have[0]].length, mean = new Float32Array(D);
+      have.forEach(i => { for (let c = 0; c < D; c++) mean[c] += embs[i][c] / have.length; });
+      const norm = i => { const v = new Float32Array(D); let n = 0; for (let c = 0; c < D; c++) { v[c] = embs[i][c] - mean[c]; n += v[c] * v[c]; } n = Math.sqrt(n) || 1; for (let c = 0; c < D; c++) v[c] /= n; return v; };
+      const q = new Float32Array(D); seeds.forEach(([i, w]) => { const v = norm(i); for (let c = 0; c < D; c++) q[c] += v[c] * w; });
+      let qn = 0; for (let c = 0; c < D; c++) qn += q[c] * q[c]; qn = Math.sqrt(qn) || 1;
+      const out = new Map(); have.forEach(i => { const v = norm(i); let s = 0; for (let c = 0; c < D; c++) s += q[c] * v[c]; out.set(i, s / qn); }); return out;
+    }
+    // Maximal marginal relevance: each pick balances "fits the brief" against "too close to what is already chosen", with a per-artist cap.
+    function sMMR(cands, rel, F, k, lam, cap, tr, already) {
+      const art = i => sNrm(tr[i].artist || ''), picked = [], per = {}, rest = cands.slice(), ms = new Map(), al = already || [];
+      al.forEach(i => { const a = art(i); if (a) per[a] = (per[a] || 0) + 1; });
+      rest.forEach(i => { let m = 0; al.forEach(p => { m = Math.max(m, sFSim(F.get(i), F.get(p))); }); ms.set(i, m); });
+      let c = cap;
+      while (picked.length < k && rest.length) {
+        let bi = -1, bs = -1e9;
+        for (let n = 0; n < rest.length; n++) { const i = rest[n], a = art(i); if (a && (per[a] || 0) >= c) continue; const s = lam * rel(i) - (1 - lam) * ms.get(i); if (s > bs) { bs = s; bi = n; } }
+        if (bi < 0) { if (c > cap + 3) break; c++; continue; }
+        const i = rest.splice(bi, 1)[0]; picked.push(i); const a = art(i); if (a) per[a] = (per[a] || 0) + 1;
+        rest.forEach(j => { const s = sFSim(F.get(i), F.get(j)); if (s > ms.get(j)) ms.set(j, s); });
+      }
+      return picked;
+    }
+    function sFlow(list, F, tr, first) {   // order so neighbours fit (tempo / mood / key) and the same artist never plays twice in a row
+      const rest = list.slice(), out = []; let cur = first != null && rest.includes(first) ? first : rest[0]; if (cur == null) return out;
+      rest.splice(rest.indexOf(cur), 1); out.push(cur);
+      while (rest.length) {
+        const a = sNrm(tr[cur].artist || ''); let bi = 0, bs = -9;
+        rest.forEach((j, n) => { const s = sFSim(F.get(cur), F.get(j)) - (a && sNrm(tr[j].artist || '') === a ? .5 : 0) + Math.random() * .05; if (s > bs) { bs = s; bi = n; } });
+        cur = rest.splice(bi, 1)[0]; out.push(cur);
+      }
+      return out;
+    }
+
+    // ---- turning words into tracks: "Hello", "Adele", "slow songs", "piano", "this song" ----
+    const S_CUR = /^(?:this|that|it|current|the current|(?:this|that|the current|current) (?:song|track|one)|what'?s playing|what is playing|the one (?:playing|that'?s playing)(?: now)?)$/i;
+    const S_FILL = new Set(['make', 'create', 'build', 'generate', 'give', 'get', 'put', 'together', 'start', 'compose', 'curate', 'new', 'another', 'some', 'me', 'my', 'the', 'a', 'an', 'of', 'that', 'is', 'are', 'for', 'you', 'playlist', 'playlists', 'mix', 'mixtape', 'song', 'songs', 'track', 'tracks', 'music', 'please', 'just', 'only', 'all', 'any', 'more', 'also', 'stuff', 'thing', 'things', 'something', 'one', 'ones']);
+    function sResolve(m0) {   // -> {tracks, artist?} | {vibes} | {words, tracks} | {none} | null
+      const A = window.__ppApi, tr = A.tracks(), real = sReal();
+      if (S_CUR.test(String(m0).trim())) { const c = A.currentIndex(); return c >= 0 ? { tracks: [c] } : { none: true }; }
+      const cleaned = String(m0).trim().replace(/^(?:the |a |an |some |any )+/i, '').replace(/^(?:songs?|tracks?|music|artists?|bands?|stuff)\s+(?:by |from )?/i, ''), q = sNrm(cleaned); if (!q) return null;
+      const pf = sPF(), pc = i => (pf[tr[i].dbId] || pf[String(tr[i].dbId)] || {}).count || 0, best = a => a.slice().sort((x, y) => pc(y) - pc(x))[0];
+      const ti = i => sNrm(tr[i].title), an = i => sNrm(tr[i].artist || '');
+      const ex = real.filter(i => ti(i) === q); if (ex.length) return { tracks: [best(ex)] };
+      const toks = cleaned.toLowerCase().split(/[^\p{L}\p{N}'-]+/u).filter(w => w && !S_FILL.has(w));
+      if (toks.length && toks.every(w => VIBEW.has(w) || VIBE_SYN[w])) return { vibes: vibeWordsOf(cleaned) };
+      const by = cleaned.match(/^(.+?)\s+by\s+(.+)$/i);
+      if (by) { const a = sNrm(by[2]), tt = sNrm(by[1]), r = real.filter(i => ti(i).includes(tt) && an(i).includes(a)); if (r.length) return { tracks: [best(r)] }; }
+      const ar = real.filter(i => an(i) === q || an(i) === 'the' + q); if (ar.length) return { artist: q, tracks: ar.sort((x, y) => pc(y) - pc(x)) };
+      const ws = cleaned.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter(w => w.length > 1 || /\d/.test(w));
+      if (ws.length) {
+        const hay = i => (tr[i].title + ' ' + (tr[i].artist || '')).toLowerCase(), c = real.filter(i => ws.every(w => hay(i).includes(w)));
+        if (c.length) {
+          const tc = c.filter(i => ws.every(w => tr[i].title.toLowerCase().includes(w)));
+          if (tc.length) { tc.sort((x, y) => (ti(y).startsWith(q) - ti(x).startsWith(q)) || (ti(x).length - ti(y).length) || (pc(y) - pc(x))); return { tracks: [tc[0]] }; }
+          return { artist: q, tracks: c.sort((x, y) => pc(y) - pc(x)) };
+        }
+        const tgs = loadTags(), w2 = ws.filter(x => x.length > 2);
+        if (w2.length) { const m = real.filter(i => { const c = tgs[tr[i].dbId]; return c && w2.every(x => (' ' + tagWords(c) + ' ').includes(' ' + x + ' ')); }); if (m.length) return { words: w2, tracks: m }; }
+      }
+      return null;
+    }
+    function sMentions(str) {   // "A, B and C" -> ["A","B","C"], unless the whole thing is one title / artist
+      const s = String(str).replace(/["\u201c\u201d]/g, '').trim(); if (!s) return [];
+      if (sResolve(s)) return [s];
+      return s.split(/\s*(?:,|;|&|\band\b|\bor\b|\bplus\b)\s*/i).map(x => x.trim()).filter(Boolean);
+    }
+    const sLabel = (r, m) => { const tr = window.__ppApi.tracks(); return r.vibes ? r.vibes.join(' + ') + ' songs' : r.words ? r.words.join(' ') + ' songs' : r.artist ? tr[r.tracks[0]].artist : '\u201c' + tr[r.tracks[0]].title + '\u201d'; };
+    function sApply(sp, m, mode) {
+      const r = sResolve(m), tr = window.__ppApi.tracks(); if (!r) { sp.miss.push(m); return; } if (r.none) { sp.miss.push(m + ' (nothing is playing)'); return; }
+      const lab = sLabel(r, m);
+      if (mode === 'seed') { if (r.vibes || r.words) { sp.miss.push(m + ' (I need a song or artist to match)'); return; } sp.seeds.push(...(r.artist ? r.tracks.slice(0, 5) : r.tracks)); sp.said.seed.push(lab); }
+      else if (mode === 'inc') { if (r.vibes) sp.themeWords.push(...r.vibes); else if (r.words) sp.themeWords.push(...r.words); else sp.include.push(...(r.artist ? r.tracks.slice(0, 6) : r.tracks)); sp.said.inc.push(lab); }
+      else { if (r.vibes) sp.exVibes.push(...r.vibes); else if (r.words) sp.exWords.push(...r.words); else if (r.artist) sp.exArtists.push(sNrm(tr[r.tracks[0]].artist)); else sp.exclude.push(...r.tracks); sp.said.exc.push(lab); }
+    }
+    // ---- reading a playlist request ----
+    const S_STOPM = '(?=\\s+(?:with|without|including|include|featuring|excluding|exclude|except|but|and (?:no|without|exclude|not)|no|not|similar|based on|inspired|called|named)\\b|$)';
+    const R_SIM = new RegExp('\\b(?:similar to|similar|(?:songs|tracks|music|stuff|playlist|mix|something|vibes?) like|based on|inspired by|in the style of|(?:sounds?|sounding) like|resembling)\\s+(.+?)' + S_STOPM, 'i');
+    const R_EXC = /\b(?:without|excluding|exclude|except(?: for)?|but (?:no|not|without)|and (?:no|without|exclude|not)|not including|leave out|leaving out|minus|skip|no)\s+(.+?)(?=\s+(?:with|including|include|featuring|similar|based on|inspired|called|named)\b|$)/i;
+    const R_INC = new RegExp('\\b(?:with|including|include|featuring|containing|that (?:has|have|includes?|contains?)|plus|and add|also add)\\s+(.+?)' + S_STOPM, 'i');
+    function sParsePl(t0) {
+      const t = t0.replace(/^(?:i (?:want|need|would like|'d like|wanna)|can i (?:get|have)|could you|let'?s|how about)\s+/i, '').trim(), s = t.toLowerCase();
+      const hasPl = /\b(?:playlists?|mix|mixtape)\b/.test(s);
+      const mk = /^(?:make|create|build|generate|give|get|put together|start|compose|curate|set up|queue up|refresh|redo|regenerate|remake|new|another)\b/.test(s) || /^(?:a |an |my |the )?(?:playlist|mix|mixtape)\b/.test(s);
+      const rec = /^(?:recommend|suggest)\w*\b/.test(s) || /^(?:give|get|make|show)(?: me)?(?: some| a few)? (?:recommendations?|suggestions?)\b/.test(s);
+      if (!((hasPl && mk) || rec)) return null;
+      const sp = { kind: 'custom', seeds: [], include: [], exclude: [], exArtists: [], exVibes: [], exWords: [], themeWords: [], themeSet: null, theme: '', size: 0, name: '', miss: [], said: { seed: [], inc: [], exc: [] } };
+      let w = t, m;
+      if ((m = w.match(/\b(?:called|named|titled)\s+["\u201c]?(.+?)["\u201d]?$/i))) { sp.name = m[1].trim().slice(0, 50); w = w.replace(m[0], ' '); }
+      if ((m = s.match(/\b(\d{1,3})[- ]?(?:song|track)s?\b/))) sp.size = +m[1]; else if (/\b(?:short|small|quick)\b/.test(s)) sp.size = 10; else if (/\b(?:long|big|huge|large)\b/.test(s)) sp.size = 40;
+      const grab = (re, mode) => { const x = w.match(re); if (!x) return false; w = w.replace(x[0], ' '); sMentions(x[1]).forEach(mm => sApply(sp, mm, mode)); return true; };
+      grab(R_SIM, 'seed'); const hadEx = grab(R_EXC, 'exc'), hadIn = grab(R_INC, 'inc');
+      let byArtist = null; if ((m = w.match(/\bby\s+(.+?)(?:\s+songs?)?$/i))) { const r = sResolve(m[1]); if (r && r.artist) { byArtist = r.tracks; w = w.replace(m[0], ' '); } }
+      if (/\b(?:rediscover|forgotten (?:favou?rites|songs|tracks)|old favou?rites|songs i forgot|(?:haven'?t|have not) (?:played|heard|listened to)[\w\s]* in (?:a )?(?:while|ages)|drifted away)\b/.test(s)) sp.kind = 'redisc';
+      else if (/\b(?:discover|something new|new (?:songs|music|tracks|stuff)|(?:haven'?t|have not|never) (?:played|heard|listened to)|unplayed|unheard|new to me|hidden gems?|deep cuts?)\b/.test(s)) sp.kind = 'discover';
+      else if (/\b(?:for you|for me|recommend\w*|suggest\w*|daily mix|made for me|i might like|i(?:'d| would) like(?! to)|based on (?:what i|my) (?:listen|play|like|taste)|my taste)\b/.test(s)) sp.kind = 'foryou';
+      if (sp.seeds.length) sp.kind = 'similar';
+      const th = w.replace(/\b(?:make|create|build|generate|give|get|put together|start|compose|curate|set up|queue up|refresh|redo|regenerate|remake|recommend\w*|suggest\w*|for me|for you|please|playlists?|mixtapes?|mix|made|daily|discover\w*|rediscover\w*|something new|forgotten favou?rites|(?:\d{1,3})[- ]?(?:songs?|tracks?)|short|small|quick|long|big|huge|large)\b/gi, ' ').replace(/\b(?:me|my|a|an|the|some|another|new|of|that|is|are|songs?|tracks?|music|and|in|i|i'?d|would|like|might)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+      const ws = wordsOf(th + ' ' + sp.themeWords.join(' ')).filter(x => x && !S_FILL.has(x));
+      sp.theme = th;
+      const sets = []; if (ws.length) sets.push(findTracks(ws)); if (byArtist) sets.push(byArtist);
+      if (sets.length) sp.themeSet = [...new Set([].concat(...sets))];
+      const custom = hadIn || hadEx || byArtist || (sp.size && ws.length);
+      if (sp.kind === 'custom' && !custom) return null;
+      return sp;
+    }
+    // ---- building ----
+    async function sBuild(sp) {
+      const A = window.__ppApi, tr = A.tracks(), tg = loadTags(), real = sReal();
+      if (!real.length) throw new Error('Your library is empty.');
+      const F = new Map(real.map(i => [i, sFeat(tg[tr[i].dbId])])), taste = sTaste(), art = i => sNrm(tr[i].artist || '');
+      const size = Math.max(5, Math.min(100, sp.size || 20)), exSet = new Set(sp.exclude), inc = [...new Set(sp.include)].filter(i => !exSet.has(i));
+      let pool = real.filter(i => !exSet.has(i) && !sp.exArtists.includes(art(i)));
+      if (sp.exVibes.length || sp.exWords.length) pool = pool.filter(i => { const c = tg[tr[i].dbId]; if (!c) return true; const v = vibes(c), tw = ' ' + tagWords(c) + ' '; return !sp.exVibes.some(x => v.includes(x)) && !sp.exWords.some(x => tw.includes(' ' + x + ' ')); });
+      if (sp.themeSet) { const st = new Set(sp.themeSet); pool = pool.filter(i => st.has(i)); }
+      const forced = [...new Set((sp.kind === 'similar' ? sp.seeds : []).concat(inc))].filter(i => !exSet.has(i)).slice(0, size), fs = new Set(forced), cand = pool.filter(i => !fs.has(i));
+      if (!cand.length && !forced.length) throw new Error('Nothing in your library fits that. Tagging more tracks helps me match moods and styles.');
+      const seeds = sp.kind === 'similar' ? sp.seeds : sp.kind === 'custom' ? inc : taste.anchors.map(a => a[0]), wts = sp.kind === 'similar' || sp.kind === 'custom' ? null : taste.anchors.map(a => a[1]);
+      let emb = null; if (seeds.length && sp.kind !== 'redisc') { try { emb = await sEmbScores(seeds, wts); } catch (e) { console.warn(e); } }
+      if (sp.kind === 'similar' && !emb && sp.seeds.every(i => !F.get(i))) throw new Error('Tag \u201c' + tr[sp.seeds[0]].title + '\u201d first, so I can tell what it sounds like.');
+      let lo = 9, hi = -9; if (emb) cand.forEach(i => { const e = emb.get(i); if (e != null) { if (e < lo) lo = e; if (e > hi) hi = e; } }); const span = (hi - lo) || 1, R = new Map(), nPlay = i => taste.count.get(i) || 0;
+      cand.forEach(i => {
+        let r;
+        if (sp.kind === 'redisc') r = Math.log(1 + nPlay(i)) / 4;
+        else if (!seeds.length) r = .5;
+        else { let a = 0, b = 0; seeds.forEach((sd, k) => { const ww = wts ? wts[k] : 1; a += ww * sFSim(F.get(i), F.get(sd)); b += ww; }); const e = emb && emb.get(i); r = e != null ? .65 * ((e - lo) / span) + .35 * (a / b) : a / b; }
+        R.set(i, r + (Math.random() - .5) * .06);
+      });
+      let list = cand;
+      if (sp.kind === 'discover') { list = cand.filter(i => !nPlay(i)); if (list.length < 5) throw new Error('You have already played almost everything, so there is not much new to find.'); }
+      if (sp.kind === 'redisc') { const old = d => cand.filter(i => nPlay(i) >= 2 && (!taste.last.get(i) || Date.now() - taste.last.get(i) > d * 864e5)); list = old(30); if (list.length < 8) list = old(14); if (list.length < 5) throw new Error('I do not see enough songs you have drifted away from yet.'); }
+      const need = Math.max(0, size - forced.length), lam = { foryou: .62, discover: .65, redisc: .7, similar: .8, custom: .6 }[sp.kind];
+      const cap = sp.noCap ? 1e9 : sp.kind === 'foryou' || sp.kind === 'discover' ? Math.max(1, Math.round(size / 10)) : Math.max(2, Math.ceil(size / (sp.kind === 'similar' ? 5 : 6)));
+      const pick = (arr, k, al) => sMMR(arr, i => R.get(i) || 0, F, k, lam, cap, tr, al), usedHistory = taste.anchors.length > 0;
+      let picked;
+      if (sp.kind === 'foryou' && usedHistory) {   // ~70% songs you know that fit your taste, ~30% you have not played yet
+        const un = list.filter(i => !nPlay(i)), pn = pick(un, Math.min(un.length, Math.round(need * .3)), forced), po = pick(list.filter(i => nPlay(i)), need - pn.length, forced.concat(pn));
+        picked = pn.concat(po); if (picked.length < need) { const ps = new Set(picked); picked = picked.concat(pick(list.filter(i => !ps.has(i)), need - picked.length, forced.concat(picked))); }
+      } else picked = pick(list, need, forced);
+      const all = forced.concat(picked); if (!all.length) throw new Error('Nothing in your library fits that.');
+      const first = sp.kind === 'similar' ? sp.seeds[0] : all.slice().sort((a, b) => (R.get(b) || 0) - (R.get(a) || 0))[0];
+      const idx = sFlow(all, F, tr, first);
+      return { idx, ids: idx.map(i => tr[i].dbId), newN: idx.filter(i => !nPlay(i)).length, artists: new Set(idx.map(art)).size, usedHistory, emb: !!emb, forced: forced.length };
+    }
+    async function sMakePl(sp, note, again) {
+      const A = window.__ppApi, r = await sBuild(sp), tr = A.tracks(), day = new Date().toLocaleDateString(undefined, { weekday: 'short' }), th = sp.theme ? sp.theme.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 28) : '';
+      const name = (sp.name || ({ foryou: '\u2728 For you \u00b7 ' + (th || day), discover: '\ud83e\udded Discover' + (th ? ' \u00b7 ' + th : ''), redisc: '\ud83d\udd70\ufe0f Forgotten favorites', similar: '\ud83d\udd17 Like ' + tr[sp.seeds[0]].title.slice(0, 26) + (sp.seeds.length > 1 && !sp.said.seed[0].startsWith('\u201c') ? '' : sp.seeds.length > 1 ? ' +' + (sp.seeds.length - 1) : ''), custom: '\ud83e\udd16 ' + (th || 'Custom mix') }[sp.kind])).slice(0, 60);
+      const pl = A.createPlaylist(name); r.ids.forEach(id => A.addToPlaylist(id, pl.id)); pl.order = r.ids.slice(); pl.bloop = sp.kind; pl.bname = pl.name; pl.bat = Date.now();
+      if (sp.kind === 'foryou' || sp.kind === 'discover' || sp.kind === 'redisc') A.playlists().filter(p => p.bloop === sp.kind && p.id !== pl.id && p.name === p.bname).sort((x, y) => (y.bat || 0) - (x.bat || 0)).slice(2).forEach(p => A.deletePlaylistQuiet(p.id));
+      A.commitPlaylists();
+      const n = r.idx.length, plural = (k, w) => k + ' ' + w + (k === 1 ? '' : 's');
+      let msg = '\u2713 Made \u201c' + pl.name + '\u201d with ' + plural(n, 'track') + '. ';
+      if (sp.kind === 'foryou') msg += r.usedHistory ? (n - r.newN) + ' you already like and ' + r.newN + ' you have not played yet, across ' + plural(r.artists, 'artist') + '.' : 'I have no listening history yet, so this is a varied mix from your tags. It gets personal as you listen.';
+      else if (sp.kind === 'discover') msg += 'All unplayed, picked to sit close to your taste' + (r.usedHistory ? '' : ' (no history yet, so mostly variety)') + '.';
+      else if (sp.kind === 'redisc') msg += 'Songs you used to play and have not lately.';
+      else if (sp.kind === 'similar') msg += 'Starts with ' + sp.said.seed.join(', ') + ', then the closest ' + (r.emb ? 'by sound' : 'by tags (analysing the song with the tagger gives better matches)') + ', spread over ' + plural(r.artists, 'artist') + '.';
+      else msg += r.forced ? plural(r.forced, 'song') + ' you asked for, and the rest picked to fit them.' : '';
+      if (sp.said.exc.length) msg += ' Left out: ' + sp.said.exc.join(', ') + '.';
+      if (sp.said.inc.length && !r.forced) msg += ' Included: ' + sp.said.inc.join(', ') + '.';
+      if (sp.miss.length) msg += ' I could not find ' + sp.miss.map(x => '\u201c' + x + '\u201d').join(', ') + ', so I skipped ' + (sp.miss.length > 1 ? 'those' : 'it') + '.';
+      note.textContent = msg.trim();
+      smartSt.pu = { at: Date.now(), label: 'Deleted \u201c' + pl.name + '\u201d.', undo: () => { A.deletePlaylistQuiet(pl.id); A.commitPlaylists(); } };
+      actions([['\u25b6 Play it', () => { A.play(r.idx[0], r.idx); }], ['\ud83d\udd04 Another take', (b, d) => { d.remove(); smartSt.pu = null; A.deletePlaylistQuiet(pl.id); A.commitPlaylists(); sRunPl(sp); }]]);
+    }
+    function sRunPl(sp) {
+      unloadModel(); const note = add('bot', '\u2026 working out your picks');
+      sMakePl(sp, note).catch(e => { console.error(e); note.textContent = 'I could not build that: ' + e.message; });
+    }
+    // ---- add / remove by name: "add Hello to my gym playlist", "take the slow songs out of chill", "remove Drake from road trip" ----
+    function sParseEdit(t) {
+      const CURW = /^(?:this|it|that|the current|current)(?: song| track| one)?$/i; let m;
+      if ((m = t.match(/^(?:add|put|throw|drop|stick)\s+(.+?)\s+(?:to|into|in|onto)\s+(?:my |the )?(.+?)(?:\s+playlist)?$/i)) && !CURW.test(m[1].trim())) return { op: 'add', what: m[1], pl: m[2] };
+      if ((m = t.match(/^(?:remove|take|drop|delete|get rid of|kick|pull|cut|clear)\s+(.+?)\s+(?:from|out of|off(?: of)?)\s+(?:my |the )?(.+?)(?:\s+playlist)?$/i)) && !CURW.test(m[1].trim())) return { op: 'remove', what: m[1], pl: m[2] };
+      return null;
+    }
+    function sEdit(ed, t) {
+      const A = window.__ppApi, tr = A.tracks(), pls = A.playlists().filter(p => !p.stemOf), want = sNrm(ed.pl);
+      const pl = want && (pls.find(p => sNrm(p.name) === want) || pls.find(p => sNrm(p.name).includes(want)));
+      if (!pl && !/\bplaylist\b/i.test(t)) return false;   // "drop the bass from this song" is not a playlist edit
+      if (!pl) return sSay('I cannot find a playlist called \u201c' + ed.pl + '\u201d.' + (pls.length ? ' You have: ' + pls.slice(0, 6).map(p => p.name).join(', ') + '.' : ''));
+      const tg = loadTags(), real = sReal(), inPl = i => (tr[i].playlistIds || []).includes(pl.id), miss = [], labels = []; let hit = [];
+      sMentions(ed.what).forEach(m => {
+        const r = sResolve(m); if (!r || r.none) { miss.push(m); return; }
+        let idx = r.vibes ? real.filter(i => { const c = tg[tr[i].dbId]; return c && r.vibes.every(v => vibes(c).includes(v)); }) : r.tracks;
+        labels.push(sLabel(r, m)); hit = hit.concat(r.vibes || r.words ? idx.slice(0, 50) : idx);
+      });
+      hit = [...new Set(hit)]; const missTxt = miss.length ? ' I could not find ' + miss.map(x => '\u201c' + x + '\u201d').join(', ') + '.' : '';
+      if (ed.op === 'add') {
+        const todo = hit.filter(i => !inPl(i)); if (!todo.length) return sSay(hit.length ? 'Those are already in ' + pl.name + '.' + missTxt : 'I could not match that to any songs.' + missTxt);
+        todo.forEach(i => A.addToPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists();
+        smartSt.pu = { at: Date.now(), label: 'Took them back out of ' + pl.name + '.', undo: () => { todo.forEach(i => A.removeFromPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists(); } };
+        return sDone('Added ' + todo.length + ' track' + (todo.length === 1 ? '' : 's') + ' (' + labels.join(', ') + ') to ' + pl.name + (hit.length > todo.length ? '; ' + (hit.length - todo.length) + ' were already in it' : '') + '.' + missTxt);
+      }
+      const del = hit.filter(inPl); if (!del.length) return sSay(hit.length ? 'None of those are in ' + pl.name + '.' + missTxt : 'I could not match that to any songs.' + missTxt);
+      const go = () => { del.forEach(i => A.removeFromPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists(); smartSt.pu = { at: Date.now(), label: 'Put them back in ' + pl.name + '.', undo: () => { del.forEach(i => A.addToPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists(); } }; sDone('Removed ' + del.length + ' track' + (del.length === 1 ? '' : 's') + ' (' + labels.join(', ') + ') from ' + pl.name + '. They stay in your library.' + missTxt); };
+      if (del.length > 8) askYN('Remove ' + del.length + ' tracks from \u201c' + pl.name + '\u201d? They stay in your library, and I can undo it.', go); else go();
+      return true;
+    }
+    function sPlaylistCmd(t) {
+      if (!window.__ppApi || t.length > 220) return false;
+      const ed = sParseEdit(t); if (ed && sEdit(ed, t)) { smartSt.last = t; smartSt.at = Date.now(); return true; }
+      const sp = sParsePl(t); if (!sp) return false;
+      smartSt.last = t; smartSt.at = Date.now(); sRunPl(sp); return true;
+    }
+    // PLAYLISTS END
+
+    // LIVE MIXES START
+    // ---------- Live mixes: ✨ For You, 💜 Ones You May Like, 🔗 Your Pattern ----------
+    // Real playlists that keep changing while you use the player. Each pass drops songs that had their turn (played), got skipped,
+    // were removed by you, or are stale, then refills from your taste. "Your Pattern" is driven by what you play next to what:
+    // a small co-listening matrix learned from your own play history (videos included), blended with sound similarity.
+    // Songs you add yourself are never touched. Switch off with the "Auto mixes" checkbox in the Library tab.
+    const lvLs = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
+    const lvOn = () => lvLs('ppvLiveMix') !== '0';
+    const LV_DAY = 864e5;
+    let lvS = null, lvCur = null, lvBusy = false, lvLast = 0, lvTimer = null, lvTagVer = -1;
+    const lvState = () => { if (lvS) return lvS; try { lvS = JSON.parse(lvLs('ppvLiveV1')) || {}; } catch (e) { lvS = {}; } lvS.seq = lvS.seq || []; lvS.co = lvS.co || {}; lvS.sk = lvS.sk || {}; lvS.meta = lvS.meta || {}; lvS.dk = lvS.dk || Date.now(); lvS.blocked = lvS.blocked || {}; return lvS; };
+    const lvSave = () => lvLs('ppvLiveV1', JSON.stringify(lvS));
+    function lvBump(a, b, w) {
+      const co = lvState().co, row = co[a] || (co[a] = {}); row[b] = (row[b] || 0) + w;
+      const ks = Object.keys(row); if (ks.length > 30) { ks.sort((x, y) => row[x] - row[y]); ks.slice(0, ks.length - 30).forEach(k => delete row[k]); }
+    }
+    function lvDecay() {   // old habits fade: x0.9 per day since the last pass
+      const s = lvState(), days = Math.floor((Date.now() - s.dk) / LV_DAY); if (days < 1) return;
+      const f = Math.pow(0.9, Math.min(days, 30)); s.dk = Date.now();
+      Object.keys(s.co).forEach(a => { const r = s.co[a]; Object.keys(r).forEach(b => { r[b] *= f; if (r[b] < 0.05) delete r[b]; }); if (!Object.keys(r).length) delete s.co[a]; });
+      const ks = Object.keys(s.co); if (ks.length > 600) ks.map(a => [a, Object.values(s.co[a]).reduce((x, y) => x + y, 0)]).sort((x, y) => x[1] - y[1]).slice(0, ks.length - 500).forEach(x => delete s.co[x[0]]);
+    }
+    function lvEnd() {   // a track just stopped being current: skipped, partly heard or finished?
+      if (!lvCur) return; const s = lvState(), { id, frac, secs } = lvCur; lvCur = null; if (secs < 5) return;
+      const now = Date.now(), skipped = frac < 0.25 && secs < 45;
+      if (skipped) { const k = s.sk[id] || [0, 0]; s.sk[id] = [k[0] + 1, now]; }
+      else if (frac >= 0.8 && s.sk[id]) s.sk[id][0] = Math.max(0, s.sk[id][0] - 1);   // finishing a song forgives an old skip
+      if (!skipped && frac >= 0.4) {
+        const prev = s.seq.filter(e => now - e[1] < 30 * 60000).slice(-3);
+        prev.forEach((e, k) => { if (e[0] === id) return; const w = (frac >= 0.8 ? 1 : 0.6) * (k === prev.length - 1 ? 1 : 0.5); lvBump(e[0], id, w); lvBump(id, e[0], w); });
+        s.seq.push([id, now, +frac.toFixed(2)]); if (s.seq.length > 500) s.seq.splice(0, s.seq.length - 500);
+      }
+      lvSave();
+    }
+    function lvPoll() {
+      const A = window.__ppApi; if (!A || !A.tracks || !lvOn()) return;
+      const tr = A.tracks(), i = A.currentIndex(), t = i >= 0 ? tr[i] : null, id = t && !t.stem ? String(t.dbId) : null;
+      const m = [...document.querySelectorAll('audio,video')].find(x => !x.paused && !x.ended);
+      if (lvCur && m && id === lvCur.id && m.duration > 0) { lvCur.frac = Math.max(lvCur.frac, m.currentTime / m.duration); lvCur.secs = Math.max(lvCur.secs, m.currentTime); }
+      if ((lvCur ? lvCur.id : null) !== id) { lvEnd(); lvCur = id ? { id, frac: 0, secs: 0 } : null; lvKick(8000); }
+      if (tagVer !== lvTagVer) { lvTagVer = tagVer; lvKick(30000); }
+    }
+    function lvKick(ms) { if (!lvOn()) return; clearTimeout(lvTimer); lvTimer = setTimeout(() => lvRefresh().catch(e => console.warn('live mixes', e)), Math.max(ms, lvLast + 120000 - Date.now())); }
+    const lvSp = (kind, size, exclude, include) => ({ kind, seeds: [], include, exclude, exArtists: [], exVibes: [], exWords: [], themeWords: [], themeSet: null, theme: '', size, name: '', miss: [], said: { seed: [], inc: [], exc: [] }, noCap: true });
+    const lvViaBuild = kind => async (need, banned, kept, size) => { const r = await sBuild(lvSp(kind, size, [...banned], [...kept])); return r.idx.filter(i => !kept.has(i)).slice(0, need); };
+    async function lvPattern(need, banned, kept, size) {
+      const A = window.__ppApi, tr = A.tracks(), s = lvState(), tg = loadTags(), real = sReal(), idx = new Map(tr.map((t, i) => [String(t.dbId), i])), anchors = new Map();
+      s.seq.slice(-30).reverse().forEach((e, k) => { const i = idx.get(e[0]); if (i != null) anchors.set(i, (anchors.get(i) || 0) + e[2] * Math.exp(-k / 12)); });
+      if (!anchors.size) sTaste().anchors.slice(0, 8).forEach(([i, w]) => anchors.set(i, w));   // no session history yet: use overall taste
+      if (!anchors.size) return lvViaBuild('foryou')(need, banned, kept, size);   // nothing to correlate yet: still fill it
+      const cs = new Map();   // co-listening: how often each song showed up next to what you played lately
+      anchors.forEach((w, a) => { const row = s.co[String(tr[a].dbId)]; if (!row) return; const tot = Object.values(row).reduce((x, y) => x + y, 0) || 1; Object.entries(row).forEach(([b, v]) => { const j = idx.get(b); if (j != null) cs.set(j, (cs.get(j) || 0) + w * v / tot); }); });
+      let cmax = 0; cs.forEach(v => { if (v > cmax) cmax = v; });
+      const ids = [...anchors.keys()], wts = ids.map(i => anchors.get(i)); let emb = null; try { emb = await sEmbScores(ids, wts); } catch (e) {}
+      let lo = 9, hi = -9; if (emb) emb.forEach(e => { if (e < lo) lo = e; if (e > hi) hi = e; }); const span = (hi - lo) || 1;
+      const F = new Map(real.map(i => [i, sFeat(tg[tr[i].dbId])])), now = Date.now(), R = new Map();
+      const tagS = i => { let a = 0, b = 0; ids.forEach((sd, k) => { a += wts[k] * sFSim(F.get(i), F.get(sd)); b += wts[k]; }); return b ? a / b : 0; };
+      const cand = real.filter(i => !banned.has(i) && !kept.has(i) && !anchors.has(i));
+      cand.forEach(i => {
+        const e = emb && emb.get(i), sk = s.sk[String(tr[i].dbId)], pen = sk && sk[0] > 0 && now - sk[1] < 21 * LV_DAY ? 0.15 * sk[0] : 0;
+        R.set(i, 0.5 * (cmax ? (cs.get(i) || 0) / cmax : 0) + 0.3 * (e != null ? (e - lo) / span : 0) + 0.2 * tagS(i) - pen + Math.random() * 0.04);
+      });
+      return sMMR(cand, i => R.get(i) || 0, F, need, 0.75, 1e9, tr, [...kept]);
+    }
+    const LV_MIXES = [
+      { key: 'foryou', name: '✨ For You', size: 25, ttl: 3, block: 3, pick: lvViaBuild('foryou') },
+      { key: 'maylike', name: '💜 Ones You May Like', size: 20, ttl: 7, block: 30, pick: lvViaBuild('discover') },
+      { key: 'pattern', name: '🔗 Your Pattern', size: 20, ttl: 5, block: 3, pick: lvPattern }
+    ];
+    async function lvSync(mx) {
+      const A = window.__ppApi, s = lvState(), tr = A.tracks(), now = Date.now(); if (!sReal().length) return;
+      const meta = s.meta[mx.key] || (s.meta[mx.key] = { added: {}, block: {} }), byId = new Map(tr.map((t, i) => [String(t.dbId), i]));
+      let pl = A.playlists().find(p => p.liveKey === mx.key) || A.playlists().find(p => p.name === mx.name);
+      const members = pl ? tr.map((t, i) => i).filter(i => !tr[i].stem && (tr[i].playlistIds || []).includes(pl.id)) : [], mem = new Set(members.map(i => String(tr[i].dbId)));
+      const removedNow = new Set(); Object.keys(meta.added).forEach(id => { if (pl && !mem.has(id)) { if (byId.has(id)) removedNow.add(byId.get(id)); delete meta.added[id]; } });   // you took it out: no block, it is only skipped for this pass (use Block to keep it out)
+      const cur = A.currentIndex() >= 0 ? String(tr[A.currentIndex()].dbId) : null, lastPlay = {}; s.seq.forEach(e => { lastPlay[e[0]] = Math.max(lastPlay[e[0]] || 0, e[1]); });
+      const drop = members.filter(i => s.blocked[String(tr[i].dbId)]).map(i => String(tr[i].dbId)); let aged = 0;   // blocked songs always leave const maxAged = Math.ceil(mx.size * 0.3);
+      Object.entries(meta.added).forEach(([id, at]) => {
+        if (id === cur || drop.includes(id)) return;              // never pull the song that is playing
+        const sk = s.sk[id], played = (lastPlay[id] || 0) > at, skipped = sk && sk[1] > at && sk[0] >= 2;
+        if (skipped) { drop.push(id); meta.block[id] = now + 7 * LV_DAY; }
+        else if (played && mx.key === 'maylike') { drop.push(id); meta.block[id] = now + mx.block * LV_DAY; }   // no longer new to you
+        else if (now - at > mx.ttl * LV_DAY && aged < maxAged) { drop.push(id); aged++; meta.block[id] = now + 2 * LV_DAY; }
+      });
+      Object.keys(meta.block).forEach(id => { if (meta.block[id] < now) delete meta.block[id]; });
+      const banned = new Set(removedNow); Object.keys(meta.block).forEach(id => { if (byId.has(id)) banned.add(byId.get(id)); });
+      Object.keys(s.blocked).forEach(id => { if (byId.has(id)) banned.add(byId.get(id)); });   // manual blocks
+      const dset = new Set(drop), kept = new Set(members.filter(i => !dset.has(String(tr[i].dbId)))), need = mx.size - kept.size;
+      let adds = []; if (need > 0) { try { adds = await mx.pick(need, banned, kept, mx.size); } catch (e) { console.info('live mix', mx.key, e.message); } }
+      if (!drop.length && !adds.length) return;
+      if (!pl) { if (!adds.length) return; pl = A.createPlaylist(mx.name); }
+      pl.auto = 'live'; pl.liveKey = mx.key;
+      drop.forEach(id => { if (byId.has(id)) A.removeFromPlaylist(tr[byId.get(id)].dbId, pl.id); delete meta.added[id]; });
+      const added = []; adds.forEach(i => { if (A.addToPlaylist(tr[i].dbId, pl.id)) { meta.added[String(tr[i].dbId)] = now; added.push(tr[i].dbId); } });
+      const keepIds = members.filter(i => !dset.has(String(tr[i].dbId))).map(i => tr[i].dbId), old = (pl.order || []).filter(id => keepIds.some(k => String(k) === String(id)));
+      pl.order = old.concat(keepIds.filter(id => !old.some(o => String(o) === String(id))), added);
+      A.commitPlaylists();
+    }
+    async function lvRefresh(force) {
+      const A = window.__ppApi; if (lvBusy || !lvOn() || !A || !A.tracks || !A.playlists) return;
+      if (!force && Date.now() - lvLast < 120000) return;
+      lvBusy = true;
+      try { lvEnd(); lvDecay(); for (const mx of LV_MIXES) { try { await lvSync(mx); } catch (e) { console.warn('live mix', mx.key, e); } } lvLast = Date.now(); lvSave(); } finally { lvBusy = false; }
+    }
+    const lvBlock = (ids, on) => { const s = lvState(); [].concat(ids).forEach(id => { if (on) s.blocked[String(id)] = Date.now(); else delete s.blocked[String(id)]; }); lvSave(); lvRefresh(true).catch(() => {}); };
+    window.__ppLiveMixes = { refresh: () => lvRefresh(true), block: id => lvBlock(id, true), unblock: id => lvBlock(id, false), blocked: () => Object.keys(lvState().blocked) };
+    setInterval(lvPoll, 1500); setInterval(() => lvKick(0), 15 * 60000); lvKick(10000);
+    // LIVE MIXES END
+
+    // CHAT HELPERS START
+    // ---------- Chat box: quick-action chips, type-ahead, guided playlist, mix commands (all with undo) ----------
+    { const st = document.createElement('style'); st.textContent = '#ppv-chat .ch-chips,#ppv-chat .ch-sug{display:flex;gap:6px;overflow-x:auto;padding:4px 8px;flex-shrink:0}#ppv-chat .ch-sug:empty{display:none}#ppv-chat .ch-chips button,#ppv-chat .ch-sug button{white-space:nowrap;border-radius:14px;padding:5px 10px;border:1px solid #555;background:#2f3037;color:#eee;font-size:12px;cursor:pointer}'; document.head.appendChild(st); }
+    const lcSug = document.createElement('div'), lcChipBar = document.createElement('div'); lcSug.className = 'ch-sug'; lcChipBar.className = 'ch-chips';
+    cbox.querySelector('.ch-i').before(lcSug, lcChipBar);
+    const lcUndo = (label, undo) => { smartSt.pu = { at: Date.now(), label, undo }; };
+    const lcChoice = (q, opts) => { add('bot', q); actions(opts.map(([t, fn]) => [t, (b, d) => { d.remove(); fn(); }])); };
+    const lcSize = fn => lcChoice('How many songs?', [['10', () => fn(10)], ['20', () => fn(20)], ['40', () => fn(40)]]);
+    function lcPlayMix(key) {
+      const A = window.__ppApi, tr = A.tracks(), pl = A.playlists().find(p => p.liveKey === key); if (!pl) return null;
+      const idx = tr.map((t, i) => i).filter(i => !tr[i].stem && (tr[i].playlistIds || []).includes(pl.id)); if (!idx.length) return null;
+      const ord = (pl.order || []).map(id => tr.findIndex(t => String(t.dbId) === String(id))).filter(i => idx.includes(i)), q = ord.length ? ord : idx;
+      A.play(q[0], q); return pl.name;
+    }
+    function lcPlaySomething() {
+      const A = window.__ppApi, n = lcPlayMix('foryou') || lcPlayMix('pattern') || lcPlayMix('maylike');
+      if (n) return add('bot', '\u25b6 Playing ' + n + '.');
+      const r = sReal(); if (!r.length) return add('bot', 'Your library is empty.');
+      const q = r.slice().sort(() => Math.random() - 0.5).slice(0, 30); A.play(q[0], q); add('bot', '\u25b6 Playing a random pick from your library.');
+    }
+    function guidePl() {
+      const A = window.__ppApi, ci = A.currentIndex(), cur = ci >= 0 ? A.tracks()[ci] : null, tr = A.tracks();
+      const moods = () => lcChoice('Which mood?', [['Chill', 'chill'], ['Happy', 'happy'], ['Workout', 'workout'], ['Focus', 'focus'], ['Party', 'party'], ['Sad', 'sad']].map(([t, id]) => [t, () => moodPlaylist(id)]));
+      const artists = () => {
+        const cnt = {}, nm = {}; sReal().forEach(i => { const a = sNrm(tr[i].artist || ''); if (a) { cnt[a] = (cnt[a] || 0) + 1; nm[a] = tr[i].artist; } });
+        const top = Object.keys(cnt).sort((x, y) => cnt[y] - cnt[x]).slice(0, 6); if (!top.length) return add('bot', 'I do not see artist names on your tracks yet.');
+        lcChoice('Which artist?', top.map(a => [nm[a], () => lcSize(n => { const idx = sReal().filter(i => sNrm(tr[i].artist || '') === a); const sp = lvSp('custom', n, [], idx.slice(0, 6)); sp.name = '\ud83c\udfa4 ' + nm[a]; sRunPl(sp); })]));
+      };
+      const opts = [['\ud83d\ude0c A mood', moods]];
+      if (cur) opts.push(['\ud83d\udd17 Like this song', () => lcSize(n => { const sp = lvSp('similar', n, [], []); sp.seeds = [ci]; sp.said.seed = ['\u201c' + cur.title + '\u201d']; sRunPl(sp); })]);
+      opts.push(['\ud83c\udfa4 An artist', artists], ['\ud83c\udfb2 Surprise me', () => send('surprise me', true)]);
+      lcChoice('What kind of playlist?', opts);
+    }
+    function lcWhy() {
+      const A = window.__ppApi, i = A.currentIndex(); if (i < 0) return 'Play a track first.';
+      const tr = A.tracks(), t = tr[i], id = String(t.dbId), s = lvState(), tg = loadTags(), mixes = A.playlists().filter(p => p.liveKey && (t.playlistIds || []).includes(p.id));
+      if (!mixes.length) return '\u201c' + t.title + '\u201d is not in any of your auto mixes right now.';
+      const why = [], title = x => { const j = tr.find(q => String(q.dbId) === x); return j && j.title; };
+      const near = [...new Set(s.seq.slice(-15).map(e => e[0]))].filter(x => x !== id && s.co[x] && s.co[x][id] > 0).slice(0, 2).map(title).filter(Boolean);
+      if (near.length) why.push('you often play it near ' + near.map(x => '\u201c' + x + '\u201d').join(' and '));
+      const F = sFeat(tg[t.dbId]);
+      if (F) { let best = -1, bs = 0; sTaste().anchors.slice(0, 5).forEach(([a]) => { const sc = sFSim(F, sFeat(tg[tr[a].dbId])); if (sc > bs) { bs = sc; best = a; } });
+        if (best >= 0 && bs > 0.25) { const G = sFeat(tg[tr[best].dbId]), sh = [...F.v, ...F.g].filter(x => G.v.has(x) || G.g.has(x)).slice(0, 3); why.push('it sounds like \u201c' + tr[best].title + '\u201d, one you play a lot' + (sh.length ? ' (' + sh.join(', ') + ')' : '')); } }
+      const pf = sPF(); if (!((pf[t.dbId] || pf[id] || {}).count > 0)) why.push('you have not played it yet, so it counts as a new find');
+      return '\u201c' + t.title + '\u201d is in ' + mixes.map(p => p.name).join(' and ') + ' because ' + (why.length ? why.join('; ') : 'it fits your overall taste') + '.';
+    }
+    const HELP_MIX = '\n\u2022 \u201cmake a playlist\u201d (I will ask what kind), or tap the chips above the box\n\u2022 \u201crefresh my mixes\u201d, \u201cplay my for you\u201d, \u201cplay ones you may like\u201d, \u201cplay your pattern\u201d\n\u2022 \u201cturn auto mixes off\u201d / \u201con\u201d\n\u2022 \u201cblock this song\u201d, \u201cblock this artist\u201d, \u201cblock <artist>\u201d (add \u201cun\u201d to undo), \u201cwhy is this in my mixes\u201d\n\u2022 Type \u201cplay\u201d, \u201cadd this to\u201d or \u201csongs by\u201d and I suggest matches as you type. Say \u201cundo\u201d to take back most of this.';
+    function lcCmd(t) {
+      const A = window.__ppApi, L = window.__ppLiveMixes; if (!A || !L) return false; let m;
+      const ci = A.currentIndex(), cur = ci >= 0 ? A.tracks()[ci] : null;
+      if (/^(?:make|create|build|start)(?: me)?(?: a| an)?(?: new)? playlist$/i.test(t)) return (guidePl(), true);
+      if (/^(?:refresh|update|rebuild|redo)(?: my| the| all)?(?: auto| live)? mixes$/i.test(t)) {
+        if (!lvOn()) return sSay('Auto mixes are off. Say \u201cturn auto mixes on\u201d first.');
+        const snap = () => { const o = {}; A.playlists().filter(p => p.liveKey).forEach(p => { o[p.id] = { p, ids: A.tracks().filter(x => !x.stem && (x.playlistIds || []).includes(p.id)).map(x => x.dbId) }; }); return o; }, before = snap();
+        sSay('Refreshing your mixes\u2026');
+        L.refresh().then(() => {
+          const after = snap(); let add_ = 0, rem = 0;
+          Object.keys(after).forEach(k => { const b = (before[k] ? before[k].ids : []).map(String), a = after[k].ids.map(String); add_ += a.filter(x => !b.includes(x)).length; rem += b.filter(x => !a.includes(x)).length; });
+          lcUndo('Put your mixes back how they were.', () => { Object.keys(after).forEach(k => { const b = (before[k] ? before[k].ids : []), bs = b.map(String), a = after[k].ids, as = a.map(String), pl = after[k].p; a.filter((x, n) => !bs.includes(as[n])).forEach(x => A.removeFromPlaylist(x, pl.id)); b.filter((x, n) => !as.includes(bs[n])).forEach(x => A.addToPlaylist(x, pl.id)); }); A.commitPlaylists(); lvLast = Date.now() + 8 * 60000; });
+          sDone(add_ || rem ? 'Mixes updated: ' + add_ + ' added, ' + rem + ' removed.' : 'Your mixes already look right. Nothing to change.');
+        }).catch(e => sSay('I could not refresh: ' + e.message));
+        return true;
+      }
+      if ((m = t.match(/^(?:play|start|put on|open)(?: my| the)? (for you|ones you may like|your pattern|pattern)(?: mix| playlist)?$/i))) {
+        const key = /for you/i.test(m[1]) ? 'foryou' : /may like/i.test(m[1]) ? 'maylike' : 'pattern', n = lcPlayMix(key);
+        if (n) return sDone('Playing ' + n + '.');
+        if (!lvOn()) return sSay('Auto mixes are off. Say \u201cturn auto mixes on\u201d first.');
+        sSay('That mix is empty, so I will fill it first.'); L.refresh().then(() => { const n2 = lcPlayMix(key); sSay(n2 ? '\u25b6 Playing ' + n2 + '.' : 'I could not find enough songs for it yet. Play and tag a few more tracks.'); }); return true;
+      }
+      if (/^(?:(?:turn|switch|set)(?: my| the)?(?: auto| live)? mixes (?:on|off)|(?:turn|switch) (?:on|off)(?: my| the)?(?: auto| live) mixes|(?:enable|disable)(?: my| the)?(?: auto| live)? mixes)$/i.test(t)) {
+        const want = /\b(on|enable)\b/i.test(t), was = lvOn(), b = document.getElementById('ppv-lmix');
+        const setTo = v => { if (b) { b.checked = v; b.dispatchEvent(new Event('change', { bubbles: true })); } else lvLs('ppvLiveMix', v ? '1' : '0'); };
+        if (want === was) return sSay('Auto mixes are already ' + (was ? 'on' : 'off') + '.');
+        setTo(want); lcUndo('Auto mixes are ' + (was ? 'on' : 'off') + ' again.', () => setTo(was)); return sDone('Auto mixes are ' + (want ? 'on' : 'off') + '.');
+      }
+      if ((m = t.match(/^(un)?block (?:this|the current)(?: song| track)?(?: from| in)? ?(?:my |the )?(?:auto |live )?(?:mixes|recommendations)?$/i)) || (m = t.match(/^()(?:never|don'?t|do not|stop) (?:recommend(?:ing)?|suggest(?:ing)?|show(?:ing)?)(?: me)? (?:this|it)(?: song| track)?(?: again)?$/i))) {
+        if (!cur) return sSay('Play or pick a track first.'); const un = !!m[1], was = !!lvState().blocked[String(cur.dbId)];
+        if (un === !was) return sSay('\u201c' + cur.title + '\u201d is already ' + (un ? 'allowed' : 'blocked') + '.');
+        un ? L.unblock([cur.dbId]) : L.block([cur.dbId]); lcUndo(un ? 'Blocked \u201c' + cur.title + '\u201d again.' : 'Unblocked \u201c' + cur.title + '\u201d.', () => un ? L.block([cur.dbId]) : L.unblock([cur.dbId]));
+        return sDone(un ? '\u201c' + cur.title + '\u201d can show up in your auto mixes again.' : '\u201c' + cur.title + '\u201d will not appear in For You, Ones You May Like or Your Pattern. Say \u201cundo\u201d to take it back.');
+      }
+      if ((m = t.match(/^(un)?block (?:the )?(?:artist|everything by|songs? by|this artist)(?: (.+?))?(?: from (?:my |the )?(?:auto |live )?mixes)?$/i))) {
+        const tr = A.tracks(), name = (m[2] || '').trim() || (cur && cur.artist) || ''; if (!name) return sSay('Which artist? Say \u201cblock <artist>\u201d, or play one of their songs first.');
+        const r = m[2] ? sResolve(name) : null, an = sNrm(r && r.artist ? tr[r.tracks[0]].artist : name), ids = sReal().filter(i => sNrm(tr[i].artist || '') === an).map(i => tr[i].dbId);
+        if (!ids.length) return sSay('I could not find songs by \u201c' + name + '\u201d.');
+        const un = !!m[1]; un ? L.unblock(ids) : L.block(ids); lcUndo(un ? 'Blocked ' + name + ' again.' : 'Unblocked ' + name + '.', () => un ? L.block(ids) : L.unblock(ids));
+        return sDone((un ? 'Unblocked ' : 'Blocked ') + ids.length + ' song' + (ids.length === 1 ? '' : 's') + ' by ' + name + (un ? '.' : ' from your auto mixes.'));
+      }
+      if (/^why\b.*\b(?:this|that|it)\b.*(?:mix|for you|recommend|pattern|playlist|picked|here|suggest)/i.test(t)) return sSay(lcWhy());
+      return false;
+    }
+    // chips: chosen by where the chat was opened and what is going on, big features first, small gestures last
+    let lcChipKey = '', lcLyr = { id: null, v: false };
+    const lcVis = el => { if (!el) return false; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') return false; const r = el.getBoundingClientRect(); return r.width > 20 && r.height > 20 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight; };
+    // Where the person is in the app: the open sidebar tab (library / playlist / settings, read from the pane id), the video player, or the plain now-playing view.
+    function lcWhere() {
+      const A = window.__ppApi, t = A && A.currentIndex() >= 0 ? A.tracks()[A.currentIndex()] : null;
+      const pane = [...document.querySelectorAll('[id^="sidebar-pane-"]')].find(lcVis);
+      if (pane) { const id = pane.id.replace('sidebar-pane-', ''); return /lib/i.test(id) ? 'library' : /play|queue|track/i.test(id) ? 'playlist' : /set/i.test(id) ? 'settings' : 'other'; }
+      if (document.fullscreenElement || (t && t.kind === 'video')) return 'video';
+      return 'player';
+    }
+    const lcToggle = (boxId, name) => () => {
+      const b = document.getElementById(boxId); if (!b) return add('bot', 'I cannot find that setting.'); const was = b.checked, set = v => { b.checked = v; b.dispatchEvent(new Event('change', { bubbles: true })); };
+      set(!was); lcUndo(name + ' is ' + (was ? 'on' : 'off') + ' again.', () => set(was)); add('bot', '\u2713 ' + name + ' is ' + (!was ? 'on' : 'off') + '.');
+    };
+    function lcChips() {
+      const A = window.__ppApi; if (!A || !A.tracks || cbox.style.display !== 'flex') return;
+      if (!cin.value && lcSug.childNodes.length) lcSug.textContent = '';
+      const where = lcWhere(), ci = A.currentIndex(), t = ci >= 0 ? A.tracks()[ci] : null, tg = loadTags(), S = tagStats(), tr = A.tracks();
+      const hasMix = k => A.playlists().some(p => p.liveKey === k && tr.some(x => (x.playlistIds || []).includes(p.id)));
+      if (t && lcLyr.id !== t.dbId) { let has = false; try { const o = JSON.parse(localStorage.getItem('playerLyricsV1')) || {}; has = !!o[t.dbId]; } catch (e) {} lcLyr = { id: t.dbId, v: has }; }
+      const c = [], P = (label, act, w, ctx) => c.push([label, act, w + (ctx && ctx.includes(where) ? 30 : 0)]);
+      // big features
+      P('\u2795 Make a playlist', guidePl, 80, ['playlist', 'library']);
+      if (lvOn()) P(hasMix('foryou') ? '\u25b6 Play For You' : '\u25b6 Play something', lcPlaySomething, 85, ['player', 'video', 'playlist']);
+      else P('\u2728 Turn on auto mixes', lcToggle('ppv-lmix', 'Auto mixes'), 88, ['settings', 'playlist', 'library']);
+      if (S.left >= 5) P('\ud83c\udff7 Tag ' + S.left + ' untagged tracks', () => askYN('Tag ' + S.left + ' untagged track' + (S.left === 1 ? '' : 's') + '? It can take a while.', () => tagAll()), 80, ['library']);
+      if (S.tagged.length >= 8) P('\ud83d\udcc0 Make smart playlists', 'make smart playlists', 70, ['library', 'playlist']);
+      if (lvOn() && (hasMix('foryou') || hasMix('pattern'))) P('\ud83d\udd04 Refresh my mixes', 'refresh my mixes', 60, ['playlist', 'settings']);
+      if (where === 'settings') { P((lvLs('ppvBg') === '1' ? 'Stop' : 'Start') + ' background tagging', lcToggle('ppv-bg', 'Background tagging'), 75, ['settings']); P('\ud83c\udf81 Surprise me', 'surprise me', 55, ['settings']); }
+      if (where === 'playlist') { if (hasMix('maylike')) P('\ud83d\udc9c Ones You May Like', 'play ones you may like', 72, ['playlist']); if (hasMix('pattern')) P('\ud83d\udd17 Your Pattern', 'play your pattern', 70, ['playlist']); }
+      if (where === 'playlist' || where === 'library') P('My playlists', 'my playlists', 40);
+      if (t && !t.stem) P(t.kind === 'video' ? '\ud83d\udcac Get subtitles' : (lcLyr.v ? '\ud83c\udfa4 Redo lyrics' : '\ud83c\udfa4 Get lyrics'), 'get the lyrics', lcLyr.v ? 20 : 65, t.kind === 'video' ? ['video'] : ['player']);
+      // smaller things
+      if (t) { P('\ud83d\udd17 More like this', 'more like this', 50, ['player']); const bl = lvState().blocked[String(t.dbId)]; P(bl ? 'Unblock this song' : '\ud83d\udeab Block this song', bl ? 'unblock this song' : 'block this song', 30); if (!t.stem && !tg[t.dbId]) P(t.kind === 'video' ? 'Tag this video' : 'Tag this song', 'tag this song', t.kind === 'video' ? 25 : 25, ['video']); }
+      if (t && !t.stem) P('Split this song', 'split this song', 10);
+      P('Help', 'help', 5);
+      c.sort((a, b) => b[2] - a[2]); const top = c.slice(0, 6), key = where + '|' + top.map(x => x[0]).join('|'); if (key === lcChipKey) return; lcChipKey = key; lcChipBar.textContent = '';
+      top.forEach(([label, act]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { typeof act === 'function' ? act() : send(act); }; lcChipBar.appendChild(b); });
+    }
+    setInterval(lcChips, 1500); cfab.addEventListener('click', () => setTimeout(lcChips, 50));
+    // type-ahead: songs, artists and playlist names for play / add / find / like / block
+    function lcSuggest() {
+      const A = window.__ppApi; lcSug.textContent = ''; if (!A || !A.tracks) return; const v = cin.value; let m; const items = [], tr = A.tracks();
+      const put = (label, fill) => { if (items.length < 6 && !items.some(x => x[1] === fill)) items.push([label, fill]); };
+      if ((m = v.match(/^(add (?:this|it)(?: song| track)? to (?:my |the )?)(.*)$/i))) { const q = sNrm(m[2]); A.playlists().filter(p => !p.stemOf && sNrm(p.name).includes(q) && sNrm(p.name) !== q).slice(0, 6).forEach(p => put(p.name, m[1] + p.name)); }
+      else if ((m = v.match(/^((?:play(?: me)?|find|queue|block|more like|songs? like|similar to|songs by|songs from)\s+)(.{1,40})$/i)) && !/^(?:this|it|that|my|the|something|some|a|an)\b/i.test(m[2])) {
+        const q = sNrm(m[2]), verb = m[1].trim().toLowerCase(), real = sReal(); if (q) {
+          real.map(i => ({ i, nt: sNrm(tr[i].title), na: sNrm(tr[i].artist || '') })).filter(o => (o.nt.includes(q) || o.na.includes(q)) && o.nt !== q && o.na !== q)
+            .sort((x, y) => ((y.nt.startsWith(q) || y.na.startsWith(q)) - (x.nt.startsWith(q) || x.na.startsWith(q))) || x.nt.length - y.nt.length).slice(0, 4).forEach(o => put(tr[o.i].title + (tr[o.i].artist ? ' \u2014 ' + tr[o.i].artist : ''), (/^(?:songs? like|similar to)$/.test(verb) ? 'songs like ' : m[1]) + tr[o.i].title));
+          const seen = new Set(); real.forEach(i => { const a = tr[i].artist || '', na = sNrm(a); if (a && na.includes(q) && na !== q && !seen.has(na)) { seen.add(na); if (seen.size <= 2) put('\ud83c\udfa4 ' + a, 'songs by ' + a); } });
+          if (/^play/.test(verb)) A.playlists().filter(p => !p.stemOf && sNrm(p.name).includes(q)).slice(0, 2).forEach(p => put('\ud83d\udcc0 ' + p.name, 'play my ' + p.name.replace(/^[^\p{L}\p{N}]+/u, '') + ' playlist'));
+        }
+      }
+      items.forEach(([label, fill]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { cin.value = fill; lcSug.textContent = ''; cin.focus(); }; lcSug.appendChild(b); });
+    }
+    cin.addEventListener('input', lcSuggest);
+    // CHAT HELPERS END
+
     // ---------- Tag talk: answers about moods, genres and instruments come straight from the tags, never from the AI ----------
     const tagLine = t => { const c = loadTags()[t.dbId]; if (!c) return ''; const g = (c.gn || []).slice(0, 2).map(v => v[0]), mo = (c.md || []).slice(0, 2).map(v => v[0]);
       return vibes(c).join(', ') + (c.bpm ? ', ' + c.bpm + ' BPM' : '') + (c.key ? ', ' + c.key + (c.ck ? ' ' + c.ck : '') : '') + (g.length ? '; genre: ' + g.join(', ') : '') + (mo.length ? '; mood: ' + mo.join(', ') : ''); };
@@ -2392,9 +3142,10 @@
       if (!noEcho) add('me', text);
       if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
       try { if (roleplay(text)) return; } catch (e) { console.error(e); }
-      if (agentOn()) { let hit = false; try { hit = agent(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
+      if (agentOn()) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
       try { if (tagTalk(text)) return; } catch (e) { console.error(e); }
       const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
+      if (agentOn()) { try { if (routeIntent(text)) return; } catch (e) { console.error(e); } }
       if (!brainOn()) { fallbackReply(text); return; }
       if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
       if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
@@ -2558,7 +3309,7 @@
       wl && wl.release().catch(() => {});
       go.disabled = false; refresh();
     };
-    try { smartUI(p, { status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
+    try { smartUI(p, { mas, status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
     refresh();
   }
   window.PPVocals = { separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
