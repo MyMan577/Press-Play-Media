@@ -1552,6 +1552,7 @@
       fl.style.display = 'flex'; clearTimeout(ftmr); ftmr = setTimeout(() => { fl.style.display = 'none'; }, 6000);
     }
     function react(text) {
+      try { jobEnd(text); } catch (e) { console.error(e); }
       if (!on) return; text = String(text || '');
       let m = 'work', k = 'gen', lines = L.gen;
       if (/^Error|failed/i.test(text)) { m = 'err'; k = 'err'; lines = L.err; }
@@ -1576,12 +1577,13 @@
     // ---------- Chat with Bloop: a tiny on-device language model (SmolLM2-135M-Instruct via transformers.js) ----------
     // Off by default. App questions and crisis messages are answered from fixed text (no model needed, always reliable);
     // everything else goes to the small model. Chat is kept in memory only.
-    const CHAT_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
-    let chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [];
+    const CHAT_MODEL = 'onnx-community/SmolLM2-135M-Instruct';
+    let pendingJob = null, holdModel = false, idleT = 0, chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [];
     const cstyle = document.createElement('style');
     cstyle.textContent = `
       #ppv-cfab{position:fixed;left:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:99997;display:none;filter:drop-shadow(0 4px 10px #0007)}
       #ppv-cfab .ppv-ball{width:54px;height:54px}
+      #ppv-cfab[data-unread]::after{content:'';position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#ff5c7c;border:2px solid #1b1c20}
       #ppv-chat{position:fixed;left:12px;right:12px;bottom:calc(160px + env(safe-area-inset-bottom,0px));z-index:99997;max-width:420px;max-height:min(58vh,440px);display:none;flex-direction:column;background:#1b1c20;color:#eee;border:1px solid #3a3b42;border-radius:14px;box-shadow:0 8px 28px #000a;font:13.5px/1.4 system-ui,sans-serif;overflow:hidden}
       #ppv-chat .ch-h{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2e2f36}
       #ppv-chat .ch-n{flex:1;font-size:10.5px;opacity:.6;line-height:1.25}
@@ -1598,7 +1600,7 @@
     const cfab = document.createElement('div'); cfab.id = 'ppv-cfab'; cfab.setAttribute('role', 'button'); cfab.setAttribute('aria-label', 'Chat with Bloop');
     const cball = ball(); cfab.appendChild(cball);
     const cbox = document.createElement('div'); cbox.id = 'ppv-chat';
-    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Tiny AI on your device. It can be wrong and is not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="send">Send</button></div>';
+    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Helper on your device. Free chat uses a tiny AI, so it can be wrong. Not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="send">Send</button></div>';
     document.body.append(cfab, cbox);
     const clist = cbox.querySelector('.ch-l'), cin = cbox.querySelector('input');
     const cm = m => { cball.className = 'ppv-ball m-' + m; };
@@ -1608,7 +1610,7 @@
     const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; };
     cfab.style.display = chatOn ? 'block' : 'none';
     cfab.onclick = () => {
-      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none';
+      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none'; if (open) delete cfab.dataset.unread;
       if (open) { if (!clist.children.length) add('bot', pick(["Hi! I'm Bloop. Ask me about the app, or tell me how you're feeling.", "Hey! Want to chat about the app, or about your day?"])); cm('greet'); setTimeout(() => cm('idle'), 1300); cin.focus(); }
     };
     cbox.addEventListener('click', e => {
@@ -1622,13 +1624,17 @@
     const CRISIS = /(suicid|kill (myself|me)|end (my life|it all)|ending my life|want to die|wanna die|don'?t want to (live|be here|exist)|self[- ]?harm|hurt(ing)? myself|cut(ting)? myself|better off (dead|without me))/i;
     const CRISIS_MSG = "I'm really sorry you're hurting this much. I'm only a tiny music-app ball and I can't help with this the way a person can. Please reach out to someone right now: a friend or family member you trust, or a crisis line where you live (in the US you can call or text 988). If you might act on these thoughts, or you are in danger, call your local emergency number. You deserve real support.";
     const FAQ = [
+      [/^\s*(hi|hello|hey|yo|hiya|sup|good (morning|evening|afternoon))\W*$/i, 'Hi! How are you feeling today?'],
+      [/^\s*(thanks?|thank you|thx|ty|cheers)\W*$/i, "You're welcome!"],
+      [/^\s*(ok(ay)?|cool|nice|great|good|lol|haha|k|yes|yeah|no|nope)\W*$/i, 'Okay! Want me to play something, or tell me how your day is going?'],
+      [/^\s*(bye|goodbye|good ?night|see you|cya)\W*$/i, 'Bye! Take care.'],
       [/\b(stems?|karaoke|separat\w*|split (a |the |this |my )?(song|track|music)|vocal remov\w*)/i, 'Stems: play a track, open the Stems button, pick what to keep, then tap "Split current track". The pieces go to "Split tracks" in the library selector instead of All tracks. In that panel you can also make a playlist or a section for each split song.'],
       [/\bsurprise/i, 'Surprise playlists get put together from your tags while you are away. Turn them on under "Background tagging & surprise playlists" in the Library tab. When one shows up, tap Play to hear it, or Keep so it is not replaced later.'],
       [/\b(smart playlists?|auto(matic)? playlists?|make a playlist)/i, 'Smart playlists live in the Library tab under "AI tagging & smart playlists". Tick the ones you want and tap Create / update. They are real playlists and keep updating as tracks get tagged.'],
       [/\b(tagging|tag (a |my |the |all )?(song|track)s?|bpm|tempo)/i, 'AI tagging is in the Library tab. Tag one track, a chosen one, or everything. It finds tempo, key, genre and vibe. You can also let it tag while you are away in the background tagging settings.'],
       [/\b(lyrics?|subtitles?|captions?|whisper|transcrib\w*)/i, 'Lyrics: Whisper writes synced lyrics for songs (Lyrics tab) and subtitles for videos (captions menu). It runs on your device and downloads a model the first time.'],
       [/\b(who are you|what are you|your name|what can you do|how do you work)\b/i, "I'm Bloop, the little ball in this player. I can explain how things work here, suggest music for your mood, or just chat. I'm a very small AI, so I get things wrong sometimes."],
-      [/\b(private|privacy|offline|where (does|is) (this|it) run|download)/i, 'I run on your device after a one-time download of about 200 MB, so what you tell me stays on your phone. I forget the chat when you close the page or tap Clear.']
+      [/\b(private|privacy|offline|where (does|is) (this|it) run|download)/i, 'I run on your device after a one-time download of about 150 MB, so what you tell me stays on your phone. I forget the chat when you close the page or tap Clear.']
     ];
     const MOODS = [
       [/\b(sad|down|blue|lonely|cry(ing)?|heartbroken)\b/i, 'chill', 'something gentle'],
@@ -1646,15 +1652,20 @@
       for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const v = q[i]; q[i] = q[j]; q[j] = v; }
       return q.slice(0, 30);
     }
-    function moodChip(text) {
-      const m = MOODS.find(x => x[0].test(text)); if (!m) return;
+    function moodChip(text, retried) {
+      const m = MOODS.find(x => x[0].test(text)); if (!m) return false;
       const q = moodQueue(m[1]);
-      if (q.length < 3) return add('bot', 'If you tag some tracks, I can pick music for how you feel.');
-      actions([['\u25b6 Play ' + m[2], () => { window.__ppApi.play(q[0], q); }]]);
+      if (q.length < 3) {
+        if (tagStats().left > 0 && !retried) { add('bot', 'I can pick music for how you feel once your tracks are tagged.'); actions([['Tag my library', (b, d) => { d.remove(); tagAll(() => moodChip(text, true)); }]]); }
+        else add('bot', 'I do not have enough matching tagged tracks yet.');
+        return true;
+      }
+      actions([['\u25b6 Play ' + m[2], () => { window.__ppApi.play(q[0], q); }], ['\u2795 Make a playlist', (b, d) => { d.remove(); moodPlaylist(m[1], 'For how you feel,'); }]]);
+      return true;
     }
     const sysPrompt = () => {
       const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], c = t && loadTags()[t.dbId];
-      return "You are Bloop, a small, friendly ball mascot inside a music player app. Reply in one to three short, warm sentences. Be kind and curious, and ask how the person feels when it fits. If you are not sure about something, say so instead of guessing. Never give medical or legal advice. You are not a doctor or a counselor. Never claim you played, changed or did something in the app; commands are handled separately." +
+      return "You are Bloop, a friendly ball mascot in a music player. Reply in 1-2 short, kind sentences. If unsure, say so. No medical or legal advice. Never claim you did something in the app." +
         (t ? " Now playing: " + t.title + (c ? " (" + vibes(c).join(', ') + ")." : ".") : "");
     };
     async function ensureModel(say) {
@@ -1662,12 +1673,103 @@
       genP = (async () => {
         say('Loading my brain\u2026'); if (!tfMod) tfMod = await import(TF_URL);
         const gpuOn = lsGet('ppvChatGpu') === '1' && navigator.gpu;
+        try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch (e) {}   // fewer threads = less RAM
         const pcb = p => { if (p && p.status === 'progress' && p.file) say('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); };
-        try { gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: gpuOn ? 'q4f16' : 'q4', device: gpuOn ? 'webgpu' : 'wasm', progress_callback: pcb }); }
-        catch (e) { if (!gpuOn) throw e; gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: 'q4', device: 'wasm', progress_callback: pcb }); }
+        try { gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: gpuOn ? 'fp16' : 'q8', device: gpuOn ? 'webgpu' : 'wasm', progress_callback: pcb }); }   // q4 is too lossy for a 135M model: it prints garbage
+        catch (e) { if (!gpuOn) throw e; gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: 'q8', device: 'wasm', progress_callback: pcb }); }
         lsSet('ppvChatDl', '1'); return gen;
       })();
       try { return await genP; } finally { genP = null; }
+    }
+    // Take the language model out of RAM (it stays on disk and reloads later without asking).
+    async function unloadModel() { clearTimeout(idleT); if (gen) { const g = gen; gen = null; try { await g.dispose(); } catch (e) {} } }
+    const heavyBusy = () => ['ppv-go', 'ppv-wgo', 'ppv-tag'].some(id => { const b = document.getElementById(id); return b && b.disabled; });
+    // The chat brain (tiny language model) is optional. Everything Bloop DOES (moods, playlists, tagging, player control) runs without it.
+    const brainOn = () => { const v = lsGet('ppvBrain'); return v == null ? lsGet('ppvChatDl') === '1' : v === '1'; };   // unset: on only if it was already downloaded
+    const setBrain = v => { lsSet('ppvBrain', v ? '1' : '0'); if (!v) unloadModel(); const b = document.getElementById('ppv-brain-on'); if (b) b.checked = !!v; };
+    const looksOk = r => { const L = (r.match(/\p{L}/gu) || []).length, W = (r.match(/\p{L}{2,}/gu) || []).length; return r.length <= 8 || (L / r.length >= 0.6 && W >= 2); };
+    const FALLBACK = { split: 'Your split tracks are ready.', lyrics: 'The lyrics are ready.', tag: 'Tagging is finished.' };
+    // Write the "all done" line NOW, while the model is loaded, so the model can leave RAM before the heavy job starts.
+    // Never downloads the model just for this; falls back to a fixed line if it is missing, slow or garbled.
+    async function signoff(job) {
+      if (!brainOn() || (!gen && lsGet('ppvChatDl') !== '1')) return null;
+      let aborted = false;
+      const p = (async () => {
+        const g = await ensureModel(() => {}); if (aborted) return null;
+        const out = await g([{ role: 'system', content: 'You are Bloop, a friendly ball mascot in a music player. Reply with one short, warm sentence.' },
+          { role: 'user', content: 'The task "' + job.what + '" just finished successfully. Tell me so in one short sentence.' }], { max_new_tokens: 40, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 });
+        let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : r;
+        r = String(r || '').trim().split(/\n/)[0]; return r && r.length < 220 && looksOk(r) ? r : null;
+      })().catch(() => null);
+      const r = await Promise.race([p, new Promise(res => setTimeout(() => res(null), 25000))]);
+      aborted = true; p.then(unloadModel); return r;
+    }
+    // Heavy job: write the sign-off, drop the model from RAM, THEN start the job; jobEnd() posts the message when it finishes.
+    async function runJob(kind, what, start, after) {
+      if (heavyBusy()) return add('bot', "I'm in the middle of another job. Ask me again when it finishes.");
+      const job = { kind, what, msg: null, after }; pendingJob = job; chatBusy = true; cm('work');
+      add('bot', "\u2713 On it. I'll message you here when it's done.");
+      try { job.msg = await signoff(job); await unloadModel(); }
+      catch (e) { console.error(e); }
+      chatBusy = false; cm('idle');
+      if (pendingJob !== job) return;
+      if (!start()) { pendingJob = null; add('bot', "I couldn't start that. Another job may be running."); return; }
+      setTimeout(() => { if (pendingJob === job && !heavyBusy()) pendingJob = null; }, 3000);   // it never started (e.g. you cancelled a prompt)
+    }
+    function jobEnd(text) {
+      const j = pendingJob; if (!j) return; text = String(text || ''); let msg;
+      if (/^(Done|Tagged and saved)/.test(text)) msg = '\u2713 ' + (j.msg || FALLBACK[j.kind]) + (/^Done\./.test(text) && text.length > 6 ? '\n' + text : '');
+      else if (/^Stopped/.test(text)) msg = 'Okay, I stopped. ' + text.replace(/^Stopped\.?\s*/, '');
+      else if (/^(Error|Stalled)/.test(text)) msg = "That didn't work: " + text.replace(/^Error:\s*/, '');
+      else return;
+      pendingJob = null; add('bot', msg.trim());
+      if (cbox.style.display !== 'flex') cfab.dataset.unread = '1';
+      if (j.after && /^(Done|Tagged and saved)/.test(text)) { try { j.after(); } catch (e) { console.error(e); } }   // e.g. build the playlist that was waiting for tags
+    }
+    const askYN = (q, yes, no, yl, nl) => { add('bot', q); actions([[yl || 'Yes', (b, d) => { d.remove(); yes(); }], [nl || 'No', (b, d) => { d.remove(); if (no) no(); else add('bot', 'Okay, never mind.'); }]]); };
+    const tagStats = () => { const A = window.__ppApi, tg = loadTags(), real = A ? A.tracks().filter(t => !t.stem) : [], tagged = real.filter(t => tg[t.dbId]); return { A, tg, real, tagged, left: real.length - tagged.length }; };
+    function tagAll(after) {
+      const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return add('bot', 'Tagging is not ready yet. Open the Stems panel once, then try again.');
+      runJob('tag', 'tagging your whole library', () => { const b = $id('ppv-tag'); if (!b || b.disabled) return false; const prev = sc.value; sc.value = 'all'; b.click(); sc.value = prev; return true; }, after);
+    }
+    // Same live "\u2728 Name" playlist the tagger panel makes, so it keeps updating as tracks get tagged.
+    function buildMood(sm, tr, tg) {
+      const A = window.__ppApi, name = '\u2728 ' + sm.name, pl = A.playlists().find(x => x.name === name) || A.createPlaylist(name);
+      Object.assign(pl, { auto: 'smart', smartKey: sm.id });
+      let n = 0; tr.forEach(t => { const c = !t.stem && tg[t.dbId]; if (c && sm.test(c, vibes(c)) && A.addToPlaylist(t.dbId, pl.id)) n++; });
+      return { pl, n };
+    }
+    // Mood playlist from the tagger's mood data. No chat AI involved. Offers to tag first when there is too little to go on.
+    function moodPlaylist(sid, why, retried) {
+      const { A, tg, real, tagged, left } = tagStats(), sm = SMART.find(x => x.id === sid);
+      if (!A || !sm) return add('bot', 'I cannot reach your library yet.');
+      if (!real.length) return add('bot', 'Your library is empty.');
+      const n = tagged.filter(t => sm.test(tg[t.dbId], vibes(tg[t.dbId]))).length, nm = sm.name.toLowerCase();
+      if (left > 0 && n < 5 && !retried) {
+        askYN((tagged.length ? 'Only ' + n + ' of your tagged tracks sound ' + nm + ' so far, and ' + left + ' are not tagged yet.' : 'None of your tracks are tagged yet, and I pick by mood from the tags.') + ' Tag your library first? It can take a while. I will make the playlist when it is done.',
+          () => tagAll(() => moodPlaylist(sid, why, true)), n ? () => moodPlaylist(sid, why, true) : null, n ? 'Tag first' : 'Yes', n ? 'Use what I have' : 'No');
+        return;
+      }
+      if (!n) return add('bot', 'None of your ' + tagged.length + ' tagged tracks sound ' + nm + '. Tagging more tracks, or ticking \u201cMood models\u201d in the Library tab, helps me tell.');
+      const tr = A.tracks(), r = buildMood(sm, tr, tg); A.commitPlaylists();
+      const q = shuffleIn(tr.map((t, i) => i).filter(i => !tr[i].stem && tg[tr[i].dbId] && sm.test(tg[tr[i].dbId], vibes(tg[tr[i].dbId]))));
+      add('bot', '\u2713 ' + (why ? why + ' ' : '') + 'Made \u201c' + r.pl.name + '\u201d with ' + r.n + ' track' + (r.n === 1 ? '' : 's') + (left ? ' (' + left + ' untagged tracks were left out)' : '') + '. Find it in the Playlists tab; it keeps updating as tracks get tagged.' + (tagged.some(c => c.hd) ? '' : '\nTip: tick \u201cMood models\u201d in the Library tab for sharper moods.'));
+      actions([['\u25b6 Play it', () => { A.play(q[0], q); }]]);
+      if (cbox.style.display !== 'flex') cfab.dataset.unread = '1';
+    }
+    function smartAll(retried) {
+      const { A, tg, tagged } = tagStats(); if (!A) return add('bot', 'I cannot reach your library yet.');
+      if (!tagged.length && !retried) return askYN('None of your tracks are tagged yet, and smart playlists are built from tags. Tag your library first? I will make them when it is done.', () => tagAll(() => smartAll(true)));
+      const made = SMART.map(sm => [sm, tagged.filter(t => sm.test(tg[t.dbId], vibes(tg[t.dbId]))).length]).filter(x => x[1] >= 3);
+      if (!made.length) return add('bot', 'No mood has 3 or more tagged tracks yet. Tag more tracks first.');
+      const tr = A.tracks(); made.forEach(([sm]) => buildMood(sm, tr, tg)); A.commitPlaylists();
+      add('bot', '\u2713 Made or updated ' + made.length + ' mood playlists:\n' + made.map(([sm, n]) => '\u2728 ' + sm.name + ' (' + n + ')').join('\n'));
+    }
+    // What Bloop says to something that is not a command when the chat brain is off: still helpful, no model needed.
+    function fallbackReply(text) {
+      if (MOODS.find(x => x[0].test(text))) { add('bot', pick(["That sounds hard. I'm only a little ball, but I can find some music for it.", "I'm sorry it feels like that. Want some music to go with it?", 'Thanks for telling me. Music might help a little.'])); moodChip(text); return; }
+      add('bot', "I'm not sure what to do with that. I can play music by mood, make playlists, tag, split, get lyrics and control the player. Say \u201chelp\u201d for the list.");
+      actions([['Turn on chat AI (~150 MB)', (b, d) => { d.remove(); setBrain(true); dlOk = true; send(text, true); }], ['No thanks', (b, d) => d.remove()]]);
     }
     async function freeChat() {
       if (gen) { try { await gen.dispose(); } catch (e) {} gen = null; }
@@ -1696,20 +1798,56 @@
       });
       return out.sort((a, b) => b[1] - a[1]).map(o => o[0]);
     }
-    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\nOr just chat with me.';
-    function agent(raw) {
+    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
+    // Whenever the agent handles a message (a command, or a loose phrasing it understood), the model is dropped from RAM.
+    function agent(raw, skip) { holdModel = false; const hit = agentCore(raw, skip); if (hit && !chatBusy && !holdModel) unloadModel(); return hit; }
+    // Loose phrasing -> canonical command, by plain rules (no model needed). Returns {cmd, q} or null. q = ask before acting.
+    function interpret(t) {
+      const s = t.toLowerCase(); let m;
+      const R = (re, cmd, q) => re.test(s) ? { cmd, q } : null;
+      if ((m = s.match(/\b(?:stop|pause|turn (?:it |the music )?off|shut (?:it )?off|sleep)\b.*?\b(?:in|after|for)\s+(half an?|an?|one|\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)\b/))) {
+        const n = /^half/.test(m[1]) ? .5 : /^(an?|one)$/.test(m[1]) ? 1 : parseFloat(m[1]);
+        return { cmd: 'sleep timer ' + Math.max(1, Math.round(/^h/.test(m[2]) ? n * 60 : n)) + ' minutes' };
+      }
+      if ((m = s.match(/^(?:i (?:want|wanna|would like|'?d like|feel like)(?: to)? (?:hear|listen to)|let'?s (?:hear|listen to)|i'?m in the mood for|play me)\s+(.+)$/))) return { cmd: 'play ' + m[1] };
+      if ((m = s.match(/\b(?:music|something|songs?|tunes|a playlist) (?:for|to) (study\w*|focus\w*|work ?out|working out|exercis\w*|running|sleep\w*|relax\w*|unwind\w*|party\w*|danc\w*|cook\w*|clean\w*|driv\w*)\b/))) {
+        const w = m[1], id = /study|focus/.test(w) ? 'focus' : /work ?out|exercis|running/.test(w) ? 'workout' : /sleep/.test(w) ? 'sleep' : /relax|unwind/.test(w) ? 'chill' : /party|danc/.test(w) ? 'party' : 'happy';
+        return { cmd: /playlist/.test(m[0]) ? 'make a ' + id + ' playlist' : 'play something ' + id };
+      }
+      return R(/\b(too quiet|can'?t hear (it|this|anything)|hard to hear|bump (it|the volume) up|crank it( up)?)\b|\bmake it (a (bit|little) )?louder\b/, 'louder')
+        || R(/\b(too loud|hurts? my ears|bring (it|the volume) down)\b|\bmake it (a (bit|little) )?(quieter|softer|lower)\b/, 'quieter')
+        || R(/\b(turn off the music|kill the music|shut off the music|silence the music)\b/, 'pause')
+        || R(/\b(i (don'?t|do not) (like|want) (this|that)( song| one| track)?|not (into|feeling) (this|that)( one| song)?|something else|change (the |this )?(song|track))\b/, 'next')
+        || R(/\b(going to (bed|sleep)|gonna (sleep|go to bed)|help me (fall asleep|sleep)|put me to sleep)\b/, 'sleep timer 30 minutes', 'Set a 30 minute sleep timer so the music stops by itself?')
+        || R(/\b(who (sings|is singing|plays|made)( this| it)?|what('?s| is) (this|that) (song|track) called|name of (this|the) (song|track)|what are we listening to)\b/, "what's this song")
+        || R(/\b(i (really )?(love|like) (this|it)( song| one| track)?)\b/, 'more like this', 'Nice! Want me to find tracks similar to this one?')
+        || R(/\b(play (more|something) (like (this|that)|similar)|more of this|songs like this)\b/, 'more like this')
+        || R(/\b(what are (they|he|she) saying|can'?t (understand|make out) (the )?(words|lyrics)|show (me )?the lyrics)\b/, 'get the lyrics')
+        || R(/^(make|give|get|turn)( me)?( a| an| the)? (karaoke|instrumental|acapella)\b|\b(remove|take out|strip) (the )?vocals?\b|\bwithout (the )?vocals?\b/, 'split this song')
+        || R(/\b(what('?s| is) (the )?(bpm|tempo|key|genre|mood)( of (this|it))?|how fast is (this|it))\b/, 'tag this song')
+        || R(/\b(mix it up|randomi[sz]e|shuffle (my|the) (music|songs|tracks|library))\b/, 'shuffle on')
+        || R(/\b(i missed (that|it)|say that again|play that (part|bit) again|what did (he|she|they) say)\b/, 'rewind 10 seconds')
+        || R(/\b(skip|jump past|get past) (this|that) (part|bit|section)\b/, 'skip forward 30 seconds')
+        || R(/\b(slow (it|this) down|too fast)\b/, 'slower')
+        || R(/\b(speed (it|this) up|too slow)\b/, 'faster')
+        || R(/\b(more bass|needs? (more )?bass|bass is (weak|low)|boost the bass)\b/, 'set eq to bass')
+        || R(/\b(can'?t (hear|understand) the (voice|vocals?|singer)|vocals? (are|is) (quiet|muffled|low))\b/, 'set eq to vocal')
+        || R(/\b(put|throw) something on\b/, 'play something');
+    }
+    function agentCore(raw, skip) {
       let t = String(raw).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
       const A = window.__ppApi; if (!A || !t) return false;
       let m; const say = s => { add('bot', s); return true; }, done = s => say('\u2713 ' + s);
       const click = id => { const b = $id(id); if (b && !b.disabled) { b.click(); return true; } return false; };
-      const ask = (q, fn) => { add('bot', q); actions([['Yes', (b, d) => { d.remove(); fn(); }], ['No', (b, d) => { d.remove(); add('bot', 'Okay, never mind.'); }]]); return true; };
+      const ask = (q, fn, keep) => { if (keep) { holdModel = true; clearTimeout(idleT); idleT = setTimeout(unloadModel, 60000); } add('bot', q); actions([['Yes', (b, d) => { d.remove(); fn(); }], ['No', (b, d) => { d.remove(); unloadModel(); add('bot', 'Okay, never mind.'); }]]); return true; };
       const busyMsg = () => say("I'm in the middle of another job. Ask me again when it finishes.");
       const cur = () => A.tracks()[A.currentIndex()], need = () => cur() ? null : say('Play or pick a track first.');
       const vol = () => $id('volume');
       const setVol = v => { const e = vol(); if (!e) return false; v = Math.max(0, Math.min(100, Math.round(v))); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return done('Volume ' + v + '%.'); };
       const sleepSet = (v, msg) => { const b = document.querySelector('#sleep-dropdown [data-sleep="' + v + '"]'); if (!b) return say('I cannot reach the sleep timer.'); b.click(); return done(msg); };
-      const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok ? done('Started. I will pop up when it is done.') : busyMsg(); };
+      const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); runJob('tag', scope === 'all' ? 'tagging your whole library' : 'tagging this track', () => { const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok; }); return true; };
 
+      if (!skip) { const ip = interpret(t); if (ip) { if (ip.q) return ask(ip.q, () => agent(ip.cmd, true)); t = ip.cmd; } }
       if (/^(help|commands|what can you do|what can i ask( you)?|what do you do)$/i.test(t)) return say(HELP);
       // transport
       if (/^(pause|stop)( the)?( music| song| track| playing| playback)?$/i.test(t)) { if (!mediaOn()) return say('Nothing is playing right now.'); click('play-btn'); return done('Paused.'); }
@@ -1744,18 +1882,35 @@
       if (/^how many (tracks|songs).*tagged$/i.test(t)) { const tg = loadTags(), tr = A.tracks().filter(x => !x.stem); return say(tr.filter(x => tg[x.dbId]).length + ' of ' + tr.length + ' tracks are tagged.'); }
       // current-track jobs through the panel's own buttons
       if (/^(tag|analy[sz]e)( this| the current| current| it)?( song| track)?$/i.test(t)) return need() || tagWith('cur');
-      if (/^(tag|analy[sz]e) (all|everything|every)( of)?( my)?( songs| tracks| music| library)?$/i.test(t)) return ask('Tag your whole library? It runs one track at a time and can take a while.', () => { tagWith('all'); });
+      if (/^(tag|analy[sz]e) (all|everything|every)( of)?( my)?( songs| tracks| music| library)?$/i.test(t)) return ask('Tag your whole library? It runs one track at a time and can take a while.', () => { tagWith('all'); }, true);
       if (/^(split|separate)( this| the current| current| it)?( song| track)?( into stems)?$|^(make|get) (the )?stems( of| for)?( this| it)?( song| track)?$/i.test(t)) {
         const c = cur(); if (!c) return say('Play or pick a track first.');
-        return ask('Split \u201c' + c.title + '\u201d into stems using your Stems settings? It can take a while on a phone.', () => { click('ppv-go') ? done('Started. I will pop up when it is done.') : busyMsg(); });
+        return ask('Split \u201c' + c.title + '\u201d into stems using your Stems settings? It can take a while on a phone.', () => { runJob('split', 'splitting \u201c' + c.title + '\u201d into stems', () => click('ppv-go')); }, true);
       }
       if (/^(transcribe|get (the )?lyrics|add lyrics|write (out )?the lyrics)( for)?( this| it)?( song| track)?$/i.test(t)) {
         const c = cur(); if (!c) return say('Play or pick a track first.');
-        return ask('Write lyrics for \u201c' + c.title + '\u201d with Whisper? It downloads a model the first time.', () => { click('ppv-wgo') ? done('Started. I will pop up when it is done.') : busyMsg(); });
+        return ask('Write lyrics for \u201c' + c.title + '\u201d with Whisper? It downloads a model the first time.', () => { runJob('lyrics', 'writing lyrics for \u201c' + c.title + '\u201d', () => click('ppv-wgo')); }, true);
       }
       if (/^(play |find )?(more like (this|it)|similar( songs| tracks| music)?( to this)?)$/i.test(t)) return need() || (click('ppv-simgo') ? done('Looking for similar tracks.') : busyMsg());
       if (/^(skip|jump past|jump over|get past)( the)? intro$|^jump to (the )?first vocals?$/i.test(t)) return need() || (click('ppv-skipgo') ? done('Jumping ahead.') : busyMsg());
       if (/^(surprise me|play (me )?a surprise|make (me )?a surprise( playlist)?)$/i.test(t)) return click('ppv-surpnow') ? done('Putting a surprise together. It needs at least 12 tagged tracks, and I will show it when ready.') : busyMsg();
+      // ---- AI tasks that need no chat AI: moods come from the tagger's tags ----
+      const MOODMAP = [[/\b(workout|work out|working out|gym|exercis\w*|cardio|running|energetic|energy|pump\w*)\b/i, 'workout'], [/\b(chill\w*|relax\w*|calm\w*|mellow|soothing|peaceful|gentle|unwind\w*|wind down)\b/i, 'chill'], [/\b(party|parties|danc\w*|club)\b/i, 'party'], [/\b(happy|upbeat|cheerful|feel[- ]good|joyful)\b/i, 'happy'], [/\b(sad|melanchol\w*|heartbreak\w*|emotional|crying)\b/i, 'sad'], [/\b(focus\w*|study\w*|homework|concentrat\w*|reading)\b/i, 'focus'], [/\b(sleep\w*|bed ?time|lullab\w*|insomnia)\b/i, 'sleep'], [/\b(acoustic|unplugged)\b/i, 'acoustic'], [/\b(instrumentals?)\b/i, 'instr'], [/\b(very fast|intense|hype)\b/i, 'rush'], [/\b(slow)\b/i, 'slow'], [/\b(fast)\b/i, 'fast']];
+      const FILL = new Set(['make', 'create', 'build', 'generate', 'put', 'together', 'give', 'get', 'start', 'new', 'for', 'with', 'of', 'that', 'is', 'fits', 'i', 'want', 'need', 'would', 'like', 'to', 'listen', 'hear', 'some', 'something', 'good', 'nice', 'great', 'perfect', 'please', 'just', 'can', 'have', "i'd", "i'm", 'songs', 'tracks', 'mood', 'music', 'all', 'my', 'me', 'a', 'an', 'the', 'this', 'up', 'set', 'full', 'when', 'am', 'feeling', 'feel']);
+      if (/^(?:make|create|build|update|refresh|generate)(?: me)?(?: my| the| all| some| new| a| an)*(?: smart| mood)+ playlists?$/i.test(t)) return (smartAll(), true);
+      if (/\bplaylist\b/i.test(t) && (/^(?:make|create|build|generate|put together|give|get|start)\b/i.test(t) || /^i(?:'d| would)? (?:want|need|like)\b/i.test(t)) && !/\b(?:called|named)\b/i.test(t)) {
+        const feelWord = /\b(?:i'?m|i am|im|i feel|feeling|when i|my mood|how i feel|how i'?m feeling)\b/i.test(t), feel = feelWord ? MOODS.find(x => x[0].test(t)) : null;
+        if (feel) return (moodPlaylist(feel[1], 'For how you feel,'), true);
+        if (/\b(?:my mood|how i feel|how i'?m feeling)\b/i.test(t)) return say('How are you feeling? Try \u201cmake a playlist for when I\u2019m stressed\u201d.');
+        const rest = t.toLowerCase().replace(/\bplaylists?\b/g, ' '), mm = MOODMAP.find(x => x[0].test(rest));
+        if (mm && !wordsOf(rest).filter(w => !FILL.has(w) && !mm[0].test(w) && !VIBEW.has(w)).length) return (moodPlaylist(mm[1]), true);
+      }
+      if (/^(?:what|how)(?:'s| is)? (?:the )?(?:mood|vibe|feel|feeling)(?: of)?(?: is)?(?: this| it)?(?: song| track)?$|^what mood is (?:this|it)(?: song| track)?$|^(?:what|how) does this (?:song |track )?(?:feel|sound)(?: like)?$/i.test(t)) {
+        const c = cur(); if (!c) return say('Play or pick a track first.'); const tgc = loadTags()[c.dbId];
+        if (!tgc) return ask('\u201c' + c.title + '\u201d is not tagged yet, so I cannot tell. Tag it now?', () => tagWith('cur'), true);
+        return say(vibes(tgc).join(', ') + (tgc.bpm ? '\n' + tgc.bpm + ' BPM' + (tgc.key ? ', ' + tgc.key + (tgc.ck ? ' ' + tgc.ck : '') : '') : ''));
+      }
+      if (/^(?:(?:apply|set|turn on|use) )?auto[- ]?eq(?: to (?:all|everything|my (?:tracks|songs|music)))?$|^(?:eq|equali[sz]e) (?:all|everything|my (?:tracks|songs|music))(?: automatically)?$/i.test(t)) return click('ppv-eqall') ? done('Applying a genre-based EQ to your tagged tracks.') : busyMsg();
       // playlists
       if ((m = t.match(/^(?:make|create|start)(?: me)?(?: a| an)?(?: new)? playlist (?:called|named) (.+)$/i))) {
         const pl = A.createPlaylist(m[1].trim().slice(0, 60)); A.commitPlaylists(); return done('Made an empty playlist \u201c' + pl.name + '\u201d. Say \u201cadd this to ' + pl.name + '\u201d to fill it.');
@@ -1773,6 +1928,130 @@
         if (!pl) return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.' + (pls.length ? ' You have: ' + pls.slice(0, 6).map(p => p.name).join(', ') + '.' : ' You have no playlists yet. Say \u201cmake a playlist called ' + m[1] + '\u201d.'));
         A.addToPlaylist(c.dbId, pl.id); A.commitPlaylists(); return done('Added \u201c' + c.title + '\u201d to ' + pl.name + '.');
       }
+      // ---- things you would normally do with a gesture or a tap: Bloop runs the app's own gesture actions and buttons ----
+      const GA = id => { const ga = A.gestureActions && A.gestureActions(), g = ga && ga[id]; if (!g || !g.run) return false; g.run(); return true; };
+      const sk = () => $id('seek'), dur = () => parseFloat(sk() && sk().max) || 0, pos = () => parseFloat(sk() && sk().value) || 0;
+      const clock = x => { x = Math.max(0, Math.round(x)); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); };
+      const seekTo = x => { const e = sk(); if (!e) return false; e.value = Math.max(0, dur() ? Math.min(dur(), x) : x); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+      const isVid = () => { const c = cur(); return !!c && c.kind === 'video'; };
+      const vidOnly = () => isVid() ? null : say('That one is for videos, and the current track is audio.');
+      const numOf = w => /^half/i.test(w) ? .5 : /^(a|an|one)$/i.test(w) ? 1 : parseFloat(w);
+      const ab = $id('ab-loop-btn'), abT = () => (ab && ab.title) || '';
+
+      // seek forward / back by an amount
+      if ((m = t.match(/^(fast[- ]?forward|ff|forward|skip ahead|skip|jump|seek|go|move|skip forward|jump ahead|jump forward|go forward|go ahead|seek forward|fwd|rewind|rew|skip back(?:wards?)?|jump back(?:wards?)?|seek back(?:wards?)?|go back|back)(?: (?:by |for |about )?(a|an|one|half a|half an|\d+(?:\.\d+)?) ?(seconds?|secs?|s|minutes?|mins?|m)?)?$/i)) && !(m[2] && !m[3] && isNaN(+m[2])) && !(/^(skip|jump|seek|go|move)$/i.test(m[1]) && !m[2])) {
+        if (A.currentIndex() < 0 || !sk()) return say('Nothing is playing.');
+        const back = /^(rew|back|go back|skip back|jump back|seek back)/i.test(m[1]);
+        let secs = m[2] ? numOf(m[2]) * (/^m/i.test(m[3] || '') ? 60 : 1) : 10; secs = Math.min(3600, Math.max(1, Math.round(secs)));
+        const to = Math.max(0, pos() + (back ? -secs : secs)); seekTo(to);
+        return done((back ? 'Back ' : 'Ahead ') + (secs >= 60 && secs % 60 === 0 ? secs / 60 + ' min' : secs + ' s') + ', now at ' + clock(dur() ? Math.min(dur(), to) : to) + '.');
+      }
+      // jump to a time, a percentage, the middle, the end
+      if ((m = t.match(/^(?:go|jump|skip|seek|move|fast[- ]?forward|rewind)(?: (?:back|forward|ahead))? to (?:the )?(?:(?:(\d{1,2}):)?(\d{1,2}):(\d{2})|(\d+(?:\.\d+)?) ?(seconds?|secs?|minutes?|mins?|%|percent)|(middle|halfway|half ?way|start|beginning|top|end))$/i))) {
+        if (A.currentIndex() < 0 || !dur()) return say('Nothing is playing.');
+        let x; const w = (m[6] || '').toLowerCase().replace(/\s/g, '');
+        if (m[3] !== undefined) x = (m[1] ? +m[1] * 3600 : 0) + +m[2] * 60 + +m[3];
+        else if (m[4] !== undefined) { const n = parseFloat(m[4]); x = /^m/i.test(m[5]) ? n * 60 : /^(%|percent)/i.test(m[5]) ? dur() * n / 100 : n; }
+        else x = /middle|halfway/.test(w) ? dur() / 2 : /end/.test(w) ? Math.max(0, dur() - 2) : 0;
+        if (x > dur()) return say('That is past the end. This one is ' + clock(dur()) + ' long.');
+        seekTo(x); return done('Jumped to ' + clock(x) + ' of ' + clock(dur()) + '.');
+      }
+      // restart
+      if (/^(restart|replay|start over|start again|(play|start) (it |this |that |the (song|track) )?(again|over|from the (top|beginning|start))|from the (top|beginning|start)|(go |back |rewind )+(back )?to the (start|beginning|top)|restart (this |the )?(song|track))$/i.test(t)) {
+        if (A.currentIndex() < 0) return say('Nothing is playing.');
+        GA('restart'); if (!mediaOn()) click('play-btn'); return done('Back to the start.');
+      }
+      // A-B loop (a part of a song)
+      if (/^(?:set |mark |start )?(?:a )?loop (?:start|point a|a|from here|here)$|^(?:set |mark )?point a$|^start (?:a )?loop(?: here)?$/i.test(t)) {
+        if (!ab || A.currentIndex() < 0) return say('Play a track first.');
+        if (!/point A/.test(abT())) return say('A loop is already started. Say \u201cset loop end\u201d or \u201cclear loop\u201d.');
+        click('ab-loop-btn'); return done('Loop start marked at ' + clock(pos()) + '. Say \u201cset loop end\u201d where the part ends.');
+      }
+      if (/^(?:set |mark )?(?:a )?loop (?:end|point b|b|to here)$|^(?:set |mark )?point b$|^end (?:the )?loop(?: here)?$/i.test(t)) {
+        if (!/point B/.test(abT())) return say('Mark the start first: say \u201cset loop start\u201d.');
+        click('ab-loop-btn'); return /Looping/.test(abT()) ? done('Looping that part.') : say('The end has to come after the start. Let it play a bit further and try again.');
+      }
+      if (/^(?:clear|remove|cancel|stop|turn off)(?: the)?(?: a-?b)? ?loop(?:ing)?$|^loop off$/i.test(t) && /point B|Looping/.test(abT())) {
+        for (let i = 0; i < 2 && !/point A/.test(abT()); i++) click('ab-loop-btn');
+        return done('Loop cleared.');
+      }
+      // repeat mode (cycles Repeat off / all / one)
+      if (/^(?:(?:turn|switch|set) )?(?:(?:on|off) )?(?:repeat|loop)(?: mode)?(?: (?:on|off|one|all|this(?: song| track)?|it|the (?:song|track|playlist)|everything))?$|^(?:repeat|loop) (?:this|it)(?: song| track)?$|^(?:stop|quit|end) (?:repeating|looping)$/i.test(t)) {
+        const rb = $id('repeat-btn'); if (!rb) return say('I cannot find the repeat button.');
+        const off = /\boff\b|^(stop|quit|end)\b/i.test(t), all = /\b(all|everything|playlist)\b/i.test(t), one = /\b(one|this|song|track|it)\b/i.test(t) || /^loop\b/i.test(t);
+        const want = off ? 'Repeat' : all && !one ? 'Repeat all' : one ? 'Repeat one' : 'Repeat all';
+        for (let i = 0; i < 3 && rb.title !== want; i++) rb.click();
+        return rb.title === want ? done(want === 'Repeat' ? 'Repeat off.' : want + '.') : say('I could not set repeat.');
+      }
+      // playback speed
+      if (/^(?:speed (?:it )?up|(?:make it |play it |go |play )?(?:a (?:bit|little) )?faster)$/i.test(t)) return GA('speedUp') ? done('Faster (+0.25x).') : false;
+      if (/^(?:slow (?:it )?down|(?:make it |play it |go |play )?(?:a (?:bit|little) )?slower)$/i.test(t)) return GA('speedDown') ? done('Slower (-0.25x).') : false;
+      if (/^(?:normal|regular|default|reset|original) speed$|^(?:reset|restore) (?:the )?speed$|^speed (?:reset|normal)$|^(?:play )?(?:it )?at normal speed$/i.test(t)) return GA('speedReset') ? done('Normal speed.') : false;
+      if ((m = t.match(/^(?:(?:set|change|play)(?: the)?(?: playback)? )?speed(?: to| at)? ?(\d+(?:\.\d+)?) ?x?$|^(?:play )?(?:it )?at (\d+(?:\.\d+)?) ?x(?: speed)?$|^(\d+(?:\.\d+)?)x(?: speed)?$/i))) {
+        const r = Math.max(.25, Math.min(4, Math.round(parseFloat(m[1] || m[2] || m[3]) * 4) / 4)), n = Math.round((r - 1) / .25);
+        GA('speedReset'); for (let i = 0; i < Math.abs(n); i++) GA(n > 0 ? 'speedUp' : 'speedDown');
+        return done('Speed ' + r + 'x (steps of 0.25, between 0.25x and 4x).');
+      }
+      // volume shortcuts
+      if (/^(?:max(?:imum)?|full) volume$|^volume (?:max|full)$|^(?:turn it|set it|put it) (?:up )?(?:to )?(?:max|full)$/i.test(t)) return setVol(100);
+      if (/^half volume$|^volume half$/i.test(t)) return setVol(50);
+      // fullscreen / immersive / picture in picture / rotate / zoom / fit / filter / frames (video things)
+      if ((m = t.match(/^(?:(?:go|enter|turn on|switch to|put it in|make it) )?full ?screen(?: mode)?(?: on)?$|^(exit|leave|close|turn off|get out of|quit|stop) full ?screen(?: mode)?$/i))) {
+        const inFs = !!document.fullscreenElement, out = !!m[1];
+        if (out && !inFs) return say('It is not in fullscreen.'); if (!out && inFs) return say('Already in fullscreen.');
+        if (!out && !isVid()) return say('Fullscreen is for videos, and the current track is audio.');
+        GA('fullscreen'); return done(out ? 'Left fullscreen.' : 'Fullscreen.');
+      }
+      if ((m = t.match(/^(?:(?:turn|switch) )?(on |off )?immersive(?: mode)?( on| off)?$|^(exit|leave|stop|enter|start) immersive(?: mode)?$/i))) {
+        const isOn = document.body.classList.contains('immersive'), w = ((m[1] || m[2] || '').trim() || (m[3] ? (/^(exit|leave|stop)/i.test(m[3]) ? 'off' : 'on') : '')).toLowerCase();
+        if (w && (w === 'on') === isOn) return say('Immersive mode is already ' + w + '.');
+        GA('immersive'); return done('Immersive mode ' + (isOn ? 'off' : 'on') + '.');
+      }
+      if (/^(?:pip|picture[- ]in[- ]picture)(?: mode)?$|^(?:(?:go|switch) to|turn on|open|enter) (?:pip|picture[- ]in[- ]picture)(?: mode)?$/i.test(t)) return vidOnly() || (click('pip-btn') ? done('Picture in picture.') : say('I cannot reach picture in picture.'));
+      if (/^rotate(?: the)?(?: screen| video| picture)?$/i.test(t)) return vidOnly() || (click('rotate-btn') ? done('Rotated.') : say('I cannot find rotate.'));
+      if (/^zoom in$/i.test(t)) return vidOnly() || (GA('zoomIn'), done('Zoomed in.'));
+      if (/^zoom out$/i.test(t)) return vidOnly() || (GA('zoomOut'), done('Zoomed out.'));
+      if (/^(?:reset|undo|clear) (?:the )?zoom(?: and fit)?$|^(?:fit|reset) (?:the )?(?:video|picture|screen)$/i.test(t)) return vidOnly() || (GA('zoomReset'), done('Zoom and fit reset.'));
+      if (/^(?:change|switch|cycle|next)(?: the)?(?: video)? (?:fit|aspect(?: ratio)?)$/i.test(t)) return vidOnly() || (GA('cycleFit'), done('Changed the video fit.'));
+      if (/^(?:next|change|switch|cycle|another)(?: the)?(?: video)? filter$/i.test(t)) return vidOnly() || (GA('nextFilter'), done('Next video filter.'));
+      if (/^(?:(?:step|go) )?(?:forward|ahead|next)(?: one)?(?: a)? frame$|^frame (?:forward|ahead)$/i.test(t)) return vidOnly() || (GA('frameFwd'), done('One frame forward.'));
+      if (/^(?:(?:step|go) )?(?:back|backward|previous|prev)(?: one)?(?: a)? frame$|^frame back(?:ward)?$/i.test(t)) return vidOnly() || (GA('frameBack'), done('One frame back.'));
+      // equalizer
+      const EQN = { flat: 'flat', off: 'flat', 'turn off': 'flat', disable: 'flat', normal: 'flat', reset: 'flat', none: 'flat', bass: 'bass', 'bass boost': 'bass', 'more bass': 'bass', treble: 'treble', 'more treble': 'treble', vocal: 'vocal', vocals: 'vocal', voice: 'vocal', 'v shape': 'vshape', 'v-shape': 'vshape', vshape: 'vshape', 'v shaped': 'vshape', acoustic: 'acoustic', pop: 'pop', rock: 'rock', jazz: 'jazz', classical: 'classical', electronic: 'electronic', edm: 'electronic', 'hip hop': 'hiphop', 'hip-hop': 'hiphop', hiphop: 'hiphop', rap: 'hiphop', loudness: 'loudness', loud: 'loudness', podcast: 'podcast', speech: 'podcast', 'late night': 'latenight', latenight: 'latenight', night: 'latenight' };
+      if (/^(?:next|change|switch|cycle|another)(?: the)?(?: eq| equali[sz]er)(?: preset)?$|^(?:next|another) (?:eq|equali[sz]er)(?: preset)?$/i.test(t)) return need() || (GA('nextEqPreset'), done('Switched to the next EQ preset.'));
+      if ((m = t.match(/^(?!(?:open|show|bring up|pull up|close|hide) )(?:(?:set|change|switch|use|apply|put|make)(?: the)?(?: eq| equali[sz]er)(?: preset)?(?: to| on)?|(?:eq|equali[sz]er)(?: preset)?(?: to)?) (.+)$|^(.+?) (?:eq|equali[sz]er)(?: preset)?$|^(?:boost|more|add|increase) (?:the )?(bass|treble|vocals?)$|^(bass boost)$|^(?:turn off|disable|reset) (?:the )?(?:eq|equali[sz]er)$/i)) && !/^(?:open|show|bring up|pull up|close|hide) /i.test(t)) {
+        const c = cur(); if (!c) return say('Play or pick a track first.');
+        const key = (m[1] || m[2] || m[3] || m[4] || 'flat').toLowerCase().trim().replace(/\s+the$/, ''), name = EQN[key];
+        if (!name) return say('I know these EQ presets: bass, treble, vocal, v-shape, acoustic, pop, rock, jazz, classical, electronic, hip hop, loudness, podcast, late night, or flat.');
+        return A.setTrackEqPreset(c.dbId, name) ? done('EQ set to ' + name + ' for this track.' + (name === 'flat' ? '' : ' Say \u201ceq off\u201d to undo.')) : say('That preset did not work.');
+      }
+      // library search and tabs/menus
+      if ((m = t.match(/^(?:search(?: my library| the library| my music| tracks)?(?: for)?|look up|filter(?: by| for)?)\s+(.+)$/i))) {
+        const inp = $id('track-search'); if (!inp) return say('I cannot find the search box.');
+        const tab = document.querySelector('[data-sidebar-tab="playlist"]'); tab && tab.click();
+        inp.value = m[1].trim(); inp.dispatchEvent(new Event('input', { bubbles: true })); return done('Searching your library for \u201c' + inp.value + '\u201d. Say \u201cclear search\u201d to reset.');
+      }
+      if (/^(?:clear|reset|close)(?: the| my)? (?:search|filter)$/i.test(t)) { const inp = $id('track-search'); if (!inp) return false; inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); return done('Search cleared.'); }
+      if ((m = t.match(/^(?:open|show|go to|switch to|take me to)(?: the| my)? (settings|playlist|playlists|library|queue|tracks|track list)(?: tab| page| pane| screen)?$/i))) {
+        const isSet = m[1].toLowerCase() === 'settings', b = document.querySelector('[data-sidebar-tab="' + (isSet ? 'settings' : 'playlist') + '"]');
+        return b ? (b.click(), done((isSet ? 'Settings' : 'Playlist') + ' opened.')) : say('I cannot find that tab.');
+      }
+      if ((m = t.match(/^(?:open|show|bring up|pull up)(?: the| my)? (.+?)(?: menu)?$/i))) {
+        const OPEN = [[/^(?:eq|equali[sz]er)$/, 'eq-btn', 'Equalizer'], [/^sleep(?: timer)?$/, 'sleep-btn', 'Sleep timer'], [/^(?:speed|playback speed)$/, 'speed-btn', 'Speed menu'], [/^(?:effects|fx)$/, 'fx-btn', 'Effects'], [/^(?:subtitles?|captions?)$/, 'subtitle-btn', 'Subtitles'], [/^(?:main )?menu$/, 'menu-btn', 'Menu']];
+        const o = OPEN.find(x => x[0].test(m[1].toLowerCase().trim())); if (o) return click(o[1]) ? done(o[2] + ' opened.') : say('I cannot reach that.');
+      }
+      if (/^(?:close|hide)(?: the)? menu$/i.test(t)) return click('menu-close-btn') ? done('Menu closed.') : say('The menu is not open.');
+      // position info
+      if (/^how (?:much|long)(?: time)?(?: is)?(?: there)?(?: left| remaining)(?: in (?:this|the) (?:song|track|video))?$|^(?:time|how long) left$|^what'?s left$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say(clock(dur() - pos()) + ' left (' + clock(pos()) + ' of ' + clock(dur()) + ').'); }
+      if (/^how long is (?:this|it|the current)(?: song| track| video)?$|^(?:what'?s|what is) the (?:length|duration)(?: of (?:this|it))?$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say('It is ' + clock(dur()) + ' long.'); }
+      if (/^(?:where am i|how far in(?: am i)?|what time is it in the (?:song|track)|what'?s the (?:time|position))$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say('You are at ' + clock(pos()) + ' of ' + clock(dur()) + '.'); }
+      // play by position
+      if ((m = t.match(/^play (?:the )?(first|second|third|last|random|\d+(?:st|nd|rd|th)?) (?:song|track)$/i))) {
+        const tr = A.tracks(), q = tr.map((x, i) => i).filter(i => !tr[i].stem); if (!q.length) return say('Your library is empty.');
+        const w = m[1].toLowerCase(), ord = { first: 1, second: 2, third: 3 }, n = w === 'last' ? q.length : w === 'random' ? 1 + Math.floor(Math.random() * q.length) : (ord[w] || parseInt(w, 10));
+        if (!(n >= 1 && n <= q.length)) return say('You have ' + q.length + ' tracks, so I cannot play number ' + w + '.');
+        A.play(q[n - 1], q); return done('Playing ' + tr[q[n - 1]].title + '.');
+      }
       // settings
       let tg = null; if ((m = t.match(/^(?:turn|switch|set) (on|off) (.+)$/i))) tg = [m[1], m[2]]; else if ((m = t.match(/^(enable|disable) (.+)$/i))) tg = [m[1] === 'enable' ? 'on' : 'off', m[2]];
       if (tg) {
@@ -1787,7 +2066,10 @@
         if (!ws.length || ws.every(w => ['random', 'anything', 'everything', 'all', 'shuffle', 'shuffled'].includes(w))) {
           const q = shuffleIn(tr.map((x, i) => i).filter(i => !tr[i].stem)); if (!q.length) return say('Your library is empty.'); A.play(q[0], q); return done('Playing a shuffled mix.');
         }
-        const r = findTracks(ws); if (!r.length) return say('I could not find anything for \u201c' + m[1] + '\u201d. Tagging more tracks helps me find moods and styles.');
+        const r = findTracks(ws); if (!r.length) {
+          if (ws.length && ws.every(w => VIBEW.has(w)) && tagStats().left > 0) return (askYN('I pick music by mood from your tags, and some tracks are not tagged yet. Tag your library first? I will start the music when it is done.', () => tagAll(() => agent(t, true))), true);
+          return say('I could not find anything for \u201c' + m[1] + '\u201d. Tagging more tracks helps me find moods and styles.');
+        }
         const vibeOnly = ws.every(w => VIBEW.has(w)); if (vibeOnly) shuffleIn(r);
         const q = r.slice(0, 30); A.play(q[0], q);
         return done('Playing ' + (vibeOnly ? q.length + ' ' + ws.join(' ') + ' tracks' : tr[q[0]].title + (q.length > 1 ? ' (and ' + (q.length - 1) + ' more matches queued)' : '')) + '.');
@@ -1802,8 +2084,10 @@
       if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
       if (agentOn()) { let hit = false; try { hit = agent(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
       const f = FAQ.find(x => x[0].test(text)); if (f) { add('bot', f[1]); return; }
+      if (!brainOn()) { fallbackReply(text); return; }
+      if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
       if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
-        add('bot', "To chat about anything else I need to download my brain first: about 200 MB, one time. Wi-Fi is best.");
+        add('bot', "To chat about anything else I need to download my brain first: about 150 MB, one time. Wi-Fi is best.");
         actions([['Download and chat', (b, d) => { d.remove(); dlOk = true; send(text, true); }], ['Not now', (b, d) => d.remove()]]);
         return;
       }
@@ -1811,20 +2095,22 @@
       const el = add('bot', '\u2026');
       try {
         const g = await ensureModel(s => { el.textContent = s; });
-        const msgs = [{ role: 'system', content: sysPrompt() }].concat(hist.slice(-6), [{ role: 'user', content: text }]);
-        let acc = '', opts = { max_new_tokens: 90, do_sample: true, temperature: 0.7, top_p: 0.9, repetition_penalty: 1.15 };
+        const msgs = [{ role: 'system', content: sysPrompt() }].concat(hist.slice(-4), [{ role: 'user', content: text }]);
+        let acc = '', opts = { max_new_tokens: 60, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 };
         if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: t => { acc += t; el.textContent = acc; scrollDown(); } });
         const out = await g(msgs, opts);
         let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
         r = String(r || acc).trim().replace(/\s+\n/g, '\n') || "Hmm, I lost my words. Try again?";
-        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = hist.slice(-12);
+        if (!looksOk(r)) { el.textContent = "Sorry, that came out as gibberish. Try again, or tap Clear."; return void (chatBusy = false); }   // never feed garbage back into the history
+        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = hist.slice(-8);
         moodChip(text);
       } catch (e) { console.error(e); dlOk = false; el.textContent = "Oops, my brain would not load: " + e.message; }
       chatBusy = false; scrollDown(); cm('greet'); setTimeout(() => cm('idle'), 1300);
+      clearTimeout(idleT); idleT = setTimeout(async () => { if (gen && !chatBusy) { try { await gen.dispose(); } catch (e) {} gen = null; } }, 60000);   // hand the RAM back when idle
     }
     return {
       react,
-      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat },
+      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain },
       start() { key = ''; set('start', pick(L.start), 900); },
       opened() {
         if (greeted || !on) return; greeted = true;
@@ -1871,13 +2157,16 @@
     document.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'); if (bt && !bt.disabled && ['ppv-go', 'ppv-tag', 'ppv-all', 'ppv-wgo', 'ppv-simgo', 'ppv-mk', 'ppv-mkq', 'ppv-eqall'].includes(bt.id)) mas.start(); }, true);
     p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="margin-top:10px"><input type="checkbox" id="ppv-mas"> Show Bloop, the mascot</label>');
     const mc = p.querySelector('#ppv-mas'); mc.checked = mas.isOn(); mc.onchange = () => mas.setOn(mc.checked);
-    p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-chat-on"> Chat with Bloop (small on-device AI)</label>' +
-      '<div class="ppv-note">Adds a Bloop button you can tap to chat about the app or how you feel. Needs a one-time ~200 MB download (asked first), then runs on your device. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
+    p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-chat-on"> Bloop assistant (does things in the app, no AI download)</label>' +
+      '<div class="ppv-note">Adds a Bloop button. He can play music by mood, make mood and smart playlists, tag, split, get lyrics and control the player (volume, seek, speed, EQ, repeat\u2026). That all runs from the tagger and fixed rules, so it needs no chat AI.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-brain-on"> Chat brain: talk about anything with a tiny AI (optional, ~150 MB download)</label>' +
+      '<div class="ppv-note">Off: Bloop only does tasks and answers app questions. On: he can also chat. It is taken out of memory whenever he does a task. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-agent-on"> Let Bloop do things when I ask (play, playlists, tagging, volume\u2026)</label>' +
-      '<label id="ppv-chatgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-chatgpu"> Use GPU (smaller 134 MB download, experimental)</label>' +
+      '<label id="ppv-chatgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-chatgpu"> Use GPU (experimental, ~270 MB download)</label>' +
       '<button id="ppv-chatfree" class="ppv-sec" type="button">Free up chat download</button>');
     { const co = p.querySelector('#ppv-chat-on'), cg = p.querySelector('#ppv-chatgpu'), cl = p.querySelector('#ppv-chatgpul');
       co.checked = mas.chat.isOn(); co.onchange = () => mas.chat.setOn(co.checked);
+      const cbr = p.querySelector('#ppv-brain-on'); cbr.checked = mas.chat.brainOn(); cbr.onchange = () => mas.chat.setBrain(cbr.checked);
       const ag = p.querySelector('#ppv-agent-on'); try { ag.checked = localStorage.getItem('ppvAgent') !== '0'; } catch (e) { ag.checked = true; }
       ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch (e) {} };
       if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
