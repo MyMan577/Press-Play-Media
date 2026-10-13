@@ -1679,9 +1679,79 @@
       actions([['\u25b6 Play ' + m[2], () => { window.__ppApi.play(q[0], q); }], ['\u2795 Make a playlist', (b, d) => { d.remove(); moodPlaylist(m[1], 'For how you feel,'); }]]);
       return true;
     }
+    // ---------- Bloop's personality: he has favorites, picked from YOUR library and remembered ----------
+    const realTr = () => { const A = window.__ppApi; return A ? A.tracks().filter(x => !x.stem) : []; };
+    const favState = () => { try { return JSON.parse(lsGet('ppvFav')) || {}; } catch (e) { return {}; } };
+    const favSave = o => lsSet('ppvFav', JSON.stringify(o));
+    const hashN = str => { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
+    function favSong() { const tr = realTr(); if (!tr.length) return null; const st = favState(); let t = tr.find(x => x.dbId === st.song); if (!t) { t = tr[Math.floor(Math.random() * tr.length)]; st.song = t.dbId; favSave(st); } return t; }
+    function favArtist() { const c = {}; realTr().forEach(x => { const a = (x.artist || '').trim(); if (a) c[a] = 1; }); const n = Object.keys(c); if (!n.length) return null; const st = favState(); if (!(st.artist && c[st.artist])) { st.artist = n[Math.floor(Math.random() * n.length)]; favSave(st); } return st.artist; }
+    function favVibe() { const tg = loadTags(), c = {}; realTr().forEach(x => { const g = tg[x.dbId]; if (g) vibes(g).forEach(v => { c[v] = (c[v] || 0) + 1; }); }); const e = Object.entries(c).sort((a, b) => b[1] - a[1]); return e.length ? e[0][0] : null; }
+    const songLine = t => '\u201c' + t.title + '\u201d' + (t.artist ? ' by ' + t.artist : '');
+    const playMe = (t, label) => { const A = window.__ppApi, i = A.tracks().indexOf(t); if (i >= 0) actions([[label || '\u25b6 Play it', () => { A.play(i, [i]); }]]); };
+    // Answers in character without any AI download. Returns false when the chat brain should handle it (free-form pretend/roleplay).
+    function roleplay(text) {
+      const x = String(text).trim().replace(/[?!.]+$/g, ''), A = window.__ppApi; if (!x) return false;
+      // "favorite MOODY song", "favorite chill artist", "favorite jazz track": narrow his pick to tracks matching the tags.
+      const GENERIC = new Set(['all', 'time', 'ever', 'overall', 'current', 'right', 'now', 'new', 'old', 'recent', 'one', 'single', 'of', 'the', 'a', 'an', 'your', 'ur', 'fav', 'favorite', 'favourite', 'best', 'top', 'to', 'for', 'in', 'my', 'this', 'that', 'listen', 'play', 'and', 'or']);
+      const vibeFilter = () => {
+        const ws = vibeWordsOf(x); let idx = null, label = '';
+        if (ws.length) { idx = findVibe(ws, /\b(or|either)\b/i.test(x)); label = ws.join(' or '); if (ws.length === 1) { const tok = x.toLowerCase().split(/[^\p{L}\p{N}-]+/u).find(w => w === ws[0] || VIBE_SYN[w] === ws[0]); if (tok) label = tok; } }
+        else { const mm = x.match(/\b(?:favou?rite|fav)\s+(.+?)\s+(?:songs?|tracks?|tunes?|jams?|music|artists?|bands?|singers?)\b/i); if (mm) { const lw = wordsOf(mm[1]).filter(w => !GENERIC.has(w)); if (lw.length) { idx = findTracks(lw); label = lw.join(' '); } } }
+        return idx === null ? null : { idx: idx.filter(i => !A.tracks()[i].stem), label };
+      };
+      const favPick = (key, list, id) => { const st = favState(); st.v = st.v || {}; let v = st.v[key]; if (!list.some(it => id(it) === v)) { v = id(list[Math.floor(Math.random() * list.length)]); st.v[key] = v; favSave(st); } return list.find(it => id(it) === v); };
+      const noMatch = label => { const S = tagStats(); add('bot', S.tagged.length ? 'None of your tagged tracks are ' + label + ', so I cannot pick a favorite there yet.' : 'I need your tracks tagged to pick a ' + label + ' favorite. Say \u201ctag all\u201d and ask me again!'); return true; };
+      const noLib = () => { add('bot', pick(["My library is empty, so I have nothing to pick from yet! Add some songs and I'll choose a favorite.", "I need songs to have a favorite! Add some to the player first."])); return true; };
+      if (/\b(your|ur)\b.*\b(favou?rite|fav)\b.*\b(artist|band|singer|musician|rapper)\b|\bwho do you (like|love|listen to)\b|\bwhich artist do you (like|love)\b/i.test(x)) {
+        const vf = vibeFilter();
+        if (vf) {
+          if (!vf.idx.length) return noMatch(vf.label);
+          const tr = A.tracks(), names = [...new Set(vf.idx.map(i => (tr[i].artist || '').trim()).filter(Boolean))]; if (!names.length) return add('bot', 'I do not see artist names on those tracks.'), true;
+          const a = favPick('a:' + vf.label, names, n => n);
+          add('bot', pick(['For ' + vf.label + ' stuff? ' + a + ', easily.', 'My favorite ' + vf.label + ' artist is ' + a + '. They always get me bouncing the right way.', a + '! Nobody does ' + vf.label + ' like them in your library.'])); return true;
+        }
+        const a = favArtist(); if (!a) return add('bot', "I do not see artist names on your tracks yet, so I can't pick one. Ask me about my favorite song instead!"), true;
+        add('bot', pick(['Ooh, ' + a + '! Every time they come on I bounce a little higher.', 'Easy: ' + a + '. I picked them out of your library myself.', a + ', no contest. Rolling around to them is my favorite thing.'])); return true;
+      }
+      if (/\b(your|ur)\b.*\b(favou?rite|fav)\b.*\b(genre|vibe|mood|style|kind of music|type of music|sound)\b/i.test(x)) {
+        const v = favVibe(); add('bot', v ? pick(['I love ' + v + ' stuff. It shows up the most in your tagged tracks and I bounce to it.', 'Definitely ' + v + '. That is what I hear most in your library.']) : "I can't tell yet! Tag your library and I'll find the vibe I like best."); return true;
+      }
+      if (/\b(your|ur)\b.*\b(favou?rite|fav)\b.*\bcolou?r\b/i.test(x)) { add('bot', pick(['Blue, like my ball body. Though I look great in whatever your theme is.', 'Whatever colors the visualizer is showing right now!'])); return true; }
+      if (/\b(your|ur)\b.*\b(favou?rite|fav)\b.*\b(food|snack|meal)\b/i.test(x)) { add('bot', pick(["I'm a ball in a music player, so I run on good beats. Maybe bass-flavored?", "Anything with a lot of bass. I don't eat, but I'd try it."])); return true; }
+      if (/\b(your|ur)\b.*\b(favou?rite|fav)\b.*\b(song|track|tune|jam|music)\b|\bwhat (song|track|music) do you (like|love|listen to|play)\b|\bwhat'?s your (favou?rite|fav)$|\bwhat are you (listening to|into)$|\bwhich (song|track) do you (like|love)\b|\bdo you have a favou?rite (song|track)\b/i.test(x)) {
+        const vf = vibeFilter();
+        if (vf) {
+          if (!vf.idx.length) return noMatch(vf.label);
+          const tr = A.tracks(), t = favPick('s:' + vf.label, vf.idx.map(i => tr[i]), z => z.dbId);
+          add('bot', pick(['My favorite ' + vf.label + ' song? ' + songLine(t) + '. It gets me every time.', 'For ' + vf.label + ' vibes I pick ' + songLine(t) + '.', songLine(t) + '! Best ' + vf.label + ' track in your library, if you ask me.'])); playMe(t, '\u25b6 Play it with me'); return true;
+        }
+        const t = favSong(); if (!t) return noLib();
+        add('bot', pick(['My favorite? ' + songLine(t) + '. I bounce extra high for that one.', 'Oh, easy: ' + songLine(t) + '. I picked it out of your library.', songLine(t) + '! Every time it plays I get a little dizzy with happiness.'])); playMe(t, '\u25b6 Play it with me'); return true;
+      }
+      const cu = A && A.currentIndex() >= 0 ? A.tracks()[A.currentIndex()] : null;
+      if (/\b(do you (like|love|enjoy|hate)|what do you think (of|about)|how do you like|rate|what'?s your (rating|score) (for|of))\b.*\b(this|the current|current|playing)\b( song| track| one)?$|^(do you like (it|this)|rate (it|this|this song))$/i.test(x) && !/\b(volume|shuffle|repeat|playlist|video)\b/i.test(x)) {
+        if (!cu) return add('bot', 'Play something first and I will tell you what I think!'), true;
+        const fav = favSong(), r = fav && fav.dbId === cu.dbId ? 10 : 6 + hashN(cu.dbId) % 5;
+        add('bot', (r === 10 ? 'That is MY FAVORITE! 10 out of 10, I could bounce to it all day.' : pick(['I give ' + songLine(cu) + ' a ' + r + ' out of 10. ', r + '/10 from me! ', 'Solid. Probably a ' + r + ' out of 10 for me. ']) + (r >= 9 ? 'I love it.' : r >= 8 ? 'Really nice.' : 'It grows on me.'))); return true;
+      }
+      if (/^(pick|choose|select|recommend|suggest)( me)?( a| one)?( song| track| tune)?( for me)?$|^(what|which) (song|track) (should i|do you think i should) (listen to|play)$|^what should i (listen to|play)$/i.test(x)) {
+        const tr = realTr(); if (!tr.length) return noLib(); const t = tr[Math.floor(Math.random() * tr.length)];
+        add('bot', pick(['How about ' + songLine(t) + '?', 'I pick ' + songLine(t) + '!', 'Try ' + songLine(t) + '. Trust the ball.'])); playMe(t, '\u25b6 Play it'); return true;
+      }
+      if (/\bdo you (like|love|enjoy) (music|songs|listening)\b/i.test(x)) { add('bot', pick(['I love it! It is basically my whole life. I live in a music player.', 'Music is the best. I can feel the bass in my little ball body.'])); return true; }
+      if (/\b(can you|do you) (hear|dance|have ears|listen)\b/i.test(x)) { add('bot', pick(["I can't really hear, but I feel the beat in my own way and I bounce along.", 'I dance every time you press play. You just have to watch me.'])); return true; }
+      if (/\b(role ?play|pretend|play pretend|act (like|as)|let'?s pretend)\b/i.test(x)) {
+        if (brainOn()) return false;
+        add('bot', "I'd love to play pretend! Without the chat brain I only do a little: ask me my favorite song, favorite artist or what I think of the current track. Turn on the chat brain in settings for freer roleplay."); return true;
+      }
+      return false;
+    }
     const sysPrompt = () => {
       const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], c = t && loadTags()[t.dbId];
-      return "You are Bloop, a friendly ball mascot in a music player. Reply in 1-2 short, kind sentences. If unsure, say so. No medical or legal advice. Never claim you did something in the app." +
+      return "You are Bloop, a friendly ball mascot in a music player. Reply in 1-2 short, kind sentences. If unsure, say so. No medical or legal advice. Never claim you did something in the app. You love music and bounce along to it. If asked about your favorites, answer in character as Bloop; you can play along with pretend or roleplay but stay Bloop and keep it kind and gentle." +
+        (A && A.tracks().filter(x => !x.stem).length ? " The library has " + A.tracks().filter(x => !x.stem).length + " tracks, e.g. " + A.tracks().filter(x => !x.stem).slice(0, 5).map(x => x.title).join("; ") + "." : "") +
+        (favSong() ? " Your favorite song is " + songLine(favSong()) + (favArtist() ? " and your favorite artist is " + favArtist() : "") + "." : "") +
         (t ? " Now playing: " + t.title + (c ? " (" + vibes(c).join(', ') + ")." : ".") : "");
     };
     async function ensureModel(say) {
@@ -1802,9 +1872,39 @@
     const agentOn = () => lsGet('ppvAgent') !== '0';
     const $id = id => document.getElementById(id);
     const mediaOn = () => [...document.querySelectorAll('audio,video')].some(m => !m.paused && !m.ended && m.readyState > 2);
-    const SYN = { relax: 'chill', relaxing: 'chill', relaxed: 'chill', calm: 'chill', mellow: 'chill', dance: 'party', dancing: 'party', gym: 'workout', exercise: 'workout', upbeat: 'happy', study: 'focus', studying: 'focus', instrumentals: 'instrumental',
+    const SYN = { relax: 'chill', relaxing: 'chill', relaxed: 'chill', calm: 'chill', mellow: 'chill', dance: 'party', dancing: 'party', gym: 'workout', exercise: 'workout', upbeat: 'happy', moody: 'sad', melancholy: 'sad', melancholic: 'sad', gloomy: 'sad', somber: 'sad', depressing: 'sad', sorrowful: 'sad', emotional: 'sad', angry: 'aggressive', furious: 'aggressive', study: 'focus', studying: 'focus', instrumentals: 'instrumental',
       song: '', songs: '', track: '', tracks: '', music: '', tunes: '', something: '', some: '', a: '', an: '', the: '', me: '', my: '', to: '', for: '', of: '', with: '', from: '' };
-    const VIBEW = new Set(['chill', 'party', 'workout', 'happy', 'sad', 'focus', 'sleep', 'acoustic', 'instrumental', 'slow', 'fast']);
+    const VIBEW = new Set(['chill', 'party', 'workout', 'happy', 'sad', 'focus', 'sleep', 'acoustic', 'instrumental', 'slow', 'fast', 'aggressive', 'vocals', 'mid-tempo']);
+
+    // Many ways to say each vibe. Every word here maps to one of the tagger's vibes (the VIBEW set).
+    const VIBE_SYN = {};
+    Object.entries({
+      chill: 'relax relaxing relaxed relaxation calm calming mellow soothing peaceful gentle soft smooth laidback laid-back easygoing tranquil serene lounge lofi lo-fi cozy cosy dreamy breezy unwind zen quiet tender downtempo chilled chillout chilling easy comforting',
+      party: 'dance dancing danceable club clubbing rave banger bangers bop bops groovy groove funky festive celebrate celebration lively disco edm bounce bouncy',
+      workout: 'gym exercise exercising cardio running run jogging lifting training pump pumped pumping energetic energy motivational motivation hype hyped powerful adrenaline sprint',
+      happy: 'upbeat cheerful joyful joy fun sunny positive uplifting feel-good feelgood bright cheery playful optimistic summer smile bubbly',
+      sad: 'moody melancholy melancholic gloomy somber sombre depressing depressed sorrowful emotional heartbreak heartbroken tearjerker crying cry lonely sentimental nostalgic bittersweet dark brooding haunting mournful grief down bleak wistful tragic angsty blue sorrow',
+      focus: 'study studying homework concentrate concentration work working reading productivity coding deep-work background',
+      sleep: 'sleepy sleeping bedtime lullaby insomnia nap drowsy nighttime goodnight',
+      acoustic: 'unplugged stripped organic',
+      instrumental: 'instrumentals wordless no-vocals karaoke backing',
+      slow: 'slower ballad ballads slow-tempo',
+      fast: 'quick speedy up-tempo uptempo rapid fast-paced fastpaced brisk',
+      aggressive: 'angry furious rage raging heavy hard harsh brutal intense loud rough fierce aggro fury',
+      vocals: 'singing sung vocal lyrics',
+      'mid-tempo': 'midtempo medium-tempo moderate'
+    }).forEach(([v, ws]) => ws.split(' ').forEach(w => { VIBE_SYN[w] = v; }));
+    // Phrases that mean a vibe without a single keyword.
+    const VIBE_PHRASES = [[/\b(make(s)? me (cry|sad|emotional)|break ?up|broken heart|miss(ing)? (someone|you|her|him)|feel(ing)? (low|down|blue)|rainy day)\b/i, 'sad'], [/\b(get(ting)? (me )?(pumped|hyped|moving|energi[sz]ed)|work(ing)? out|lift(ing)? weights|pre-?game|run(ning)? (a )?(race|marathon)|burn calories)\b/i, 'workout'], [/\b(fall(ing)? asleep|go(ing)? to (sleep|bed)|can'?t sleep|before bed|put me to sleep|help me sleep)\b/i, 'sleep'], [/\b(wind(ing)? down|chill(ing)? out|take it easy|relax(ing)? (after|at)|after (a )?(long|hard) (day|week)|sunday morning)\b/i, 'chill'], [/\b(get(ting)? work done|do(ing)? (my )?(homework|work)|concentrat\w+|stay(ing)? focused|deep work|study(ing)? (for|session)|background (music|noise))\b/i, 'focus'], [/\b(house party|pre-?party|go(ing)? out|night out|get(ting)? the party started|dance floor|dancefloor)\b/i, 'party'], [/\b(road ?trip|sunny day|good mood|feel(ing)? good|put me in a good mood|cheer me up|cheer up)\b/i, 'happy'], [/\b(without (vocals|singing|lyrics)|no (vocals|singing|lyrics)|just (music|beats))\b/i, 'instrumental'], [/\b(with (vocals|singing|lyrics)|someone singing)\b/i, 'vocals'], [/\b(blow off steam|let (it|off) out|(feel(ing)?|so) (angry|mad)|rage)\b/i, 'aggressive'], [/\b(mid[- ]?tempo|medium (tempo|speed|pace))\b/i, 'mid-tempo'], [/\b(slow(er)? (and|\+) (soft|gentle|sad)|slow jam|slow songs?)\b/i, 'slow'], [/\b(fast[- ]?paced|up[- ]?tempo|high energy|full speed)\b/i, 'fast']];
+    function vibeWordsOf(text) {
+      const x = String(text).toLowerCase(), out = [], addV = v => { if (v && !out.includes(v)) out.push(v); };
+      VIBE_PHRASES.forEach(([re, v]) => { if (re.test(x)) addV(v); });
+      x.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean).forEach(w => { const v = VIBEW.has(w) ? w : VIBE_SYN[w]; if (v === 'vocals' && /\b(without|no)\s+(vocals?|singing|lyrics)\b/.test(x)) return; addV(v); });
+      return out;
+    }
+    // Words that are also common in song titles stay out of the general search mapping, so "play Dark Horse" still finds Dark Horse.
+    { const RISK = new Set(['dark', 'blue', 'down', 'heavy', 'hard', 'run', 'running', 'summer', 'fun', 'sunny', 'cry', 'crying', 'work', 'working', 'reading', 'loud', 'rough', 'quiet', 'soft', 'easy', 'bright', 'smooth', 'energy', 'groove', 'bounce', 'organic', 'lyrics', 'vocal', 'sung', 'singing', 'moderate', 'quick', 'rapid', 'stripped', 'background', 'rage', 'fury', 'joy', 'sorrow', 'smile', 'training', 'club', 'disco', 'banger', 'bangers', 'bop', 'bops', 'zen', 'lounge', 'nap', 'lonely', 'tender', 'gentle', 'powerful', 'positive', 'lively', 'fierce', 'brutal', 'harsh']);
+      Object.keys(VIBE_SYN).forEach(k => { if (!RISK.has(k) && !(k in SYN)) SYN[k] = VIBE_SYN[k]; }); }
     const wordsOf = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean).map(w => SYN[w] === undefined ? w : SYN[w]).filter(Boolean);
     const shuffleIn = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const v = a[i]; a[i] = a[j]; a[j] = v; } return a; };
     function findTracks(ws) {
@@ -1816,7 +1916,7 @@
       });
       return out.sort((a, b) => b[1] - a[1]).map(o => o[0]);
     }
-    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201cmy playlists\u201d, \u201cplay my gym playlist\u201d, \u201cremove this from <playlist>\u201d, \u201crename playlist X to Y\u201d, \u201cdelete playlist X\u201d\n\u2022 \u201clibrary stats\u201d, \u201cwhat\u2019s the BPM\u201d, \u201cplay the fastest song\u201d, \u201cplay songs around 120 bpm\u201d, \u201cplay slow songs\u201d\n\u2022 \u201copen my portfolio\u201d, \u201cmy top artist\u201d, \u201cmost played song\u201d, \u201ctop 5 songs\u201d, \u201chow much have I listened\u201d, \u201cwhen do I listen most\u201d, \u201cmy streak\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
+    const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201cmy playlists\u201d, \u201cplay my gym playlist\u201d, \u201cremove this from <playlist>\u201d, \u201crename playlist X to Y\u201d, \u201cdelete playlist X\u201d\n\u2022 \u201clibrary stats\u201d, \u201cwhat\u2019s the BPM\u201d, \u201cplay the fastest song\u201d, \u201cplay songs around 120 bpm\u201d, \u201cplay slow songs\u201d\n\u2022 \u201copen my portfolio\u201d, \u201cmy top artist\u201d, \u201cmost played song\u201d, \u201ctop 5 songs\u201d, \u201chow much have I listened\u201d, \u201cwhen do I listen most\u201d, \u201cmy streak\u201d\n\u2022 \u201cwhat songs do I have\u201d, \u201csongs by <artist>\u201d, \u201cdo I have <song>\u201d, \u201cfind <song>\u201d, \u201cmy artists\u201d, \u201cmy videos\u201d, \u201crecently added\u201d, \u201cuntagged songs\u201d, \u201cwhich songs are chill\u201d\n\u2022 Ask me about me: \u201cwhat\u2019s your favorite song?\u201d, \u201cfavorite artist?\u201d, \u201cdo you like this song?\u201d, \u201cpick a song for me\u201d\n\u2022 From your tags: \u201cany moody songs?\u201d, \u201cwhat genre is this?\u201d, \u201cwhat instruments are in this?\u201d, \u201cis this song sad?\u201d, \u201ctell me about this song\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
     // Whenever the agent handles a message (a command, or a loose phrasing it understood), the model is dropped from RAM.
     function agent(raw, skip) { holdModel = false; const hit = agentCore(raw, skip); if (hit && !chatBusy && !holdModel) unloadModel(); return hit; }
     // Loose phrasing -> canonical command, by plain rules (no model needed). Returns {cmd, q} or null. q = ask before acting.
@@ -2164,6 +2264,51 @@
         const d = PF(); if (!d || !d.totalListenMs) return say(NOPF); const x = d.x || {}, tp = topN(d.trackPlays, 1, v => v.count)[0], ar = topN(x.artistMs, 1)[0];
         return say('Listened: ' + dur2(d.totalListenMs) + '. Tracks played: ' + Object.keys(d.trackPlays || {}).length + '.' + (tp ? '\nTop song: ' + (d.trackPlays[tp[0]].title || 'Unknown') + ' (' + tp[1] + ' plays).' : '') + (ar ? '\nTop artist: ' + ar[0] + '.' : '') + '\nSkips: ' + (x.skips || 0) + ', finished: ' + (x.completions || 0) + '.');
       }
+      // ---- browsing the songs in the player ----
+      const real = () => { const tr = A.tracks(); return tr.map((x, i) => i).filter(i => !tr[i].stem); };
+      const ttl = i => { const x = A.tracks()[i]; return x.title + (x.artist ? ' \u2013 ' + x.artist : ''); };
+      const listOf = (idx, n) => idx.slice(0, n).map(ttl).join('\n') + (idx.length > n ? '\n\u2026and ' + (idx.length - n) + ' more' : '');
+      const playBtn = (idx, label) => { if (idx.length) actions([[label || '\u25b6 Play ' + (idx.length > 1 ? 'these' : 'it'), () => { const q = idx.slice(0, 50); A.play(q[0], q); }]]); };
+      const byWords = x => { const w = wordsOf(x).filter(v => v.length > 1 || /\d/.test(v)); return real().filter(i => { const tr = A.tracks()[i], h = nrm(tr.title + ' ' + (tr.artist || '')); return w.length && w.every(v => h.includes(nrm(v))); }); };
+      if (/^(?:what|which) (?:songs|tracks|music|videos?) do i have$|^(?:list|show)(?: me)?(?: all)?(?: of)?(?: my)? (?:songs|tracks|music|library)$|^(?:what'?s|what is) in my (?:player|music|songs)$/i.test(t)) {
+        const q = real(); if (!q.length) return say('Your library is empty. Add some songs first.');
+        say('You have ' + q.length + ' item' + (q.length === 1 ? '' : 's') + ':\n' + listOf(q, 12)); playBtn(q.slice().sort(() => Math.random() - .5), '\u25b6 Shuffle them'); return true;
+      }
+      if (/^(?:list|show)(?: me)?(?: all)?(?: of)?(?: my)? videos$|^(?:what|which) videos do i have$/i.test(t)) {
+        const tr = A.tracks(), q = real().filter(i => tr[i].kind === 'video'); if (!q.length) return say('You have no videos in the library.');
+        say('You have ' + q.length + ' video' + (q.length === 1 ? '' : 's') + ':\n' + listOf(q, 12)); playBtn(q); return true;
+      }
+      if (/^(?:list|show)(?: me)?(?: all)?(?: of)?(?: my)? artists$|^(?:what|which|who) (?:artists|are my artists)(?: do i have)?$|^who are my artists$|^my artists$/i.test(t)) {
+        const tr = A.tracks(), c = {}; real().forEach(i => { const a = (tr[i].artist || '').trim(); if (a) c[a] = (c[a] || 0) + 1; });
+        const a = Object.entries(c).sort((x, y) => y[1] - x[1]); if (!a.length) return say('I do not see artist names in your tracks yet.');
+        return say(a.length + ' artist' + (a.length === 1 ? '' : 's') + ': ' + a.slice(0, 15).map(x => x[0] + ' (' + x[1] + ')').join(', ') + (a.length > 15 ? ', and more' : '') + '.');
+      }
+      if ((m = t.match(/^(?:what|which)(?: songs| tracks| music)?(?: do i have| have i got| is there)? by (.+)$|^(?:list|show)(?: me)?(?: my)?(?: songs| tracks| music)? by (.+)$|^how many (?:songs|tracks)(?: do i have)? by (.+)$|^(?:songs|tracks|music) by (.+)$/i))) {
+        const nm = (m[1] || m[2] || m[3] || m[4]).trim(), tr = A.tracks(), w = nrm(nm), q = real().filter(i => nrm(tr[i].artist || '').includes(w));
+        if (!q.length) return say('I could not find any songs by \u201c' + nm + '\u201d.');
+        say(q.length + ' song' + (q.length === 1 ? '' : 's') + ' by ' + nm + ':\n' + listOf(q, 10)); playBtn(q); return true;
+      }
+      if ((m = t.match(/^(?:do i have|have i got|is there|is) (.+?)(?: in (?:my |the )?(?:library|music|player|collection))?$/i)) && !/\b(?:playlist|volume|shuffle|repeat|playing|eq|tagged)\b/i.test(m[1]) && /^(?:do i have|have i got|is there)\b|in (?:my |the )?(?:library|music|player|collection)$/i.test(t)) {
+        const q = byWords(m[1]); if (!q.length) return say('I do not see \u201c' + m[1] + '\u201d in your library.');
+        say('Yes: ' + (q.length === 1 ? ttl(q[0]) : q.length + ' matches:\n' + listOf(q, 6))); playBtn(q); return true;
+      }
+      if ((m = t.match(/^(?:find|where is|where'?s|look for|locate)(?: me)? (?!more like|similar)(.+)$/i))) {
+        const q = byWords(m[1]); if (!q.length) return say('I could not find \u201c' + m[1] + '\u201d in your library.');
+        say(q.length + ' match' + (q.length === 1 ? '' : 'es') + ':\n' + listOf(q, 6)); playBtn(q); return true;
+      }
+      if (/^(?:what (?:did i|have i) (?:add|added)(?: recently| lately)?|(?:show|list)(?: me)?(?: my)? (?:recent(?:ly added)?|newest|latest)(?: songs| tracks)?|what'?s new in my library|(?:my )?(?:recently added|newest|latest)(?: songs| tracks)?|recent (?:songs|tracks|additions))$/i.test(t)) {
+        const q = real().slice(-6).reverse(); if (!q.length) return say('Your library is empty.'); say('Most recently added:\n' + listOf(q, 6)); playBtn(q); return true;
+      }
+      if (/^(?:which|what) (?:songs|tracks) (?:are|have)(?:n'?t| not) (?:been )?tagged(?: yet)?$|^(?:list|show)(?: me)?(?: my)? untagged(?: songs| tracks)?$/i.test(t)) {
+        const tgs = loadTags(), q = real().filter(i => !tgs[A.tracks()[i].dbId]); if (!q.length) return say('Every track is tagged.');
+        say(q.length + ' untagged:\n' + listOf(q, 8)); return ask('Tag them all now?', () => tagWith('all'), true);
+      }
+      if ((m = t.match(/^(?:which|what) (?:songs|tracks|music) (?:are|sound|feel) (?:(?:the )?most |really |very )?(.+)$/i))) {
+        const ws = wordsOf(m[1]); if (ws.length && ws.every(w => VIBEW.has(w))) { const r = findTracks(ws); if (!r.length) return say('No tagged tracks match that yet. Tagging more tracks helps.'); say(r.length + ' match:\n' + listOf(r, 8)); playBtn(r); return true; }
+      }
+      if (/^play (?:a |some )?(?:random )?videos?$|^play (?:me )?a (?:random )?video$/i.test(t)) {
+        const tr = A.tracks(), q = shuffleIn(real().filter(i => tr[i].kind === 'video')); if (!q.length) return say('You have no videos in the library.'); A.play(q[0], q); return done('Playing ' + tr[q[0]].title + '.');
+      }
       // play by position
       if ((m = t.match(/^play (?:the )?(first|second|third|last|random|\d+(?:st|nd|rd|th)?) (?:song|track)$/i))) {
         const tr = A.tracks(), q = tr.map((x, i) => i).filter(i => !tr[i].stem); if (!q.length) return say('Your library is empty.');
@@ -2197,11 +2342,58 @@
     }
     // AGENT END
 
+    // ---------- Tag talk: answers about moods, genres and instruments come straight from the tags, never from the AI ----------
+    const tagLine = t => { const c = loadTags()[t.dbId]; if (!c) return ''; const g = (c.gn || []).slice(0, 2).map(v => v[0]), mo = (c.md || []).slice(0, 2).map(v => v[0]);
+      return vibes(c).join(', ') + (c.bpm ? ', ' + c.bpm + ' BPM' : '') + (c.key ? ', ' + c.key + (c.ck ? ' ' + c.ck : '') : '') + (g.length ? '; genre: ' + g.join(', ') : '') + (mo.length ? '; mood: ' + mo.join(', ') : ''); };
+    // 'sad or chill' = either; 'sad and slow' (default) = both.
+    function findVibe(ws, any) { if (!any || ws.length < 2) return findTracks(ws); const seen = new Set(), out = []; ws.forEach(w => findTracks([w]).forEach(i => { if (!seen.has(i)) { seen.add(i); out.push(i); } })); return out; }
+    function tagTalk(text) {
+      const A = window.__ppApi; if (!A) return false;
+      const x = String(text).trim().replace(/[?!.]+$/g, ''), tg = loadTags(), say = z => { add('bot', z); return true; };
+      const cu = A.currentIndex() >= 0 ? A.tracks()[A.currentIndex()] : null;
+      const askTag = t => { add('bot', '\u201c' + t.title + '\u201d is not tagged yet, so I do not know. Want me to tag it?'); actions([['Tag this track', (b, d) => { d.remove(); agent('tag this song'); }]]); return true; };
+      const kind = /^(?:what|which) genres? (?:is|are)(?: in)? (?:this|it)(?: song| track)?$|^what'?s (?:the )?genre of (?:this|it)(?: song| track)?$|^what genre is (?:this|it)(?: song| track)?$/i.test(x) ? 'g'
+        : /^(?:what|which) instruments? (?:are |is )?(?:in|does) (?:this|it)(?: song| track)?(?: have| use)?$|^what instruments (?:are )?(?:used|playing)(?: in (?:this|it))?$/i.test(x) ? 'i'
+        : /^(?:tell me about|describe|what do you know about|what are the tags (?:of|for)|show (?:me )?(?:the )?tags (?:of|for)|what'?s (?:the )?(?:info|tags|details) (?:of|for|on))(?: this| it| the current)(?: song| track)?$/i.test(x) ? 'a' : '';
+      if (kind) {
+        if (!cu) return say('Play or pick a track first.'); const c = tg[cu.dbId]; if (!c) return askTag(cu);
+        if (kind === 'g') { const g = (c.gn || []).slice(0, 3).map(v => v[0] + ' (' + v[1] + '%)'); return say(g.length ? 'Genre: ' + g.join(', ') + '.' : 'The tagger did not find a clear genre for this one.'); }
+        if (kind === 'i') { const n = (c.in || []).slice(0, 5).map(v => v[0]); return say(n.length ? 'Instruments I hear: ' + n.join(', ') + '.' : 'I did not pick up clear instruments in this one.'); }
+        return say('\u201c' + cu.title + '\u201d: ' + tagLine(cu) + '.');
+      }
+      let m;
+      if ((m = x.match(/^is (?:this|it)(?: song| track)? (?:a |an |very |really )?(\w+)(?: song| track)?$/i))) {
+        const w = vibeWordsOf(m[1])[0]; if (w) { if (!cu) return say('Play or pick a track first.'); const c = tg[cu.dbId]; if (!c) return askTag(cu); const ok = vibes(c).includes(w); return say(ok ? 'Yes, it is tagged ' + w + '.' : 'No, it is not tagged ' + w + '. Its tags: ' + vibes(c).join(', ') + '.'); }
+      }
+      // "any moody songs?", "what sad songs do I have", "give me some chill music"
+      if ((/^(?:what|which|any|do i have|have i got|got any|show|list|give me|tell me|recommend|suggest|find|are there|is there|name|got|something|songs?|music|tracks?|tunes?|i need|i want|i'd like|i would like|need|want|can you (?:find|show|suggest|recommend))\b/i.test(x) || /^(?:[\w-]+\s+){0,4}(?:songs?|tracks?|music|tunes?)$/i.test(x)) && (/\b(songs?|tracks?|music|tunes?|jams?)\b/i.test(x) || /\b(listen to|something (to|for)|put on)\b/i.test(x))) {
+        const ws = vibeWordsOf(x); if (!ws.length) return false; const anyOf = /\b(or|either)\b/i.test(x);
+        const S = tagStats(); if (!S.tagged.length) { add('bot', 'None of your tracks are tagged yet, so I cannot tell what is ' + ws.join(' ') + '. Want me to tag your library?'); actions([['Tag my library', (b, d) => { d.remove(); agent('tag all'); }]]); return true; }
+        const r = findVibe(ws, anyOf), tr = A.tracks(), note = S.left > 0 ? ' (' + S.tagged.length + ' of ' + S.real.length + ' tracks are tagged)' : '';
+        if (!r.length) return say('None of your tagged tracks are ' + ws.join(' ') + note + '.');
+        add('bot', r.length + ' ' + ws.join(' ') + ' track' + (r.length === 1 ? '' : 's') + note + ':\n' + r.slice(0, 8).map(i => tr[i].title + (tr[i].artist ? ' \u2013 ' + tr[i].artist : '')).join('\n') + (r.length > 8 ? '\n\u2026and ' + (r.length - 8) + ' more' : ''));
+        actions([['\u25b6 Play ' + (r.length > 1 ? 'them' : 'it'), () => { const q = r.slice(0, 30); A.play(q[0], q); }]]); return true;
+      }
+      return false;
+    }
+    // Facts handed to the chat AI with each message, so it talks about YOUR tracks and tags instead of making things up.
+    function groundCtx(text) {
+      const A = window.__ppApi; if (!A) return '';
+      const tr = realTr(), tg = loadTags(), cu = A.currentIndex() >= 0 ? A.tracks()[A.currentIndex()] : null, L = [];
+      L.push(' LIBRARY DATA (the only facts you may use about the music): ' + tr.length + ' tracks, ' + tr.filter(t => tg[t.dbId]).length + ' tagged.');
+      if (cu && tg[cu.dbId]) L.push('Now playing is tagged: ' + tagLine(cu) + '.');
+      const ws = vibeWordsOf(text), anyOf = /\b(or|either)\b/i.test(text);
+      if (ws.length) { const r = findVibe(ws, anyOf).slice(0, 5), all = A.tracks(); L.push(r.length ? 'Tracks that are ' + ws.join(' ') + ': ' + r.map(i => all[i].title + (all[i].artist ? ' by ' + all[i].artist : '') + ' (' + tagLine(all[i]) + ')').join('; ') + '.' : 'No tagged tracks are ' + ws.join(' ') + '.'); }
+      L.push('Never invent song names, artists, tags or moods. Only name tracks listed here. If the answer is not here, say you do not know and suggest tagging.');
+      return L.join(' ');
+    }
     async function send(raw, noEcho) {
       const text = String(raw || '').trim().slice(0, 400); if (!text || chatBusy) return;
       if (!noEcho) add('me', text);
       if (CRISIS.test(text)) { add('bot', CRISIS_MSG); return; }
+      try { if (roleplay(text)) return; } catch (e) { console.error(e); }
       if (agentOn()) { let hit = false; try { hit = agent(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
+      try { if (tagTalk(text)) return; } catch (e) { console.error(e); }
       const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
       if (!brainOn()) { fallbackReply(text); return; }
       if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
@@ -2214,7 +2406,7 @@
       const el = add('bot', '\u2026');
       try {
         const g = await ensureModel(s => { el.textContent = s; });
-        const msgs = [{ role: 'system', content: sysPrompt() }].concat(memN() ? hist.slice(-2 * memN()) : [], [{ role: 'user', content: text }]);
+        const msgs = [{ role: 'system', content: sysPrompt() + groundCtx(text) }].concat(memN() ? hist.slice(-2 * memN()) : [], [{ role: 'user', content: text }]);
         let acc = '', opts = { max_new_tokens: 60, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 };
         if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: t => { acc += t; el.textContent = acc; scrollDown(); } });
         const out = await g(msgs, opts);
