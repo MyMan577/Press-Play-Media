@@ -1225,7 +1225,7 @@
     stopB.onclick = () => { stopFlag = true; h.status('Stopping after this track…'); };
     const runAll = async () => {
       const a = A(); if (!a) return; stopFlag = false; busy(true); stopB.style.display = ''; stopB.disabled = false;
-      const lv = h.LV(), cache = lv ? null : {}, list = a.tracks().slice(); let done = 0, fail = 0, skip = 0;
+      const lv = h.LV(), cache = lv ? null : {}, list = a.tracks().filter(t => !t.stem); let done = 0, fail = 0, skip = 0;
       let wl = null; try { if (lv && lv.wake && navigator.wakeLock) wl = await navigator.wakeLock.request('screen'); } catch (e) {}
       try {
         for (let i = 0; i < list.length && !stopFlag; i++) {
@@ -1697,7 +1697,7 @@
     cfab.style.display = chatOn ? 'block' : 'none';
     cfab.onclick = () => {
       if (Date.now() < blSuppress) return;
-      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none'; if (open) { delete cfab.dataset.unread; blPlace(cbox, 'ppvBloopBox'); }
+      const open = cbox.style.display !== 'flex'; cbox.style.display = open ? 'flex' : 'none'; if (open) { delete cfab.dataset.unread; blAnchor(); }
       if (open) { if (!clist.children.length) add('bot', blOpenLine()); cm('greet'); setTimeout(() => cm('idle'), 1300); cin.focus(); }
     };
     cbox.addEventListener('click', e => {
@@ -2970,9 +2970,9 @@
 
     // CHAT HELPERS START
     // ---------- Chat box: quick-action chips, type-ahead, guided playlist, mix commands (all with undo) ----------
-    { const st = document.createElement('style'); st.textContent = '#ppv-chat .ch-chips,#ppv-chat .ch-sug{display:flex;gap:6px;overflow-x:auto;padding:4px 8px;flex-shrink:0}#ppv-chat .ch-sug:empty{display:none}#ppv-chat .ch-chips button,#ppv-chat .ch-sug button{white-space:nowrap;border-radius:14px;padding:5px 10px;border:1px solid #555;background:#2f3037;color:#eee;font-size:12px;cursor:pointer}'; document.head.appendChild(st); }
-    const lcSug = document.createElement('div'), lcChipBar = document.createElement('div'); lcSug.className = 'ch-sug'; lcChipBar.className = 'ch-chips';
-    cbox.querySelector('.ch-i').before(lcSug, lcChipBar);
+    { const st = document.createElement('style'); st.textContent = '#ppv-chat .ch-chips,#ppv-chat .ch-sug{display:flex;gap:6px;overflow-x:auto;padding:4px 8px;flex-shrink:0}#ppv-chat .ch-sug:empty{display:none}#ppv-chat .ch-chips button,#ppv-chat .ch-sug button{white-space:nowrap;border-radius:14px;padding:5px 10px;border:1px solid #555;background:#2f3037;color:#eee;font-size:12px;cursor:pointer}#ppv-chat .ch-menu:empty{display:none}#ppv-chat .ch-menu{flex-wrap:wrap;overflow-x:visible;overflow-y:auto;max-height:96px}#ppv-chat .ch-chips button.on{background:var(--accent,#7c3aed);border-color:var(--accent,#7c3aed)}'; document.head.appendChild(st); }
+    const lcSug = document.createElement('div'), lcChipBar = document.createElement('div'), lcMenuBtns = document.createElement('div'), lcMenuBar = document.createElement('div'); lcSug.className = 'ch-sug'; lcChipBar.className = 'ch-chips'; lcMenuBtns.className = 'ch-chips'; lcMenuBar.className = 'ch-chips ch-menu';
+    cbox.querySelector('.ch-i').before(lcSug, lcChipBar, lcMenuBtns, lcMenuBar);
     const lcUndo = (label, undo) => { smartSt.pu = { at: Date.now(), label, undo }; };
     const lcChoice = (q, opts) => { add('bot', q); actions(opts.map(([t, fn]) => [t, (b, d) => { d.remove(); fn(); }])); };
     const lcSize = fn => lcChoice('How many songs?', [['10', () => fn(10)], ['20', () => fn(20)], ['40', () => fn(40)]]);
@@ -3341,7 +3341,7 @@
     };
     const BL_AI_RULES = [[/mood model/i, 'moods'], [/background tagging/i, 'bgtag'], [/auto ?eq/i, 'eq'], [/auto mix|for you|live mix/i, 'mixes'], [/lyric|subtitle|whisper|caption/i, 'lyrics'], [/smart|playlist/i, 'smart'], [/tagging|library tools|\btags?\b/i, 'tagging'], [/assistant|chat brain|bloop/i, 'assistant'], [/stem|split/i, 'stems']];
     const BL_AI_BTN = { 'ppv-btn': 'stems', 'ppv-go': 'stems', 'ppv-tag': 'tagging', 'ppv-wgo': 'lyrics', 'subtitle-btn': 'lyrics', 'ppv-simgo': 'smart', 'ppv-surpnow': 'smart', 'ppv-eqall': 'eq' };
-    function blAiTip(key) { cbox.style.display = 'flex'; if (!clist.children.length) add('bot', blOpenLine()); add('bot', BL_AI_TIP[key]); cin.focus(); }
+    function blAiTip(key) { cbox.style.display = 'flex'; blAnchor(); if (!clist.children.length) add('bot', blOpenLine()); add('bot', BL_AI_TIP[key]); cin.focus(); }
     function blAiMark() {
       const mk = (el, key) => {
         if (!el || el.dataset.blMark || el.closest('#ppv-chat')) return; el.dataset.blMark = key;
@@ -3394,7 +3394,7 @@
     const blDragCss = document.createElement('style');
     blDragCss.textContent = '@keyframes blStrain{0%,100%{transform:scale(1.1,.9)}50%{transform:scale(.9,1.1)}}@keyframes blSnap{0%{transform:scale(1.25,.75)}40%{transform:scale(.85,1.15)}70%{transform:scale(1.05,.95)}100%{transform:scale(1)}}#ppv-cfab.bl-strain{animation:blStrain .16s ease-in-out infinite}#ppv-cfab.bl-snap{animation:blSnap .45s ease-out}#ppv-chat.bl-strain .ch-h{box-shadow:0 0 0 2px #7c5cff inset}#ppv-cfab,#ppv-chat .ch-h{touch-action:none;cursor:grab}#ppv-cfab.bl-strain,#ppv-chat.bl-strain .ch-h{cursor:grabbing}';
     document.head.appendChild(blDragCss);
-    let blSuppress = 0;                                              // a drag must not also count as a tap on the ball
+    let blSuppress = 0, blAnchoring = false;                                              // a drag must not also count as a tap on the ball
     const blPosGet = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } };
     const blPosSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
     const blClamp = (x, y, w, h) => ({ x: Math.max(4, Math.min(innerWidth - w - 4, x)), y: Math.max(4, Math.min(innerHeight - h - 4, y)) });
@@ -3406,12 +3406,12 @@
       const move = e => {
         if (!on) return; const dx = e.clientX - sx, dy = e.clientY - sy;
         if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; el.classList.remove('bl-snap'); el.classList.add('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'strain'); }
-        blMove(el, ox + dx, oy + dy);
+        blMove(el, ox + dx, oy + dy); if (el === cfab) blAnchor();
       };
       const end = () => {
         if (!on) return; on = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end);
         el.classList.remove('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'idle');
-        if (moved) { el.classList.add('bl-snap'); setTimeout(() => el.classList.remove('bl-snap'), 500); const r = el.getBoundingClientRect(); blPosSet(key, { x: r.left, y: r.top }); blSuppress = Date.now() + 300; }
+        if (moved) { el.classList.add('bl-snap'); setTimeout(() => el.classList.remove('bl-snap'), 500); const r = el.getBoundingClientRect(); blPosSet(key, { x: r.left, y: r.top }); blSuppress = Date.now() + 300; if (el === cfab) blAnchor(); }
       };
       handle.addEventListener('pointerdown', e => {
         if (e.button > 0) return; const r = el.getBoundingClientRect(); on = true; moved = false; sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
@@ -3421,8 +3421,29 @@
     }
     blPlace(cfab, 'ppvBloopBall');
     blDrag(cfab, cfab, 'ppvBloopBall');
-    blDrag(cbox, cbox.querySelector('.ch-h'), 'ppvBloopBox');
-    addEventListener('resize', () => { blPlace(cfab, 'ppvBloopBall'); if (cbox.style.display === 'flex') blPlace(cbox, 'ppvBloopBox'); });
+    // The chat box is pinned to Bloopy: right above him if it fits, else below, else to his left, else to his right.
+    // If none of those fit whole, it squeezes into the roomier of above / below. It re-anchors when he is dragged, the window
+    // resizes, or the box grows (new messages, menus).
+    function blAnchor() {
+      if (cbox.style.display !== 'flex' || blAnchoring) return; blAnchoring = true;
+      try {
+        const f = cfab.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, g = 8, m = 6, w = Math.min(420, vw - 2 * m);
+        cbox.style.width = w + 'px'; cbox.style.maxHeight = ''; cbox.style.right = 'auto';
+        const h = cbox.getBoundingClientRect().height, clampX = x => Math.max(m, Math.min(vw - w - m, x)), clampY = y => Math.max(m, Math.min(vh - h - m, y));
+        const up = f.top - g - m, down = vh - f.bottom - g - m, lw = f.left - g - m, rw = vw - f.right - g - m, hx = clampX(f.left + f.width / 2 - w / 2), vy = clampY(f.top + f.height / 2 - h / 2);
+        const set = (l, t, b) => { cbox.style.left = l + 'px'; cbox.style.top = t == null ? 'auto' : t + 'px'; cbox.style.bottom = b == null ? 'auto' : b + 'px'; };
+        if (h <= up) set(hx, null, vh - f.top + g);                    // above (anchored by its bottom edge so it grows upward)
+        else if (h <= down) set(hx, f.bottom + g, null);               // below
+        else if (w <= lw) set(f.left - g - w, vy, null);               // left
+        else if (w <= rw) set(f.right + g, vy, null);                  // right
+        else {                                                         // nothing fits whole: squeeze into the roomier of above / below
+          const room = Math.max(120, Math.max(up, down)); cbox.style.maxHeight = room + 'px';
+          if (up >= down) set(hx, null, vh - f.top + g); else set(hx, f.bottom + g, null);
+        }
+      } finally { blAnchoring = false; }
+    }
+    if (window.ResizeObserver) new ResizeObserver(() => blAnchor()).observe(cbox);
+    addEventListener('resize', () => { blPlace(cfab, 'ppvBloopBall'); blAnchor(); });
     // ---------- Bloopy's face: each state (mood, working, straining, talking) picks the eyes, mouth and extras to show. ----------
     function blFace(el, face) {
       if (!el) return;
@@ -3831,7 +3852,7 @@
       const b = document.getElementById(boxId); if (!b) return add('bot', 'I cannot find that setting.'); const was = b.checked, set = v => { b.checked = v; b.dispatchEvent(new Event('change', { bubbles: true })); };
       set(!was); lcUndo(name + ' is ' + (was ? 'on' : 'off') + ' again.', () => set(was)); add('bot', '\u2713 ' + name + ' is ' + (!was ? 'on' : 'off') + '.');
     };
-    function lcChips() {
+    function lcChips(noDraw) {
       const A = window.__ppApi; if (!A || !A.tracks || cbox.style.display !== 'flex') return;
       if (!cin.value && lcSug.childNodes.length) lcSug.textContent = '';
       const where = lcWhere(), ci = A.currentIndex(), t = ci >= 0 ? A.tracks()[ci] : null, tg = loadTags(), S = tagStats(), tr = A.tracks();
@@ -3853,9 +3874,25 @@
       if (t) { P('\ud83d\udd17 More like this', 'more like this', 50, ['player']); const bl = lvState().blocked[String(t.dbId)]; P(bl ? 'Unblock this song' : '\ud83d\udeab Block this song', bl ? 'unblock this song' : 'block this song', 30); if (!t.stem && !tg[t.dbId]) P(t.kind === 'video' ? 'Tag this video' : 'Tag this song', 'tag this song', t.kind === 'video' ? 25 : 25, ['video']); }
       if (t && !t.stem) P('Split this song', 'split this song', 10);
       P('Help', 'help', 5);
-      c.sort((a, b) => b[2] - a[2]); const top = c.slice(0, 6), key = where + '|' + top.map(x => x[0]).join('|'); if (key === lcChipKey) return; lcChipKey = key; lcChipBar.textContent = '';
+      c.sort((a, b) => b[2] - a[2]); lcAll = c; if (noDraw === true) return; const top = c.slice(0, 6), key = where + '|' + top.map(x => x[0]).join('|'); if (key === lcChipKey) return; lcChipKey = key; lcChipBar.textContent = '';
       top.forEach(([label, act]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { typeof act === 'function' ? act() : send(act); }; lcChipBar.appendChild(b); });
     }
+    // two pinned menus under the chips: every recommended command the chips know about, and Bloopy's accessories
+    const LC_ACC = [['\ud83e\uddd9 Wizard', 'wizard'], ['\ud83c\udf89 Party hat', 'party hat'], ['\ud83d\udc51 Crown', 'crown'], ['\ud83d\udc53 Glasses', 'glasses'], ['\ud83c\udfa7 Headphones', 'headphones'], ['\ud83d\udcf1 Phone', 'phone'], ['\u270f\ufe0f Pencil', 'pencil'], ['\ud83c\udfb5 Note', 'note'], ['\u23f1 Timer', 'timer'], ['\u2702\ufe0f Scissors', 'scissors']];
+    let lcMenu = '', lcAll = [];
+    const lcWorn = () => ((typeof pb !== 'undefined' && pb && pb.dataset.props) || '').split(',').filter(Boolean);
+    function lcDrawMenu() {
+      lcMenuBtns.textContent = ''; lcMenuBar.textContent = '';
+      [['rec', '\ud83d\udca1 Recommended'], ['acc', '\ud83c\udfa9 Accessories']].forEach(([k, label]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (lcMenu === k) b.className = 'on'; b.onclick = () => { lcMenu = lcMenu === k ? '' : k; lcDrawMenu(); }; lcMenuBtns.appendChild(b); });
+      const mk = (label, fn, on) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (on) b.className = 'on'; b.onclick = fn; lcMenuBar.appendChild(b); };
+      if (lcMenu === 'rec') { lcChips(true); lcAll.forEach(([label, act]) => mk(label, () => { typeof act === 'function' ? act() : send(act); })); }
+      if (lcMenu === 'acc') {
+        const worn = lcWorn();
+        LC_ACC.forEach(([label, name]) => { const need = [].concat(blItem(name) || []), on = need.length && need.every(p => worn.includes(p)); mk(label, () => { blDress(on ? 'take off ' + name : name); lcDrawMenu(); }, on); });
+        mk('\u274c Take all off', () => { blDress('take off everything'); lcDrawMenu(); });
+      }
+    }
+    lcDrawMenu();
     setInterval(lcChips, 1500); cfab.addEventListener('click', () => setTimeout(lcChips, 50));
     // type-ahead: songs, artists and playlist names for play / add / find / like / block
     function lcSuggest() {

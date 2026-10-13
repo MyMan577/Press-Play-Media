@@ -23094,10 +23094,13 @@ async function ppMp4Chapters(blob){
 
   const resize = () => requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 
+  // Swiping the mini-player away hides it for the current track; it comes back when another track loads.
+  let miniDismissed = null;
+  const miniKey = () => (npTitle.textContent || '').trim() + '\u0001' + (npArtist.textContent || '').trim();
   function syncMini(){
     const title = (npTitle.textContent || '').trim();
     const artist = (npArtist.textContent || '').trim();
-    body.classList.toggle('pl-has-track', !!title && title !== 'No track selected');
+    body.classList.toggle('pl-has-track', !!title && title !== 'No track selected' && miniKey() !== miniDismissed);
     miniTitle.textContent = title;
     miniArtist.textContent = artist === '-' ? '' : artist;
     const playing = playBtn.getAttribute('aria-label') === 'Pause';
@@ -23153,8 +23156,12 @@ async function ppMp4Chapters(blob){
 
   // Tapping a video in the list opens the player page; audio keeps playing
   // from the mini-player, which opens the page when tapped.
+  // Remember (before the row's own handler runs) whether this tap happened in select mode: tapping the
+  // last selected row exits select mode synchronously, so checking later would wrongly say "not selecting".
+  let tapWasSelecting = false;
+  playlistEl.addEventListener('click', () => { const A = window.__ppApi; tapWasSelecting = !!(A && A.sel && A.sel.active()); }, true);
   playlistEl.addEventListener('click', e => {
-    if (!on) return;
+    if (!on || tapWasSelecting) return;
     const row = e.target.closest('.track');
     if (!row || ACTION_CLASSES.some(c => e.target.classList.contains(c))) return;
     setTimeout(() => { if (getComputedStyle(videoWrap).display !== 'none') openPlayer(); }, 0);
@@ -23180,11 +23187,144 @@ async function ppMp4Chapters(blob){
     resize();
   }
 
-  tabs.forEach(b => b.addEventListener('click', () => { if (b.dataset.plView === 'playlists') openPlId = null; setView(b.dataset.plView); }));
+  // ----- Sliding between tabs (tap or swipe) -----
+  // The page you are on slides out, the next one slides in from the matching side. Only on the main tab pages:
+  // never while the full player page is open, while selecting, or with reduced-motion turned on.
+  const TAB_ORDER = ['home', 'playlists', 'library', 'settings'];
+  let slideBusy = false, slidePending = null;
+  const tabPane = v => (v === 'home' || v === 'playlists') ? document.getElementById('pl-home') : document.getElementById('sidebar');
+  const canSlide = () => {
+    const A = window.__ppApi;
+    return on && !body.hasAttribute('data-pl-player') && !(A && A.sel && A.sel.active()) && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  };
+  // One slide: the pane slides out, apply() switches what it shows, the pane slides in from the other side.
+  // dir: 1 = going forward (new page comes from the right), -1 = going back.
+  function slideRun(dir, outEl, apply, inElFn){
+    slideBusy = true;
+    const prevOverflow = body.style.overflowX; body.style.overflowX = 'hidden';
+    const done = () => {
+      slideBusy = false; body.style.overflowX = prevOverflow;
+      if (slidePending){ const f = slidePending; slidePending = null; f(); }
+    };
+    const out = outEl.animate(
+      [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(' + (-dir * 100) + '%)', opacity: 0 }],
+      { duration: 150, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+    out.onfinish = () => {
+      apply();
+      const inEl = inElFn();
+      if (!inEl || !inEl.animate){ out.cancel(); done(); return; }
+      const inn = inEl.animate(
+        [{ transform: 'translateX(' + (dir * 100) + '%)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }],
+        { duration: 230, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      out.cancel();
+      inn.onfinish = inn.oncancel = done;
+    };
+  }
+  function slideTo(v){
+    if (v === view){ setView(v); return; }
+    const outEl = tabPane(view);
+    if (slideBusy){ slidePending = () => { if (v !== view) slideTo(v); }; return; }
+    if (!canSlide() || !outEl || !outEl.animate){ setView(v); return; }
+    slideRun(TAB_ORDER.indexOf(v) > TAB_ORDER.indexOf(view) ? 1 : -1, outEl, () => setView(v), () => tabPane(v));
+  }
+  // Sub pages: inside an open playlist, swiping right goes to the next playlist and left to the previous one; inside an open Home section
+  // (Videos / History), it flips to the other section. Returns true when it handled the swipe (even if at the end of the list).
+  function slideSub(step){
+    const A = window.__ppApi, pane = document.getElementById('pl-home');
+    if (!A || !pane || !pane.animate) return false;
+    if (view === 'playlists' && openPlId){
+      // Reversed on purpose: swipe left = previous playlist (up the list), swipe right = next (down). The slide still follows the finger.
+      const pls = A.playlists().filter(p => !p.libOnly), n = pls.findIndex(p => p.id === openPlId) - step;
+      if (n >= 0 && n < pls.length) slideRun(step, pane, () => { openPlId = pls[n].id; renderHome(true); }, () => pane);
+      return true;
+    }
+    if (view === 'home' && openSec){
+      const tr = A.tracks(), byId = new Map(tr.map((t, i) => [t.dbId, i]));
+      const avail = [];
+      if (tr.some(t => t.kind === 'video')) avail.push('videos');
+      if (playHistory.some(h => { const i = byId.get(h.id); return i != null && tr[i].kind === 'video'; })) avail.push('history');
+      const n = avail.indexOf(openSec) + step;
+      if (n >= 0 && n < avail.length) slideRun(step, pane, () => { openSec = avail[n]; renderHome(true); }, () => pane);
+      return true;
+    }
+    return false;
+  }
+  const goTab = v => { if (v === 'playlists') openPlId = null; slideTo(v); };
+  tabs.forEach(b => b.addEventListener('click', () => goTab(b.dataset.plView)));
+
+  // Swipe sideways to move to the neighbouring tab (no wrap-around at the ends).
+  { let tx = 0, ty = 0, tt = 0, ok = false;
+    const blocked = el => {
+      if (!el || !el.closest) return true;
+      if (el.closest('input, select, textarea, [contenteditable], [type="range"], #pl-mini, #pl-tabbar, #select-bar, #ph-select-bar, .modal-open, [aria-modal="true"], [role="dialog"], [role="slider"], .no-swipe')) return true;
+      for (let n = el; n && n !== document.body; n = n.parentElement){        // sideways-scrolling rows keep their own swipe
+        if (n.scrollWidth > n.clientWidth + 2){ const ox = getComputedStyle(n).overflowX; if (ox === 'auto' || ox === 'scroll') return true; }
+      }
+      return false;
+    };
+    document.addEventListener('touchstart', e => {
+      ok = false;
+      if (e.touches.length !== 1 || !canSlide() || slideBusy) return;
+      if (blocked(e.target)) return;
+      ok = true; tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = performance.now();
+    }, { passive: true });
+    document.addEventListener('touchend', e => {
+      if (!ok) return; ok = false;
+      const t = e.changedTouches[0]; if (!t) return;
+      const dx = t.clientX - tx, dy = t.clientY - ty, ax = Math.abs(dx), v = ax / Math.max(1, performance.now() - tt);
+      if (ax < 40 || ax < Math.abs(dy) * 1.6 || (ax < 70 && v < 0.45)) return;   // must be a clear, deliberate sideways swipe
+      const step = dx < 0 ? 1 : -1;
+      if (slideSub(step)) return;                               // on a sub page: move between playlists / sections instead of tabs
+      const i = TAB_ORDER.indexOf(view), n = i + step;
+      if (i < 0 || n < 0 || n >= TAB_ORDER.length) return;
+      goTab(TAB_ORDER[n]);
+    }, { passive: true });
+    document.addEventListener('touchcancel', () => { ok = false; }, { passive: true });
+  }
   mini.addEventListener('click', e => { if (!e.target.closest('button')) openPlayer(); });
   mini.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target === mini){ e.preventDefault(); openPlayer(); }
   });
+  // Swipe left or right on the mini-player to dismiss it (it follows the finger, then flies off or snaps back).
+  { let sx = 0, sy = 0, st = 0, down = false, locked = false, clickBlock = 0;
+    mini.style.touchAction = 'pan-y';
+    const reset = () => { mini.style.transition = ''; mini.style.transform = ''; mini.style.opacity = ''; };
+    mini.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      down = true; locked = false; sx = e.clientX; sy = e.clientY; st = performance.now();
+    });
+    mini.addEventListener('pointermove', e => {
+      if (!down) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!locked){
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)){ down = false; return; }
+        if (Math.abs(dx) < 8) return;
+        locked = true; try { mini.setPointerCapture(e.pointerId); } catch(err){}
+        mini.style.transition = 'none';
+      }
+      mini.style.transform = 'translateX(' + dx + 'px)';
+      mini.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / (mini.offsetWidth || 300)));
+    });
+    const end = e => {
+      if (!down) return; down = false;
+      if (!locked) return;
+      clickBlock = performance.now() + 350;       // the click that follows a swipe must not open the player
+      const dx = e.clientX - sx, dist = Math.abs(dx), v = dist / Math.max(1, performance.now() - st), w = mini.offsetWidth || 300;
+      if (e.type !== 'pointercancel' && (dist > w * 0.35 || (dist > 40 && v > 0.5))){
+        mini.style.transition = 'transform .18s ease-out, opacity .18s ease-out';
+        mini.style.transform = 'translateX(' + (dx < 0 ? -w : w) + 'px)'; mini.style.opacity = '0';
+        setTimeout(() => { miniDismissed = miniKey(); reset(); syncMini(); }, 190);
+      } else {
+        mini.style.transition = 'transform .18s ease-out, opacity .18s ease-out';
+        mini.style.transform = ''; mini.style.opacity = '';
+        setTimeout(reset, 200);
+      }
+    };
+    mini.addEventListener('pointerup', end);
+    mini.addEventListener('pointercancel', end);
+    mini.addEventListener('click', e => { if (performance.now() < clickBlock){ e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    mini.addEventListener('keydown', e => { if ((e.key === 'Delete' || e.key === 'Backspace') && e.target === mini){ e.preventDefault(); miniDismissed = miniKey(); syncMini(); } });
+  }
   miniPlay.addEventListener('click', () => playBtn.click());
   miniPrev.addEventListener('click', () => prevBtn.click());
   miniNext.addEventListener('click', () => nextBtn.click());
@@ -23361,6 +23501,7 @@ async function ppMp4Chapters(blob){
     const el = e.target.closest('[data-act]'); if (!el) return;
     const A = window.__ppApi; if (!A) return;
     const tracks = A.tracks(), all = tracks.map((t, k) => k).filter(k => !tracks[k].stem), act = el.dataset.act;
+    if (A.sel && A.sel.active()){ if (act === 'strip-play'){ const t = tracks[+el.dataset.idx]; if (t) A.sel.toggle(t); } return; }
     if (act === 'strip-play') playFrom(+el.dataset.idx, all);
     else if (act === 'shuffle-all'){
       const q = all.slice();
@@ -23660,6 +23801,8 @@ async function ppMp4Chapters(blob){
       e.stopImmediatePropagation();
       const t = A.tracks()[+el.dataset.idx];
       if (t) A.sel.toggle(t);
+    } else if (act === 'shuffle-all' || act === 'resume'){
+      e.stopImmediatePropagation(); e.preventDefault();   // would start playback and open the player page mid-selection
     } else if (act === 'sec-open' || act === 'sec-back' || act === 'pl-open' || act === 'pl-back'){
       A.sel.exit();   // leaving the page ends the selection, like switching playlists in Library
     }
@@ -23674,6 +23817,7 @@ async function ppMp4Chapters(blob){
   window.__ppRenderHomeNow = () => { try { renderHome(true); } catch(e){} renderStrip(true); };
   window.__ppOnChange = scheduleHome;
   window.__ppOnPlay = t => {
+    if (miniDismissed){ miniDismissed = null; syncMini(); }   // playing a track again brings the mini-player back
     if (!t || !t.dbId) return;
     playHistory = playHistory.filter(h => h.id !== t.dbId);
     playHistory.unshift({ id:t.dbId, at:Date.now(), kind:t.kind });
