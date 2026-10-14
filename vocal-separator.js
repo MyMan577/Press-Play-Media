@@ -1475,7 +1475,11 @@
         { id: 'aeq', label: 'Auto-EQ when tagging', key: 'ppvAutoEq', def: 0, box: 'ppv-aeq' },
         { id: 'askip', label: 'Skip long intros', key: 'ppvAutoSkip', def: 0, box: 'ppv-askip' },
         { g: 'Bloop', id: 'mascot', label: 'Bloop, the mascot', box: 'ppv-mas', def: 1, get: () => h.mas.isOn() },
-        { id: 'assist', label: 'Bloop assistant button', box: 'ppv-chat-on', def: 0, get: () => h.mas.chat.isOn() }
+        { id: 'assist', label: 'Bloop assistant button', box: 'ppv-chat-on', def: 0, get: () => h.mas.chat.isOn() },
+        { id: 'mini', label: 'Smarter understanding (MiniLM)', box: 'ppv-mini-on', def: 0, get: () => h.mas.voice.get('ppvMini') },
+        { id: 'speak', label: 'Bloop speaks (Kokoro)', box: 'ppv-voice-on', def: 0, get: () => h.mas.voice.get('ppvVoice') },
+        { id: 'mic', label: 'Talk to Bloop (Moonshine)', box: 'ppv-mic-on', def: 0, get: () => h.mas.voice.get('ppvMic') },
+        { id: 'wake', label: 'Wake word', box: 'ppv-wake-on', def: 0, get: () => h.mas.voice.get('ppvWake') }
       ];
       const isOn = f => { if (f.get) return !!f.get(); const v = ls(f.key); return v == null ? f.def === 1 : v === '1'; };
       const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
@@ -1505,7 +1509,7 @@
         syncBoxes();
       };
       // keep these in step when the same switch is changed in its own panel
-      document.addEventListener('change', e => { if (e.target && /^ppv-(live|lmix|surp|bg|aeq|askip|mas|chat-on)$/.test(e.target.id)) syncBoxes(); });
+      document.addEventListener('change', e => { if (e.target && /^ppv-(live|lmix|surp|bg|aeq|askip|mas|chat-on|mini-on|voice-on|mic-on|wake-on)$/.test(e.target.id)) syncBoxes(); });
       (document.getElementById('sidebar-pane-settings') || p).appendChild(box);
       if (sb) sb.addEventListener('click', () => setTimeout(applyShow, 0));
       if (eb) eb.addEventListener('click', () => setTimeout(applyShow, 0));
@@ -1920,18 +1924,379 @@
       #ppv-chat .ch-m.me{align-self:flex-end;background:var(--accent,#7c5cff);color:#fff}
       #ppv-chat .ch-a{align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap}
       #ppv-chat .ch-i{display:flex;gap:6px;padding:8px;border-top:1px solid #2e2f36}
-      #ppv-chat .ch-i input{flex:1;min-width:0;padding:8px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444;font:inherit}`;
+      #ppv-chat .ch-i input{flex:1;min-width:0;padding:8px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444;font:inherit}
+      #ppv-chat .ch-i .ch-mic{padding:6px 9px;display:flex;align-items:center}
+      #ppv-chat .ch-mic svg{width:16px;height:16px}
+      #ppv-chat .ch-mic.rec{background:#ff5c7c;border-color:#ff5c7c;color:#fff}`;
     document.head.appendChild(cstyle);
     const cfab = document.createElement('div'); cfab.id = 'ppv-cfab'; cfab.setAttribute('role', 'button'); cfab.setAttribute('aria-label', 'Chat with Bloop');
     const cball = ball(); cfab.appendChild(cball);
     const cbox = document.createElement('div'); cbox.id = 'ppv-chat';
-    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Helper on your device. Free chat uses a tiny AI, so it can be wrong. Not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="send">Send</button></div>';
+    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Helper on your device. Free chat uses a tiny AI, so it can be wrong. Not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="mic" class="ch-mic" aria-label="Talk to Bloop" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button><button data-a="send">Send</button></div>';
     document.body.append(cfab, cbox);
     const clist = cbox.querySelector('.ch-l'), cin = cbox.querySelector('input');
     const cm = m => { cball.className = 'ppv-ball m-' + m; blFace(cball, m); };
     const scrollDown = () => { clist.scrollTop = clist.scrollHeight; };
-    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); if (who === 'bot') { blReact(text); blFollowUp(d, text); } return d; };
+    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); if (who === 'bot') { blReact(text); blFollowUp(d, text); try { vSpeak(text); } catch (e) {} } return d; };
     const actions = btns => { const d = document.createElement('div'); d.className = 'ch-a'; btns.forEach(([t, fn]) => { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { fn(b, d); }; d.appendChild(b); }); clist.appendChild(d); scrollDown(); return d; };
+    // ---------- Voice and meaning (all optional, all on-device, all off until ticked) ----------
+    // MiniLM (~25 MB): loose wording finds the right command, and songs are found by meaning ("something for a rainy drive").
+    // Kokoro (82M, ~90 MB): Bloop's voice. Moonshine tiny (~50 MB): speech to text. openWakeWord: three tiny ONNX files on onnxruntime-web.
+    // Each download is asked for once, then comes from the browser cache. Nothing here runs unless its checkbox is on.
+    const MINI_ID = 'Xenova/all-MiniLM-L6-v2', KOKORO_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX', MOON_ID = 'onnx-community/moonshine-tiny-ONNX';
+    const KOKORO_JS = 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js';
+    const WAKE_HF = 'https://huggingface.co/Soulcreek2/speechkit-wakeword-models/resolve/main/';   // Apache-2.0 openWakeWord-style heads; hey_bloop.onnx in HF_BASE wins if you upload one
+    const SEM = { auto: 0.70, ask: 0.52, gap: 0.03, song: 0.32, songBare: 0.45 };                   // MiniLM cosine cut-offs: tune these if it guesses too much or too little
+    const VOICE = { fr: 1280, vad: 0.02, quiet: 13, wait: 75, max: 150, speed: 1.04 };             // 80 ms frames: stop after ~1 s of quiet, give up after ~6 s of nothing, cap ~12 s
+    const VOICES = [['af_heart', 'Heart (warm)'], ['af_nicole', 'Nicole (calm)'], ['af_bella', 'Bella (brighter)'], ['af_sarah', 'Sarah'], ['am_michael', 'Michael'], ['bf_emma', 'Emma (British)'], ['bm_george', 'George (British)']];
+    const vFlag = k => lsGet(k) === '1';
+    const miniOn = () => vFlag('ppvMini'), speakOn = () => vFlag('ppvVoice'), micOn = () => vFlag('ppvMic'), wakeOn = () => vFlag('ppvWake') && micOn() && chatOn;
+    const vCat = (a, b) => { const o = new Float32Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
+    const vDot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+    const vHash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return h >>> 0; };
+    const tfLoad = async () => { if (!tfMod) tfMod = await import(TF_URL); try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch (e) {} return tfMod; };
+    const dlSay = (say, what) => p => { if (say && p && p.status === 'progress' && p.file) say('Downloading ' + what + ' ' + Math.round(p.progress || 0) + '%'); };
+    // Ask once before a big download (same pattern as the chat brain). Returns true when it asked, so the caller stops and waits for the answer.
+    const dlAsk = (flag, msg, go) => { if (lsGet(flag) === '1') return false; add('bot', msg); actions([['Download', (b, d) => { d.remove(); lsSet(flag, '1'); go(); }], ['Not now', (b, d) => d.remove()]]); return true; };
+    let voiceTurn = false, vSpeaking = false, wwHold = 0, duckSave = null;
+
+    // ---- MiniLM: meaning ----
+    let miniP = null, miniT = 0, semCmd = null, semIdx = null, semBusy = false, semAsked = false;
+    function getMini(say) {
+      if (miniP) return miniP;
+      miniP = (async () => {
+        const tf = await tfLoad(); say && say('Loading MiniLM\u2026');
+        return tf.pipeline('feature-extraction', MINI_ID, { dtype: 'q8', device: 'wasm', progress_callback: dlSay(say, 'MiniLM') });
+      })();
+      miniP.catch(() => { miniP = null; });
+      return miniP;
+    }
+    async function freeMini() { clearTimeout(miniT); const p = miniP; miniP = null; if (p) { try { const fe = await p; await fe.dispose(); } catch (e) {} } }
+    async function mEmbed(texts, say) {
+      const fe = await getMini(say), out = [];
+      for (let i = 0; i < texts.length; i += 16) {
+        const r = await fe(texts.slice(i, i + 16), { pooling: 'mean', normalize: true }), w = r.dims[r.dims.length - 1];
+        for (let k = 0; k < r.dims[0]; k++) out.push(Float32Array.from(r.data.subarray(k * w, (k + 1) * w)));
+        if (texts.length > 16) await tick();
+      }
+      clearTimeout(miniT); miniT = setTimeout(freeMini, 120000);
+      return out;
+    }
+    // Every phrase the agent already knows for each command, embedded once and kept in IndexedDB.
+    async function semCommands(say) {
+      if (semCmd) return semCmd;
+      const items = []; S_CAT.forEach(([cmd, safe, ph]) => ph.forEach(t => items.push({ cmd, safe, t })));
+      const sig = vHash(items.map(x => x.t).join('|'));
+      let c = null; try { c = await idbGet('mini_cmd'); } catch (e) {}
+      if (c && c.sig === sig && c.v && c.v.length === items.length) { items.forEach((x, i) => { x.v = c.v[i]; }); return (semCmd = items); }
+      const vs = await mEmbed(items.map(x => x.t), say); items.forEach((x, i) => { x.v = vs[i]; });
+      try { await idbPut('mini_cmd', { sig, v: vs }); } catch (e) {}
+      return (semCmd = items);
+    }
+    // One short text per song: title, artist, tag words and the start of any lyrics. Re-embedded only when that text changes.
+    const trackText = t => (t.title + '. ' + (t.artist || '') + '. ' + (window.__ppTagText ? window.__ppTagText(t.dbId) : '')).replace(/\s+/g, ' ').slice(0, 600);
+    async function semTracks(say) {
+      const A = window.__ppApi, tr = A.tracks(), want = [];
+      if (!semIdx) { try { semIdx = (await idbGet('mini_trk')) || {}; } catch (e) { semIdx = {}; } }
+      tr.forEach(t => { if (t.stem) return; const x = trackText(t), h = vHash(x); if (!semIdx[t.dbId] || semIdx[t.dbId].h !== h) want.push({ id: t.dbId, x, h }); });
+      for (let i = 0; i < want.length; i += 48) {
+        const part = want.slice(i, i + 48), vs = await mEmbed(part.map(w => w.x), null);
+        part.forEach((w, k) => { semIdx[w.id] = { h: w.h, v: vs[k] }; });
+        say && say('Learning your songs\u2026 ' + Math.min(want.length, i + 48) + ' of ' + want.length);
+      }
+      if (want.length) { try { await idbPut('mini_trk', semIdx); } catch (e) {} }
+      return tr.map((t, i) => !t.stem && semIdx[t.dbId] ? { i, v: semIdx[t.dbId].v } : null).filter(Boolean);
+    }
+    const MUSICWORD = /\b(song|songs|music|track|tracks|tune|tunes|playlist|vibe|mood|feel|feels|feeling|something|anything|play|listen|put on|about)\b/i;
+    // Runs after the exact rules and the keyword matcher, right before the chat brain. Returns true when it answered.
+    async function semRoute(raw) {
+      if (!miniOn() || !window.__ppApi || semBusy || smartSt.noRoute === raw) return false;
+      const t = sClean(raw); if (!t || t.length > 90 || /\b(?:don'?t|dont|do not|never)\b/i.test(t) || heavyBusy()) return false;
+      if (lsGet('ppvMiniDl') !== '1') {
+        if (!semAsked) { semAsked = true; dlAsk('ppvMiniDl', 'To understand looser wording and find songs by meaning I need to download MiniLM first: about 25 MB, one time.', () => send(raw, true)); }
+        return false;
+      }
+      semBusy = true; const note = add('bot', '\u2026'), say = s => { note.textContent = s; }, A = window.__ppApi;
+      try {
+        const cmds = await semCommands(say), q = (await mEmbed([t], say))[0], byCmd = new Map();
+        cmds.forEach(x => { const s = vDot(q, x.v), o = byCmd.get(x.cmd); if (!o || o.s < s) byCmd.set(x.cmd, { cmd: x.cmd, safe: x.safe, s }); });
+        const rank = [...byCmd.values()].sort((a, b) => b.s - a.s), top = rank[0], nxt = rank[1];
+        if (top && top.s >= SEM.ask && (!nxt || top.s - nxt.s >= SEM.gap)) {                       // 1) the same command in other words
+          if (top.safe && top.s >= SEM.auto) { note.textContent = '(Reading that as \u201c' + top.cmd + '\u201d.)'; if (sExec(top.cmd)) return true; note.remove(); return false; }
+          note.textContent = 'Did you mean \u201c' + top.cmd + '\u201d?'; vSpeak(note.textContent);
+          actions([['\u25b6 ' + top.cmd, (b, d) => { d.remove(); sExec(top.cmd); }], ['No', (b, d) => { d.remove(); smartSt.noRoute = raw; send(raw, true); }]]);
+          return true;
+        }
+        const songs = await semTracks(say);                                                         // 2) songs that fit the meaning
+        const sc = songs.map(o => ({ i: o.i, s: vDot(q, o.v) })).sort((a, b) => b.s - a.s), need = MUSICWORD.test(t) ? SEM.song : SEM.songBare;
+        const take = sc.slice(0, 12).filter(o => o.s >= need && o.s >= sc[0].s - 0.12).map(o => o.i);
+        if (take.length < 3) { note.remove(); return false; }
+        const tr = A.tracks();
+        note.textContent = 'These fit \u201c' + t + '\u201d:\n' + take.slice(0, 5).map(i => '\u2022 ' + tr[i].title).join('\n') + (take.length > 5 ? '\n\u2026and ' + (take.length - 5) + ' more.' : '');
+        vSpeak('Here are ' + take.length + ' songs that fit.');
+        actions([['\u25b6 Play them', () => { A.play(take[0], take); }], ['Make a playlist', (b, d) => {
+          d.remove(); const pl = A.createPlaylist('\ud83d\udd0e ' + t.slice(0, 40)); take.forEach(i => A.addToPlaylist(tr[i].dbId, pl.id)); A.commitPlaylists();
+          smartSt.pu = { at: Date.now(), label: 'Deleted \u201c' + pl.name + '\u201d.', undo: () => { A.deletePlaylistQuiet(pl.id); A.commitPlaylists(); } };
+          add('bot', '\u2713 Made \u201c' + pl.name + '\u201d with ' + take.length + ' tracks.');
+        }]]);
+        return true;
+      } catch (e) { console.error(e); note.textContent = 'Smart understanding failed: ' + e.message; return true; }
+      finally { semBusy = false; }
+    }
+
+    // ---- Kokoro: Bloop speaks ----
+    let kP = null, kT = 0, kLoaded = false, spkId = 0, spkCtx = null, spkSrc = null, voiceAsked = false;
+    const voiceWho = () => { const v = lsGet('ppvVoiceWho'); return VOICES.some(x => x[0] === v) ? v : 'af_heart'; }, voiceWhen = () => lsGet('ppvVoiceWhen') === 'all' ? 'all' : 'talk';
+    function getTts(say) {
+      if (kP) return kP;
+      kP = (async () => {
+        say && say('Loading my voice\u2026');
+        const mod = await import(KOKORO_JS);
+        return mod.KokoroTTS.from_pretrained(KOKORO_ID, { dtype: 'q8', device: 'wasm', progress_callback: dlSay(say, 'my voice') });
+      })();
+      kP.catch(() => { kP = null; kLoaded = false; });
+      return kP;
+    }
+    async function freeVoice() { clearTimeout(kT); const p = kP; kP = null; kLoaded = false; if (p) { try { const t = await p; await t.model.dispose(); } catch (e) {} } }
+    const SKIPSPEAK = /^(?:\u2026|\.\.\.|\(Reading that as|Downloading|Loading|Listening|Transcribing)/;
+    // Calm, not bubbly: exclamation marks become full stops, and only the first few sentences are read out.
+    function speechSentences(s, full) {
+      const t = String(s).replace(/https?:\/\/\S+/g, ' ').replace(/[\u2713\u2022\u25b6\u2192\u2190]/g, ' ').replace(/\p{Extended_Pictographic}/gu, ' ').replace(/[\u201c\u201d"]/g, '')
+        .replace(/\(([^)]{0,80})\)/g, ', $1,').replace(/\s*\n+\s*/g, '. ').replace(/!+/g, '.').replace(/\.{2,}/g, '.').replace(/\s+/g, ' ').trim();
+      const parts = t.split(/(?<=[.?])\s+/).filter(x => /\p{L}/u.test(x)); if (full) return parts;
+      const out = []; let n = 0;
+      for (const p of parts) { if (out.length >= 3 || (out.length && n + p.length > 260)) break; out.push(p.length > 260 ? p.slice(0, 260).replace(/\s+\S*$/, '') : p); n += p.length; }
+      return out;
+    }
+    function vSpeak(text, force) {
+      if (!speakOn() || !text || (!force && voiceWhen() === 'talk' && !voiceTurn)) return;
+      const s = String(text).trim(); if (SKIPSPEAK.test(s) || heavyBusy()) return;
+      const sents = speechSentences(s, typeof CRISIS_MSG !== 'undefined' && s === CRISIS_MSG); if (!sents.length) return;   // a safety message is always read in full
+      if (lsGet('ppvVoiceDl') !== '1') { if (!voiceAsked) { voiceAsked = true; dlAsk('ppvVoiceDl', 'To talk out loud I need to download my voice first: about 90 MB, one time. Wi-Fi is best.', () => { voiceAsked = false; vSpeak(s, true); }); } return; }
+      const id = ++spkId; stopAudio();
+      speakRun(id, sents).catch(e => { console.error(e); if (id === spkId) vDuck(false); });
+    }
+    async function speakRun(id, sents) {
+      let note = null; if (!kLoaded) note = add('bot', 'Loading my voice\u2026');
+      let tts; try { tts = await getTts(note ? m => { note.textContent = m; } : null); }
+      catch (e) { if (note) note.textContent = 'My voice would not load: ' + e.message; return; }
+      kLoaded = true; if (note) note.remove();
+      if (id !== spkId) return;
+      const gen = s => tts.generate(s, { voice: voiceWho(), speed: VOICE.speed });
+      let nxt = gen(sents[0]); nxt.catch(() => {}); vDuck(true);
+      for (let i = 0; i < sents.length; i++) {
+        const a = await nxt; if (id !== spkId) return;
+        if (i + 1 < sents.length) { nxt = gen(sents[i + 1]); nxt.catch(() => {}); }          // make the next sentence while this one plays
+        await playPcm(a.audio, a.sampling_rate, id); if (id !== spkId) return;
+      }
+      vDuck(false); clearTimeout(kT); kT = setTimeout(freeVoice, 180000);
+    }
+    function playPcm(pcm, rate) {
+      return new Promise(res => {
+        try {
+          const C = window.AudioContext || window.webkitAudioContext, ctx = spkCtx || (spkCtx = new C());
+          if (ctx.state === 'suspended') ctx.resume();
+          const buf = ctx.createBuffer(1, pcm.length, rate), src = ctx.createBufferSource(); buf.copyToChannel(pcm, 0); src.buffer = buf; src.connect(ctx.destination);
+          spkSrc = src; vSpeaking = true;
+          src.onended = () => { if (spkSrc === src) spkSrc = null; vSpeaking = false; wwHold = Date.now() + 700; res(); };
+          src.start();
+        } catch (e) { vSpeaking = false; res(); }
+      });
+    }
+    function stopAudio() { const s = spkSrc; spkSrc = null; if (s) { try { s.onended = null; s.stop(); } catch (e) {} } vSpeaking = false; }
+    function stopSpeak() { spkId++; stopAudio(); vDuck(false); }
+    function vDuck(on) {                                                                          // music dips while he talks or listens
+      try {
+        if (on && !duckSave) { duckSave = []; document.querySelectorAll('audio,video').forEach(m => { if (!m.paused) { duckSave.push([m, m.volume]); m.volume = m.volume * 0.25; } }); if (!duckSave.length) duckSave = null; }
+        else if (!on && duckSave) { duckSave.forEach(([m, v]) => { m.volume = v; }); duckSave = null; }
+      } catch (e) {}
+    }
+    function vPrime() { try { const C = window.AudioContext || window.webkitAudioContext; if (!speakOn() || !C) return; if (!spkCtx) spkCtx = new C(); if (spkCtx.state === 'suspended') spkCtx.resume(); } catch (e) {} }   // browsers want audio started from a tap
+    function vTyped() { voiceTurn = false; vPrime(); stopSpeak(); }
+
+    // ---- Moonshine: Bloop listens ----
+    let earsP = null, earsT = 0, dictating = false, dictStop = false;
+    function getEars(say) {
+      if (earsP) return earsP;
+      earsP = (async () => {
+        const tf = await tfLoad(); say && say('Loading my ears\u2026');
+        try { return await tf.pipeline('automatic-speech-recognition', MOON_ID, { dtype: 'q8', device: 'wasm', progress_callback: dlSay(say, 'my ears') }); }
+        catch (e) { return tf.pipeline('automatic-speech-recognition', MOON_ID, { device: 'wasm', progress_callback: dlSay(say, 'my ears') }); }
+      })();
+      earsP.catch(() => { earsP = null; });
+      return earsP;
+    }
+    async function freeEars() { clearTimeout(earsT); const p = earsP; earsP = null; if (p) { try { const a = await p; await a.dispose(); } catch (e) {} } }
+    // One shared microphone: the wake word and the recorder both read its 16 kHz frames. It closes as soon as nobody needs it.
+    const mic = { ctx: null, stream: null, node: null, src: null, subs: new Set(), users: 0, opening: null };
+    function vResampler(inRate) {
+      if (inRate === 16000) return b => new Float32Array(b);
+      const r = inRate / 16000; let pos = 1, prev = 0;
+      return b => {
+        const x = new Float32Array(b.length + 1); x[0] = prev; x.set(b, 1); const out = [];
+        for (; pos < x.length - 1; pos += r) { const i = Math.floor(pos), f = pos - i; out.push(x[i] * (1 - f) + x[i + 1] * f); }
+        pos -= x.length - 1; prev = x[x.length - 1]; return Float32Array.from(out);
+      };
+    }
+    function micOpen() {
+      if (mic.ctx) return Promise.resolve();
+      if (mic.opening) return mic.opening;
+      mic.opening = (async () => {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+        const C = window.AudioContext || window.webkitAudioContext; let ctx; try { ctx = new C({ sampleRate: 16000 }); } catch (e) { ctx = new C(); }
+        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
+        const src = ctx.createMediaStreamSource(s), node = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain(), rs = vResampler(ctx.sampleRate); mute.gain.value = 0;
+        node.onaudioprocess = e => { const f = rs(e.inputBuffer.getChannelData(0)); if (f.length) mic.subs.forEach(fn => { try { fn(f); } catch (er) { console.error(er); } }); };
+        src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+        Object.assign(mic, { ctx, stream: s, node, src });
+      })().finally(() => { mic.opening = null; });
+      return mic.opening;
+    }
+    async function micAcquire() { mic.users++; try { await micOpen(); } catch (e) { mic.users--; throw e; } }
+    function micRelease() { if (--mic.users > 0) return; mic.users = 0; try { mic.node && (mic.node.onaudioprocess = null); mic.stream && mic.stream.getTracks().forEach(t => t.stop()); mic.ctx && mic.ctx.close(); } catch (e) {} mic.ctx = mic.stream = mic.node = mic.src = null; mic.subs.clear(); }
+    ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (mic.ctx && mic.ctx.state === 'suspended') mic.ctx.resume(); }, { passive: true }));
+    // Records one spoken sentence: starts at the first loud frame, stops after about a second of quiet. skip = frames to ignore first (the wake phrase tail).
+    function recordUtterance(skip) {
+      return new Promise(resolve => {
+        const all = []; let acc = new Float32Array(0), first = -1, last = -1, done = false, skipped = skip || 0;
+        const end = () => {
+          if (done) return; done = true; mic.subs.delete(sub);
+          if (first < 0) return resolve(null);
+          const a = Math.max(0, first - 5), b = Math.min(all.length, last + 9), out = new Float32Array((b - a) * VOICE.fr);
+          for (let i = a; i < b; i++) out.set(all[i], (i - a) * VOICE.fr);
+          resolve(out);
+        };
+        const sub = f => {
+          if (done) return; acc = vCat(acc, f);
+          while (acc.length >= VOICE.fr) {
+            const fr = acc.slice(0, VOICE.fr); acc = acc.slice(VOICE.fr);
+            if (skipped > 0) { skipped--; continue; }
+            let e = 0; for (let i = 0; i < fr.length; i++) e += fr[i] * fr[i];
+            const idx = all.push(fr) - 1; if (Math.sqrt(e / fr.length) > VOICE.vad) { if (first < 0) first = idx; last = idx; }
+            if (dictStop || (first >= 0 && all.length - 1 - last >= VOICE.quiet) || all.length >= VOICE.max || (first < 0 && all.length >= VOICE.wait)) { end(); return; }
+          }
+        };
+        mic.subs.add(sub);
+      });
+    }
+    const micEl = cbox.querySelector('.ch-mic');
+    const micBtn = rec => { if (micEl) micEl.classList.toggle('rec', !!rec); };
+    const micShow = () => { if (micEl) micEl.style.display = micOn() && chatOn ? '' : 'none'; };
+    async function dictate(viaWake) {
+      if (dictating) { dictStop = true; return; }
+      if (!micOn() || !chatOn) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { add('bot', 'This browser will not give me the microphone here.'); return; }
+      if (heavyBusy()) { if (!viaWake) add('bot', "I'm busy with a heavy job right now, so I'm not listening. Ask me again when it's done."); return; }
+      if (cbox.style.display !== 'flex') { cbox.style.display = 'flex'; delete cfab.dataset.unread; blAnchor(); }
+      if (viaWake && lsGet('ppvEarsDl') !== '1') return;                                         // the wake word never starts a download
+      if (dlAsk('ppvEarsDl', 'To listen I need to download my ears first: about 50 MB, one time. Wi-Fi is best.', () => dictate())) return;
+      dictating = true; dictStop = false; stopSpeak(); vDuck(true); micBtn(true); cm('greet');
+      const note = add('bot', 'Listening\u2026'); let text = '', held = false;
+      try {
+        await micAcquire(); held = true;
+        const pcm = await recordUtterance(viaWake ? 6 : 0); micRelease(); held = false;
+        if (pcm) {
+          note.textContent = 'Transcribing\u2026';
+          const out = await (await getEars(m => { note.textContent = m; }))(pcm);
+          text = String(out && out.text || '').trim().replace(/^(?:hey[, ]+)?(?:jarvis|computer|bloop|blue ?p)[,.!?]*\s*/i, '');
+          clearTimeout(earsT); earsT = setTimeout(freeEars, 120000);
+        }
+        if (!/[a-z0-9]{2}/i.test(text) || /^(?:you|thank you|thanks for watching|bye)[.!]*$/i.test(text)) { note.textContent = pcm ? 'I did not catch that.' : 'I did not hear anything.'; text = ''; }
+      } catch (e) {
+        console.error(e); text = '';
+        note.textContent = /NotAllowed|Permission|denied/i.test(String(e && (e.name + ' ' + e.message))) ? 'I need microphone permission to listen.' : 'Listening failed: ' + e.message;
+      } finally { if (held) micRelease(); dictating = false; vDuck(false); micBtn(false); cm('idle'); }
+      if (text) { note.remove(); voiceTurn = true; send(text); }
+    }
+
+    // ---- openWakeWord: always-on wake phrase (opt-in) ----
+    let wk = null, wkStarting = false;
+    async function wakeFiles(say) {
+      const ensure = async (key, file, abs) => { if (!(await idbGet(key))) await fetchPart(key, abs ? WAKE_HF + file : file, (g, t) => say && say('Downloading ' + file + (t ? ' ' + Math.round(g / t * 100) + '%' : '')), true); };
+      await ensure('ww_mel', 'melspectrogram.onnx', true); await ensure('ww_emb', 'embedding_model.onnx', true);
+      if (await idbGet('ww_bloop')) return ['ww_bloop', 0.5, 'Hey Bloop'];
+      if (Date.now() - (+lsGet('ppvWakeMiss') || 0) > 6048e5) {                                    // your own hey_bloop.onnx in HF_BASE, checked at most once a week
+        try { await fetchPart('ww_bloop', 'hey_bloop.onnx', null, true); return ['ww_bloop', 0.5, 'Hey Bloop']; } catch (e) { lsSet('ppvWakeMiss', String(Date.now())); }
+      }
+      await ensure('ww_jarvis', 'hey_jarvis.onnx', true); return ['ww_jarvis', 0.45, 'Hey Jarvis'];
+    }
+    async function wakeStart(say) {
+      if (wk || wkStarting) return; wkStarting = true;
+      try {
+        await loadOrt(); const h = await wakeFiles(say);
+        ort.env.wasm.wasmPaths = ORT; ort.env.wasm.numThreads = 1;
+        const mk = async k => ort.InferenceSession.create(new Uint8Array(await getPart(k)), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+        const mel = await mk('ww_mel'), emb = await mk('ww_emb'), head = await mk(h[0]);
+        await micAcquire();
+        wk = { mel, emb, head, thr: h[1], name: h[2], raw: new Float32Array(480), melBuf: [], embBuf: [], acc: new Float32Array(0), q: [], busy: false, hits: 0, cool: 0 };
+        mic.subs.add(wakeSub); say && say('Wake word ready: say \u201c' + h[2] + '\u201d.');
+      } finally { wkStarting = false; }
+    }
+    function wakeStop() {
+      const w = wk; if (!w) return; wk = null; mic.subs.delete(wakeSub);
+      [w.mel, w.emb, w.head].forEach(s => { try { s.release && s.release(); } catch (e) {} }); micRelease();
+    }
+    function wakeSub(f) {
+      const w = wk; if (!w) return;
+      if (dictating || vSpeaking || Date.now() < wwHold || document.hidden || heavyBusy()) { w.acc = new Float32Array(0); w.q.length = 0; return; }
+      w.acc = vCat(w.acc, f);
+      while (w.acc.length >= 1280) { const c = w.acc.slice(0, 1280); w.acc = w.acc.slice(1280); if (w.q.length < 8) w.q.push(c); }
+      if (!w.busy) wakeRun(w);
+    }
+    async function wakeRun(w) {
+      w.busy = true;
+      try {
+        while (w.q.length && wk === w) {
+          const c = w.q.shift(), x = new Float32Array(c.length); for (let i = 0; i < c.length; i++) x[i] = c[i] * 32768;   // the mel model wants 16-bit scale
+          const s = await wakeScore(w, x); w.hits = s >= w.thr ? w.hits + 1 : 0;
+          if (w.hits >= 2 && Date.now() > w.cool) { w.cool = Date.now() + 3500; w.hits = 0; dictate(true); }
+        }
+      } catch (e) { console.error(e); if (wk === w) { wakeStop(); lsSet('ppvWake', '0'); add('bot', 'The wake word stopped: ' + e.message); } }
+      finally { w.busy = false; }
+    }
+    // openWakeWord, streaming: 1280 new samples -> 8 mel frames -> 1 embedding (96 numbers) -> the last 16 embeddings -> a score.
+    async function wakeScore(w, x) {
+      w.raw = vCat(w.raw.slice(-480), x);
+      const mo = await w.mel.run({ [w.mel.inputNames[0]]: new ort.Tensor('float32', w.raw, [1, w.raw.length]) }), md = mo[w.mel.outputNames[0]].data, nf = md.length / 32;
+      for (let i = 0; i < nf; i++) { const fr = new Float32Array(32); for (let k = 0; k < 32; k++) fr[k] = md[i * 32 + k] / 10 + 2; w.melBuf.push(fr); }
+      if (w.melBuf.length > 76) w.melBuf.splice(0, w.melBuf.length - 76);
+      if (w.melBuf.length < 76) return 0;
+      const ein = new Float32Array(76 * 32); w.melBuf.forEach((fr, i) => ein.set(fr, i * 32));
+      const eo = await w.emb.run({ [w.emb.inputNames[0]]: new ort.Tensor('float32', ein, [1, 76, 32, 1]) });
+      w.embBuf.push(Float32Array.from(eo[w.emb.outputNames[0]].data)); if (w.embBuf.length > 16) w.embBuf.shift();
+      if (w.embBuf.length < 16) return 0;
+      const hin = new Float32Array(16 * 96); w.embBuf.forEach((e, i) => hin.set(e, i * 96));
+      const ho = await w.head.run({ [w.head.inputNames[0]]: new ort.Tensor('float32', hin, [1, 16, 96]) });
+      return ho[w.head.outputNames[0]].data[0];
+    }
+
+    // ---- switches, used by the settings panel ----
+    function vSync(say) {
+      micShow();
+      if (wakeOn() && !wk && !wkStarting) wakeStart(say).catch(e => { console.error(e); lsSet('ppvWake', '0'); add('bot', 'The wake word did not start: ' + e.message); });
+      else if (!wakeOn() && wk) wakeStop();
+    }
+    function vSet(k, on, say) {
+      lsSet(k, on ? '1' : '0');
+      if (k === 'ppvVoice' && !on) { stopSpeak(); freeVoice(); }
+      if (k === 'ppvMini' && !on) freeMini();
+      if (k === 'ppvMic' && !on) { dictStop = true; freeEars(); }
+      vSync(say);
+    }
+    async function vFree() {
+      stopSpeak(); dictStop = true; if (wk) wakeStop();
+      await freeVoice(); await freeEars(); await freeMini();
+      ['ppvMiniDl', 'ppvVoiceDl', 'ppvEarsDl', 'ppvWake'].forEach(k => lsSet(k, '0')); voiceAsked = false; semAsked = false;
+      for (const k of ['ww_mel', 'ww_emb', 'ww_bloop', 'ww_jarvis', 'mini_cmd', 'mini_trk']) { try { await idbDel(k); } catch (e) {} }
+      semIdx = null; semCmd = null;
+      try { for (const k of await caches.keys()) { if (k === 'kokoro-voices') await caches.delete(k); else if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/MiniLM|moonshine|Kokoro/i.test(r.url)) await c.delete(r); } } } catch (e) {}
+    }
+    const ppVoiceApi = {
+      get: k => vFlag(k), set: vSet, free: vFree, list: VOICES, who: voiceWho, when: voiceWhen,
+      setWho: v => { lsSet('ppvVoiceWho', v); if (speakOn() && lsGet('ppvVoiceDl') === '1') { vPrime(); vSpeak('Hi, I am Bloop.', true); } },
+      setWhen: v => lsSet('ppvVoiceWhen', v === 'all' ? 'all' : 'talk')
+    };
+    setTimeout(vSync, 0);
     // ---------- Follow-up buttons ----------
     // When Bloop ends a reply with a question (or a "pick one!") and nothing else offered buttons, add the likely answers
     // as tappable buttons so nobody has to guess what to type. Only the newest message gets them, and only if it has none.
@@ -1976,7 +2341,7 @@
         } catch (e) { console.error(e); }
       }, 80);
     }
-    const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; };
+    const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; try { vSync(); } catch (e) {} };
     cfab.style.display = chatOn ? 'block' : 'none';
     cfab.onclick = () => {
       if (Date.now() < blSuppress) return;
@@ -1987,9 +2352,10 @@
       const a = e.target.closest && e.target.closest('[data-a]'); if (!a) return;
       if (a.dataset.a === 'x') cbox.style.display = 'none';
       else if (a.dataset.a === 'clear') { clist.textContent = ''; hist = []; try { clearTimeout(blTr && blTr.timer); } catch (e) {} blTr = null; }
-      else if (a.dataset.a === 'send') { const v = cin.value; cin.value = ''; send(v); }
+      else if (a.dataset.a === 'send') { const v = cin.value; cin.value = ''; vTyped(); send(v); }
+      else if (a.dataset.a === 'mic') { vPrime(); dictate(); }
     });
-    cin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const v = cin.value; cin.value = ''; send(v); } });
+    cin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const v = cin.value; cin.value = ''; vTyped(); send(v); } });
 
     const CRISIS = /(suicid|kill (myself|me)|end (my life|it all)|ending my life|want to die|wanna die|don'?t want to (live|be here|exist)|self[- ]?harm|hurt(ing)? myself|cut(ting)? myself|better off (dead|without me))/i;
     const CRISIS_MSG = "I'm really sorry you're hurting this much. I'm only a tiny music-app ball and I can't help with this the way a person can. Please reach out to someone right now: a friend or family member you trust, or a crisis line where you live (in the US you can call or text 988). If you might act on these thoughts, or you are in danger, call your local emergency number. You deserve real support.";
@@ -4724,6 +5090,7 @@
       try { if (blTalk(text)) return; } catch (e) { console.error(e); }
       const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
       if (agentOn()) { try { if (routeIntent(text)) return; } catch (e) { console.error(e); } }
+      if (agentOn()) { try { if (await semRoute(text)) return; } catch (e) { console.error(e); } }
       if (!brainOn()) { fallbackReply(text); return; }
       if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
       if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
@@ -4742,7 +5109,7 @@
         let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
         r = String(r || acc).trim().replace(/\s+\n/g, '\n') || "Hmm, I lost my words. Try again?";
         if (!looksOk(r)) { el.textContent = "Sorry, that came out as gibberish. Try again, or tap Clear."; return void (chatBusy = false); }   // never feed garbage back into the history
-        el.textContent = r; hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = memN() ? hist.slice(-2 * memN()) : [];
+        el.textContent = r; try { vSpeak(r); } catch (e) {} hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = memN() ? hist.slice(-2 * memN()) : [];
         moodChip(text);
       } catch (e) { console.error(e); dlOk = false; el.textContent = "Oops, my brain would not load: " + e.message; }
       chatBusy = false; scrollDown(); cm('greet'); setTimeout(() => cm('idle'), 1300);
@@ -4750,6 +5117,7 @@
     }
     return {
       react,
+      voice: ppVoiceApi,
       chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain, memory: { get: memN, set: setMem, max: MEM_MAX } },
       start() { key = ''; set('start', blLine('start', L.start), 900); },
       opened() {
@@ -4817,6 +5185,32 @@
       if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
       cg.onchange = () => { try { localStorage.setItem('ppvChatGpu', cg.checked ? '1' : '0'); } catch (e) {} };
       p.querySelector('#ppv-chatfree').onclick = async () => { try { await mas.chat.free(); status('Chat download removed.'); } catch (e) { status('Error: ' + e.message); } }; }
+    p.insertAdjacentHTML('beforeend', '<div style="margin-top:10px"><b>Bloop voice and listening</b></div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mini-on"> Smarter understanding (MiniLM, ~25 MB download)</label>' +
+      '<div class="ppv-note">Loose wording finds the right command, and you can ask for songs by meaning, like something for a rainy drive. Runs on your device. Needs the assistant on.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-voice-on"> Bloop speaks (Kokoro voice, ~90 MB download)</label>' +
+      '<select id="ppv-voice-who"></select><select id="ppv-voice-when"><option value="talk">Only when I talk to him</option><option value="all">Every reply</option></select>' +
+      '<div class="ppv-note">A warm, calm voice. Music dips while he talks.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mic-on"> Talk to Bloop (Moonshine, ~50 MB download)</label>' +
+      '<div class="ppv-note">Adds a mic button to his chat. Tap it, speak, and it sends when you pause.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-wake-on"> Wake word (listens while this page is open)</label>' +
+      '<div class="ppv-note">Say the wake phrase and he listens. It uses the mic continuously, which costs some battery, and loud music can hide your voice or cause false wakes. The phrase is Hey Jarvis until a hey_bloop.onnx is uploaded next to your models.</div>' +
+      '<button id="ppv-voicefree" class="ppv-sec" type="button">Free up voice downloads</button>');
+    { const V = mas.voice, g = id => p.querySelector('#' + id);
+      const boxes = [['ppv-mini-on', 'ppvMini'], ['ppv-voice-on', 'ppvVoice'], ['ppv-mic-on', 'ppvMic'], ['ppv-wake-on', 'ppvWake']];
+      const sync = () => boxes.forEach(([id, k]) => { g(id).checked = V.get(k); });
+      boxes.forEach(([id, k]) => { g(id).onchange = () => {
+        const on = g(id).checked;
+        if (k === 'ppvWake' && on && !V.get('ppvMic')) V.set('ppvMic', true, status);             // the wake word needs the listening model
+        V.set(k, on, status);
+        if (k === 'ppvMic' && !on) V.set('ppvWake', false, status);
+        sync();
+      }; });
+      const who = g('ppv-voice-who'), when = g('ppv-voice-when');
+      who.innerHTML = V.list.map(([k, n]) => '<option value="' + k + '">' + n + '</option>').join(''); who.value = V.who(); when.value = V.when();
+      who.onchange = () => V.setWho(who.value); when.onchange = () => V.setWhen(when.value);
+      g('ppv-voicefree').onclick = async () => { try { await V.free(); sync(); status('Voice downloads removed.'); } catch (e) { status('Error: ' + e.message); } };
+      sync(); }
     // Keep the pill attached: if it's ever detached (or was never in the page), put it back in the quick bar
     // when the user has it enabled there, otherwise in its menu slot. Never moves it while it's attached.
     const place = () => {
