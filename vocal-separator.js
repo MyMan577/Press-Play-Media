@@ -19,7 +19,6 @@
   const cap = w => w[0].toUpperCase() + w.slice(1);
   // ORT/emscripten often throws a bare number or an object with no .message, which showed up as "undefined".
   const OOM_HINT = ' Most likely the device ran out of memory: pick a lighter model (Fast 2 stems or Spleeter 4), set Optimization to Medium/Max, close other tabs, then retry.';
-  const BUILD = 'splitter-fix-9';                                     // shown in load errors so you can tell which copy of this file is running
   let engineDead = false;                                             // set when the wasm engine aborts: it cannot be revived without reloading the page
   const errText = e => {
     if (e == null) return 'Unknown error.' + OOM_HINT;
@@ -125,10 +124,10 @@
           for (let k = 0; k < F; k++) x[c * T * F + t * F + k] = Math.hypot(re[k], im[k]);
           if (ye && (t + 1) % ye === 0) await tick();
         }
-        const feed = { x: new ort.Tensor('float32', x, [2, 1, T, F]) };
-        const V = (await sessions.vocals.run(feed)).y.data;
+        const mkFeed = () => ({ x: new ort.Tensor('float32', x.slice(), [2, 1, T, F]) });   // a copy per run: the engine may take ownership of (detach) what it is given
+        const V = (await sessions.vocals.run(mkFeed())).y.data;
         await tick();
-        const A = sessions.accomp ? (await sessions.accomp.run(feed)).y.data : null;
+        const A = sessions.accomp ? (await sessions.accomp.run(mkFeed())).y.data : null;
         for (let c = 0; c < 2; c++) for (let t = ctx; t < T - ctx; t++) {      // only the centre frames are kept
           const fr = fr0 + t; if (fr >= nFrames) break;
           const base = c * T * F + t * F;
@@ -249,7 +248,7 @@
     for (let i = 0; i < nChunks; i++) {
       const start = i * stride, end = Math.min(start + DEMUCS_SEG, len), cl = end - start, last = i === nChunks - 1;
       x.fill(0); x.set(pcm[0].subarray(start, end), 0); x.set(pcm[1].subarray(start, end), DEMUCS_SEG);
-      const res = await session.run({ mix: new ort.Tensor('float32', x, [1, 2, DEMUCS_SEG]) }), y = res.stems.data;   // [1, S, 2, SEG]
+      const res = await session.run({ mix: new ort.Tensor('float32', x.slice(), [1, 2, DEMUCS_SEG]) }), y = res.stems.data;   // [1, S, 2, SEG]
       for (let j = 0; j < cl; j++) {
         let g = 1;
         if (i > 0 && j < overlap) g = j / (overlap - 1);                       // fade in (not on the very first chunk)
@@ -290,10 +289,10 @@
         for (let k = 0; k < F; k++) x[c * T * F + t * F + k] = Math.hypot(re[k], im[k]);
         if (ye && (t + 1) % ye === 0) await tick();
       }
-      const feed = { [inName]: new ort.Tensor('float32', x, [2, 1, T, F]) };
+      const mkFeed = () => ({ [inName]: new ort.Tensor('float32', x.slice(), [2, 1, T, F]) });
       den.fill(1e-10); const Vs = [];
       for (let i = 0; i < ns; i++) {
-        const V = (await sessions[i].run(feed))[outName].data; Vs.push(V);
+        const V = (await sessions[i].run(mkFeed()))[outName].data; Vs.push(V);
         for (let j = 0; j < den.length; j++) den[j] += V[j] * V[j];
         await tick();
       }
@@ -383,7 +382,7 @@
         }
         if (ye && (t + 1) % ye === 0) await tick();
       }
-      const res = await session.run({ [inName]: new ort.Tensor('float32', X, [1, 4, DF, DT]) }), Y = res[outName].data;
+      const res = await session.run({ [inName]: new ort.Tensor('float32', X.slice(), [1, 4, DF, DT]) }), Y = res[outName].data;
       await tick();
       acc[0].fill(0); acc[1].fill(0);
       for (let t = 0; t < DT; t++) {
@@ -448,7 +447,7 @@
         await new Promise(r => setTimeout(r, 50));
       }
     }
-    throw new Error('Could not load model "' + key + '" [' + BUILD + ']: ' + errText(first || last) + (engineDead ? ' The engine has crashed, so reload the app before trying again. If Multi-thread is ticked, untick it for this model.' : ''));
+    throw new Error('Could not load model "' + key + '": ' + errText(first || last) + (engineDead ? ' The engine has crashed, so reload the app before trying again. If Multi-thread is ticked, untick it for this model.' : ''));
   }
   async function haveModel(id) { for (const [k] of parts(id)) if (!(await getPart(k))) return false; return true; }
   async function downloadModel(id, status, low) {
