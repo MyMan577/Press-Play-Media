@@ -19,6 +19,8 @@
   const cap = w => w[0].toUpperCase() + w.slice(1);
   // ORT/emscripten often throws a bare number or an object with no .message, which showed up as "undefined".
   const OOM_HINT = ' Most likely the device ran out of memory: pick a lighter model (Fast 2 stems or Spleeter 4), set Optimization to Medium/Max, close other tabs, then retry.';
+  const BUILD = 'splitter-fix-9';                                     // shown in load errors so you can tell which copy of this file is running
+  let engineDead = false;                                             // set when the wasm engine aborts: it cannot be revived without reloading the page
   const errText = e => {
     if (e == null) return 'Unknown error.' + OOM_HINT;
     if (typeof e === 'number') return 'The audio engine crashed (code ' + e + ').' + OOM_HINT;
@@ -413,6 +415,7 @@
     document.head.appendChild(s);
   });
   async function makeSession(key, gpu, lv) {
+    if (engineDead) throw new Error('The audio engine crashed earlier and cannot recover until the app is reloaded. Reload the app, then try again.');
     const buf = await getPart(key);
     if (!buf) throw new Error('Model file "' + key + '" is missing. Press Split again to download it.');
     const u8 = new Uint8Array(buf);
@@ -432,16 +435,20 @@
     tries.push({ eps: ['wasm'], th: threads, opt: base.graphOptimizationLevel });
     if (threads > 1 || base.graphOptimizationLevel !== 'basic') tries.push({ eps: ['wasm'], th: 1, opt: 'basic' });
     if (key.startsWith('sp4_')) tries.length = 1;                        // fp16 files: one quick attempt, the caller falls back to the full-precision files
-    let last = null;
+    let last = null, first = null;
     for (const t of tries) {
       try {
         ort.env.wasm.numThreads = t.th;
-        ort.env.wasm.proxy = !big && !t.eps.includes('webgpu');   // proxy would copy the 316 MB model into the worker as well   // run the wasm engine in a worker so loading/inference never freezes the UI
+        ort.env.wasm.proxy = false;   // worker mode hands our input buffers to the worker (detaching them), and our loops reuse those buffers
         await new Promise(r => setTimeout(r, 30));          // let the status text paint first
         return await ort.InferenceSession.create(u8, Object.assign({}, base, { executionProviders: t.eps, graphOptimizationLevel: t.opt }));
-      } catch (e) { last = e; console.warn('session create failed', key, t, e); await new Promise(r => setTimeout(r, 50)); }
+      } catch (e) {
+        last = e; if (!first) first = e; console.warn('session create failed', key, t, e);
+        if (/abort|not initialized|initializeWebAssembly/i.test(errText(e))) { engineDead = true; break; }   // retrying after an abort only produces "WebAssembly is not initialized yet" and hides the real cause
+        await new Promise(r => setTimeout(r, 50));
+      }
     }
-    throw new Error('Could not load model "' + key + '": ' + errText(last));
+    throw new Error('Could not load model "' + key + '" [' + BUILD + ']: ' + errText(first || last) + (engineDead ? ' The engine has crashed, so reload the app before trying again. If Multi-thread is ticked, untick it for this model.' : ''));
   }
   async function haveModel(id) { for (const [k] of parts(id)) if (!(await getPart(k))) return false; return true; }
   async function downloadModel(id, status, low) {
