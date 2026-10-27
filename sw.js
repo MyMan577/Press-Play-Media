@@ -1,4 +1,4 @@
-const CACHE_NAME = 'press-play-media-v27';
+const CACHE_NAME = 'press-play-media-v28';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,17 @@ async function readMode(){
 async function writeMode(m){
   try { const db = await swDb(); await new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(m, 'mode'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (e) {}
 }
+// Multi-thread (cross-origin isolation) setting: OFF unless the user turns it on in the splitter panel.
+async function readIso(){
+  try { const db = await swDb(); return await new Promise((res) => { const q = db.transaction('kv').objectStore('kv').get('isolate'); q.onsuccess = () => res(q.result === 'on'); q.onerror = () => res(false); }); }
+  catch (e) { return false; }
+}
+async function writeIso(v){
+  try { const db = await swDb(); await new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v ? 'on' : 'off', 'isolate'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (e) {}
+}
+let isoPromise = null;
+const getIso = () => isoPromise || (isoPromise = readIso());
+
 let modePromise = null;
 const getMode = () => modePromise || (modePromise = readMode());
 
@@ -44,6 +55,9 @@ self.addEventListener('message', (event) => {
   if (d.type === 'set-update-mode' && (d.mode === 'always' || d.mode === 'cached')) {
     modePromise = Promise.resolve(d.mode);
     event.waitUntil(writeMode(d.mode));
+  } else if (d.type === 'set-isolation') {
+    isoPromise = Promise.resolve(!!d.on);
+    event.waitUntil(writeIso(!!d.on).then(() => { if (event.source) event.source.postMessage({ type: 'isolation-set', on: !!d.on }); }));
   } else if (d.type === 'check-now') {
     event.waitUntil(refreshShell().then((ok) => { if (event.source) event.source.postMessage({ type: 'check-done', ok }); }));
   }
@@ -130,12 +144,31 @@ async function cacheFirst(req){
   }
 }
 
+// ---- Cross-origin isolation ---------------------------------------------
+// GitHub Pages can't send COOP/COEP headers, so this adds them to our own responses. That turns on
+// SharedArrayBuffer, which lets the stem splitter run its AI engine on several CPU threads (much faster).
+// COEP 'credentialless' (not 'require-corp') keeps CDN scripts and remote images/audio working as before.
+// Browsers that don't know it simply ignore it. Optional: only active when the user ticks "Multi-thread" in the splitter panel (then the app reloads).
+function isolate(resp, req){
+  try {
+    if (!resp || resp.status === 0 || resp.type === 'opaque' || resp.type === 'opaqueredirect') return resp;
+    if (new URL(req.url).origin !== self.location.origin) return resp;
+    const h = new Headers(resp.headers);
+    h.set('Cross-Origin-Opener-Policy', 'same-origin');
+    h.set('Cross-Origin-Embedder-Policy', 'credentialless');
+    h.set('Cross-Origin-Resource-Policy', 'same-origin');
+    const nullBody = resp.status === 101 || resp.status === 204 || resp.status === 205 || resp.status === 304;
+    return new Response(nullBody ? null : resp.body, { status: resp.status, statusText: resp.statusText, headers: h });
+  } catch (e) { return resp; }
+}
+
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   // Big AI model downloads from Hugging Face skip this cache; the app stores them itself.
   if (/(^|\.)(huggingface\.co|hf\.co)$/.test(new URL(event.request.url).hostname)) return;
   event.respondWith((async () => {
-    if (!isAppShellRequest(event.request)) return cacheFirst(event.request);
-    return (await getMode()) === 'cached' ? shellCacheFirst(event.request) : networkFirst(event.request);
+    const r = !isAppShellRequest(event.request) ? await cacheFirst(event.request)
+      : (await getMode()) === 'cached' ? await shellCacheFirst(event.request) : await networkFirst(event.request);
+    return (await getIso()) ? isolate(r, event.request) : r;
   })());
 });

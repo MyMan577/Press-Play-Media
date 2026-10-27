@@ -17,6 +17,16 @@
   const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
   const SR = 44100, N = 4096, HOP = 1024, T = 512, F = 1024, BINS = N / 2 + 1, PAD = N - HOP, DEMUCS_SEG = 343980, CTX = 64;
   const cap = w => w[0].toUpperCase() + w.slice(1);
+  // ORT/emscripten often throws a bare number or an object with no .message, which showed up as "undefined".
+  const OOM_HINT = ' Most likely the device ran out of memory: pick a lighter model (Fast 2 stems or Spleeter 4), set Optimization to Medium/Max, close other tabs, then retry.';
+  const errText = e => {
+    if (e == null) return 'Unknown error.' + OOM_HINT;
+    if (typeof e === 'number') return 'The audio engine crashed (code ' + e + ').' + OOM_HINT;
+    let m = e.message || (typeof e === 'string' ? e : '');
+    if (!m) { try { m = JSON.stringify(e); } catch (x) {} if (!m || m === '{}') m = String(e); }
+    if (/abort|assertions|out of memory|memory access|alloc|bad_alloc|RangeError/i.test(m)) m += OOM_HINT;
+    return m;
+  };
   // Optimization levels, each one includes the one below it. [0] = off.
   //  1 Light  : the big RAM hogs only (CPU only, low-RAM download, basic graph optimization)
   //  2 Medium : + lean ONNX runtime, pauses between chunks, skip work for stems you didn't tick
@@ -346,6 +356,7 @@
   // Chunks of 255 hops (256 frames). Each chunk keeps its middle and drops n_fft/2 samples at both ends, like UVR.
   // Streams sink(vocals:[L,R], instrumental:[L,R], startSample); instrumental = mix - vocals.
   async function separateMdx(pcm, session, cfg, onProgress, sink, pause = 0, ye = 0) {
+    ye = ye || 16;                                                    // always give the UI a turn: this DSP is heavy even on a fast phone
     const NF = cfg.nfft, H = 1024, DF = cfg.dimF, DT = 256, half = NF >> 1, chunk = H * (DT - 1), gen = chunk - NF;
     const len = pcm[0].length, nChunks = Math.max(1, Math.ceil(len / gen)), fftN = makeFFT(NF);
     const w = new Float64Array(NF); for (let i = 0; i < NF; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / NF);
@@ -355,29 +366,35 @@
     const inName = session.inputNames[0], outName = session.outputNames[0];
     for (let j = 0; j < nChunks; j++) {
       const base = j * gen - half; X.fill(0);
-      for (let c = 0; c < 2; c++) for (let t = 0; t < DT; t++) {
+      for (let t = 0; t < DT; t++) {                                  // L in the real part, R in the imaginary part: one FFT does both channels
         const st = t * H - half;
         for (let i = 0; i < NF; i++) {
           let q = st + i; if (q < 0) q = -q; else if (q >= chunk) q = 2 * (chunk - 1) - q;   // reflect padding (center=True)
-          const a = base + q; re[i] = (a >= 0 && a < len ? pcm[c][a] : 0) * w[i]; im[i] = 0;
+          const a = base + q, ok = a >= 0 && a < len;
+          re[i] = (ok ? pcm[0][a] : 0) * w[i]; im[i] = (ok ? pcm[1][a] : 0) * w[i];
         }
         fftN(re, im);
-        for (let k = 3; k < DF; k++) { X[(c * 2 * DF + k) * DT + t] = re[k]; X[((c * 2 + 1) * DF + k) * DT + t] = im[k]; }   // lowest 3 bins zeroed, like UVR
+        for (let k = 3; k < DF; k++) {                                // split the two real signals back apart
+          const a = re[k], b = im[k], c2 = re[NF - k], d = im[NF - k];
+          X[(0 * DF + k) * DT + t] = (a + c2) / 2; X[(1 * DF + k) * DT + t] = (b - d) / 2;          // L re, L im   (lowest 3 bins stay zero, like UVR)
+          X[(2 * DF + k) * DT + t] = (b + d) / 2;  X[(3 * DF + k) * DT + t] = (c2 - a) / 2;          // R re, R im
+        }
         if (ye && (t + 1) % ye === 0) await tick();
       }
       const res = await session.run({ [inName]: new ort.Tensor('float32', X, [1, 4, DF, DT]) }), Y = res[outName].data;
       await tick();
       acc[0].fill(0); acc[1].fill(0);
-      for (let c = 0; c < 2; c++) for (let t = 0; t < DT; t++) {
+      for (let t = 0; t < DT; t++) {
         re.fill(0); im.fill(0);
         for (let k = 0; k < DF; k++) {
-          const r = Y[(c * 2 * DF + k) * DT + t], i = Y[((c * 2 + 1) * DF + k) * DT + t];
-          re[k] = r; im[k] = -i;                                      // conj for inverse-via-forward
-          if (k > 0) { re[NF - k] = r; im[NF - k] = i; }
+          const Ar = Y[k * DT + t], Ai = k ? Y[(DF + k) * DT + t] : 0, Br = Y[(2 * DF + k) * DT + t], Bi = k ? Y[(3 * DF + k) * DT + t] : 0;
+          const zr = Ar - Bi, zi = Ai + Br;                           // Z = A + iB, so one inverse gives L (real) and R (imaginary)
+          re[k] = zr; im[k] = -zi;                                    // conj for inverse-via-forward
+          if (k > 0) { re[NF - k] = Ar + Bi; im[NF - k] = Ai - Br; }  // conj of Z[NF-k] = Ar+Bi + i(Ai-Br)
         }
         fftN(re, im);
-        const st = t * H - half, o = acc[c];
-        for (let i = 0; i < NF; i++) { const q = st + i; if (q >= 0 && q < chunk) o[q] += re[i] / NF * w[i]; }
+        const st = t * H - half, o0 = acc[0], o1 = acc[1];
+        for (let i = 0; i < NF; i++) { const q = st + i; if (q >= 0 && q < chunk) { const g = w[i] / NF; o0[q] += re[i] * g; o1[q] -= im[i] * g; } }
         if (ye && (t + 1) % ye === 0) await tick();
       }
       for (const r of Object.values(res)) r.dispose && r.dispose();
@@ -397,12 +414,34 @@
   });
   async function makeSession(key, gpu, lv) {
     const buf = await getPart(key);
-    const eps = gpu && !lv && navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'];
+    if (!buf) throw new Error('Model file "' + key + '" is missing. Press Split again to download it.');
+    const u8 = new Uint8Array(buf);
+    if (u8.length < 1024 || u8[0] === 0x3C) {                          // a 404/HTML page or truncated file got saved: drop it so the next run re-downloads
+      await idbDel(key).catch(() => {});
+      throw new Error('The downloaded model "' + key + '" was not a valid ONNX file (' + u8.length + ' bytes). I deleted it: press Split again to re-download.');
+    }
     ort.env.wasm.wasmPaths = ORT;
-    ort.env.wasm.numThreads = !lv && self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
-    const o = { executionProviders: eps, graphOptimizationLevel: lv ? 'basic' : 'all' };   // 'all' makes extra weight copies while loading
-    if (lv && lv.lean) { o.enableCpuMemArena = false; o.enableMemPattern = false; o.executionMode = 'sequential'; }
-    return ort.InferenceSession.create(new Uint8Array(buf), o);
+    const threads = !lv && self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    const big = u8.length > 100e6;                                       // Demucs (316 MB): keep every extra copy of the weights out of memory
+    const base = { graphOptimizationLevel: lv || big || key === 'mdx_voc' ? 'basic' : 'all' };
+    if (big) { base.enableCpuMemArena = false; base.enableMemPattern = false; base.executionMode = 'sequential'; }   // MDX: 'all' makes the load slow and memory hungry
+    if (lv && lv.lean) { base.enableCpuMemArena = false; base.enableMemPattern = false; base.executionMode = 'sequential'; }
+    // try in order: WebGPU (if asked) -> wasm with threads -> wasm single thread, basic optimization (smallest memory)
+    const tries = [];
+    if (gpu && !lv && navigator.gpu) tries.push({ eps: ['webgpu', 'wasm'], th: threads, opt: base.graphOptimizationLevel });
+    tries.push({ eps: ['wasm'], th: threads, opt: base.graphOptimizationLevel });
+    if (threads > 1 || base.graphOptimizationLevel !== 'basic') tries.push({ eps: ['wasm'], th: 1, opt: 'basic' });
+    if (key.startsWith('sp4_')) tries.length = 1;                        // fp16 files: one quick attempt, the caller falls back to the full-precision files
+    let last = null;
+    for (const t of tries) {
+      try {
+        ort.env.wasm.numThreads = t.th;
+        ort.env.wasm.proxy = !big && !t.eps.includes('webgpu');   // proxy would copy the 316 MB model into the worker as well   // run the wasm engine in a worker so loading/inference never freezes the UI
+        await new Promise(r => setTimeout(r, 30));          // let the status text paint first
+        return await ort.InferenceSession.create(u8, Object.assign({}, base, { executionProviders: t.eps, graphOptimizationLevel: t.opt }));
+      } catch (e) { last = e; console.warn('session create failed', key, t, e); await new Promise(r => setTimeout(r, 50)); }
+    }
+    throw new Error('Could not load model "' + key + '": ' + errText(last));
   }
   async function haveModel(id) { for (const [k] of parts(id)) if (!(await getPart(k))) return false; return true; }
   async function downloadModel(id, status, low) {
@@ -1196,7 +1235,7 @@
         const r = await tagTrack(t.url, stat, h.LV(), { deep: deep.checked, progress: f => { last = Date.now(); h.prog(f); } });
         const ok = await persistTags(t.dbId, r, aeq.checked);
         h.tagOut.textContent = fmtTags(r) + (ok ? '' : '\n! Could not save the tags (storage is full).'); h.status('Tagged and saved.'); refreshCount();
-      } catch (e) { console.error(e); h.status('Error: ' + e.message); }
+      } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
       clearInterval(iv); busy(false);
     };
 
@@ -1351,7 +1390,7 @@
     if (!navigator.getBattery) $('#ppv-bgchl').style.display = 'none';
     $('#ppv-surpnow').onclick = async () => {
       setBg('Assembling a surprise\u2026');
-      try { const pl = await makeSurprise(); setBg(pl ? 'Made ' + pl.name + '.' : 'Tag at least 12 tracks first (stems are skipped).'); } catch (e) { console.error(e); setBg('Error: ' + e.message); }
+      try { const pl = await makeSurprise(); setBg(pl ? 'Made ' + pl.name + '.' : 'Tag at least 12 tracks first (stems are skipped).'); } catch (e) { console.error(e); setBg('Error: ' + errText(e)); }
     };
     let lastInput = Date.now(), bgBusy = false, bgCache = null; const bgFailed = new Set();
     ['pointerdown', 'keydown', 'touchstart', 'wheel', 'mousemove'].forEach(ev => addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true }));
@@ -1398,7 +1437,7 @@
         if (!order.length) throw new Error('Nothing close enough. Tag more tracks, or try "Similar sound".');
         const q = order.slice(0, 30); a.play(q[0], q); h.status('Playing ' + q.length + ' similar tracks.');
         lib.textContent = q.slice(0, 5).map(i => a.tracks()[i].title).join('\n');
-      } catch (e) { console.error(e); h.status('Error: ' + e.message); }
+      } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
       busy(false);
     };
     const mediaOf = t => document.getElementById(t.kind === 'video' ? 'video-el' : 'audio');
@@ -1444,7 +1483,7 @@
         lastSrt = { name: t.title, text: toSrt(cues) }; wsrt.style.display = '';
         wout.textContent = cues.length + ' lines added as ' + (t.kind === 'video' ? 'subtitles' : 'synced lyrics') + '.\n' + cues.slice(0, 4).map(c => mmss(c.start) + '  ' + c.text).join('\n');
         h.status('Done.');
-      } catch (e) { console.error(e); h.status('Error: ' + e.message); }
+      } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
       busy(false);
     };
     wsrt.onclick = () => {
@@ -1452,7 +1491,7 @@
       a.href = u; a.download = lastSrt.name.replace(/[\\/:*?"<>|]+/g, '_') + '.srt'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
     };
     $('#ppv-wfree').onclick = async () => {
-      try { if (asr) { await asr.dispose(); asr = null; asrId = ''; } const ks = await caches.keys(); for (const k of ks) if (/transformers/i.test(k)) await caches.delete(k); h.status('Whisper download removed.'); } catch (e) { h.status('Error: ' + e.message); }
+      try { if (asr) { await asr.dispose(); asr = null; asrId = ''; } const ks = await caches.keys(); for (const k of ks) if (/transformers/i.test(k)) await caches.delete(k); h.status('Whisper download removed.'); } catch (e) { h.status('Error: ' + errText(e)); }
     };
     refreshCount();
     // the list is always visible now, so keep it current as the library loads and tags change
@@ -5152,6 +5191,7 @@
       '<div style="margin-top:8px">Mute vocal gaps</div><select id="ppv-gate"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Silences leftover noise between sung lines. Vocals stem only.</div>' +
       '<div id="ppv-spl" style="margin-top:8px">Strength: <span id="ppv-sv">1</span><input id="ppv-sl" type="range" min="1" max="4" step="0.5" value="1" style="width:100%"><div style="opacity:.6;font-size:11px">Higher = less bleed, more watery artifacts</div><div style="margin-top:8px">Quality</div><select id="ppv-q"><option value="0">Standard</option><option value="1">Better (smooth seams, ~1.3x time)</option><option value="2">Best (+ averaged 2nd pass, ~2.7x time)</option></select></div>' +
       '<label id="ppv-gpu" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-gpuc"> Use GPU (faster, experimental)</label>' +
+      '<label id="ppv-mt" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-mtc"> Multi-thread (faster, uses more memory, reloads the app)</label>' +
       '<details><summary>Where split tracks go</summary><div class="ppv-note">Split tracks never count as new library tracks. They are all kept together under \u201cSplit tracks\u201d in the library\u2019s view selector.</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mkpl"> Also make a playlist for each split song</label>' +
       '<label id="ppv-tabl" class="ppv-c" style="display:block"><input type="checkbox" id="ppv-pltab"> Show those playlists in the Playlists tab</label>' +
@@ -5184,7 +5224,7 @@
       ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch (e) {} };
       if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
       cg.onchange = () => { try { localStorage.setItem('ppvChatGpu', cg.checked ? '1' : '0'); } catch (e) {} };
-      p.querySelector('#ppv-chatfree').onclick = async () => { try { await mas.chat.free(); status('Chat download removed.'); } catch (e) { status('Error: ' + e.message); } }; }
+      p.querySelector('#ppv-chatfree').onclick = async () => { try { await mas.chat.free(); status('Chat download removed.'); } catch (e) { status('Error: ' + errText(e)); } }; }
     p.insertAdjacentHTML('beforeend', '<div style="margin-top:10px"><b>Bloop voice and listening</b></div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mini-on"> Smarter understanding (MiniLM, ~25 MB download)</label>' +
       '<div class="ppv-note">Loose wording finds the right command, and you can ask for songs by meaning, like something for a rainy drive. Runs on your device. Needs the assistant on.</div>' +
@@ -5209,7 +5249,7 @@
       const who = g('ppv-voice-who'), when = g('ppv-voice-when');
       who.innerHTML = V.list.map(([k, n]) => '<option value="' + k + '">' + n + '</option>').join(''); who.value = V.who(); when.value = V.when();
       who.onchange = () => V.setWho(who.value); when.onchange = () => V.setWhen(when.value);
-      g('ppv-voicefree').onclick = async () => { try { await V.free(); sync(); status('Voice downloads removed.'); } catch (e) { status('Error: ' + e.message); } };
+      g('ppv-voicefree').onclick = async () => { try { await V.free(); sync(); status('Voice downloads removed.'); } catch (e) { status('Error: ' + errText(e)); } };
       sync(); }
     // Keep the pill attached: if it's ever detached (or was never in the page), put it back in the quick bar
     // when the user has it enabled there, otherwise in its menu slot. Never moves it while it's attached.
@@ -5231,6 +5271,17 @@
     lsel.value = ls('ppvLevel') || (ls('ppvLow') === '0' ? '0' : '2'); showLv(); gpu.checked = ls('ppvGpu') === '1'; if (navigator.gpu) $('#ppv-gpu').style.display = 'block';
     sl.oninput = () => { sv.textContent = sl.value; ls('ppvStrength', sl.value); };
     gpu.onchange = () => ls('ppvGpu', gpu.checked ? '1' : '0');
+    // Optional multi-threading: asks the service worker to add the COOP/COEP headers, then reloads once so they apply.
+    if ('serviceWorker' in navigator) {
+      const mt = $('#ppv-mtc'); $('#ppv-mt').style.display = 'block'; mt.checked = ls('ppvMT') === '1';
+      const tellSw = async on => { const reg = await navigator.serviceWorker.ready; const sw = navigator.serviceWorker.controller || reg.active; if (!sw) throw new Error('no service worker'); return new Promise(res => { const h = e => { if (e.data && e.data.type === 'isolation-set') { navigator.serviceWorker.removeEventListener('message', h); res(); } }; navigator.serviceWorker.addEventListener('message', h); sw.postMessage({ type: 'set-isolation', on }); setTimeout(res, 1500); }); };
+      mt.onchange = async () => {
+        const on = mt.checked; mt.disabled = true;
+        try { await tellSw(on); ls('ppvMT', on ? '1' : '0'); status(on ? 'Multi-thread on. Reloading the app…' : 'Multi-thread off. Reloading the app…'); setTimeout(() => location.reload(), 700); }
+        catch (e) { mt.checked = !on; mt.disabled = false; status('Could not change multi-thread: ' + errText(e)); }
+      };
+      if (ls('ppvMT') === '1' && !self.crossOriginIsolated) tellSw(true).then(() => { if (!self.crossOriginIsolated && !sessionStorage.getItem('ppvMTreload')) { sessionStorage.setItem('ppvMTreload', '1'); location.reload(); } }).catch(() => {});   // first run after installing the worker
+    }
     const mkpl = $('#ppv-mkpl'), pltab = $('#ppv-pltab');
     const syncPl = () => { pltab.disabled = !mkpl.checked; $('#ppv-tabl').style.opacity = mkpl.checked ? 1 : .5; };
     mkpl.checked = ls('ppvMkPl') === '1'; pltab.checked = ls('ppvPlTab') === '1'; syncPl();
@@ -5257,8 +5308,10 @@
     sel.onchange = () => { ls('ppvModel', sel.value); refresh(); };
     b.onclick = () => { p.style.display = p.style.display === 'block' ? 'none' : 'block'; if (p.style.display === 'block') { mas.opened(); document.getElementById('ppv-mfloat').style.display = 'none'; } refresh(); };
     $('#ppv-del').onclick = async () => { await deleteModel(sel.value); status('Deleted.'); refresh(); };
+    let splitting = false;
     async function splitTrack(t) {
-      go.disabled = true; bar.style.width = '0'; let wl = null;
+      if (splitting) { status('Already splitting a track. Wait for it to finish.'); return; }   // two runs at once is a sure way to run out of memory
+      splitting = true; go.disabled = true; bar.style.width = '0'; let wl = null;
       try {
         if (LV() && LV().wake && navigator.wakeLock) { try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
         const id = sel.value, want = picked();
@@ -5277,9 +5330,9 @@
         }
         addSplit(files, { srcId: t.dbId, srcTitle: t.title, makePlaylist: mkpl.checked, showInTab: mkpl.checked && pltab.checked });
         status('Done. Added ' + files.length + ' split track' + (files.length > 1 ? 's' : '') + ' to Split tracks' + (mkpl.checked ? ' + a playlist.' : '.'));
-      } catch (e) { console.error(e); status('Error: ' + e.message); }
+      } catch (e) { console.error(e); status('Error: ' + errText(e)); }
       wl && wl.release().catch(() => {});
-      go.disabled = false; refresh();
+      splitting = false; go.disabled = false; refresh();
     }
     go.onclick = () => { const A = window.__ppApi; return splitTrack(A && A.tracks()[A.currentIndex()]); };
     window.__ppSplitTrack = t => splitTrack(t);
