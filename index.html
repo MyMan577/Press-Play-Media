@@ -4185,6 +4185,7 @@
                   <button type="button" class="memc-mode-btn" data-memc-mode="off">Off</button>
                   <button type="button" class="memc-mode-btn" data-memc-mode="blend" title="Blends neighbouring frames. Light on the GPU.">Simple</button>
                   <button type="button" class="memc-mode-btn" data-memc-mode="motion" title="Tracks motion between frames. Smoother, needs a stronger GPU.">Advanced</button>
+                  <button type="button" class="memc-mode-btn" data-memc-mode="ultra" title="Finer motion tracking in both directions, with cleaner edges around moving objects. Needs a strong GPU.">Ultra</button>
                 </div>
                 <div class="latency-dropdown-row" style="margin:9px 0 4px 0;"><span class="tool-dropdown-label" style="padding:0;">Smooth videos up to</span><span id="memc-thresh-val" class="memc-val">50 fps</span></div>
                 <input type="range" id="memc-thresh" class="memc-range" min="10" max="120" step="5" value="50">
@@ -4199,7 +4200,7 @@
                   <button type="button" class="memc-mode-btn" data-memc-q="2">High</button>
                   <button type="button" class="memc-mode-btn" data-memc-q="3">4K</button>
                 </div>
-                <p class="menu-section-hint" style="margin:6px 0 0 0;">Adds in-between frames to low-fps video. Simple suits low-end devices, Advanced tracks motion and needs a decent GPU. "Smooth up to" skips videos faster than that (set 60 to smooth 60 fps video). "Output up to" caps how many frames per second are shown; lower saves battery. Smoothing quality sets the resolution the smoothing works at (High and 4K need a strong GPU and lots of memory; the player steps down by itself if memory runs out). Adds about one frame of delay, covered by the latency setting.</p>
+                <p class="menu-section-hint" style="margin:6px 0 0 0;">Adds in-between frames to low-fps video. Simple suits low-end devices, Advanced tracks motion and needs a decent GPU. Ultra tracks motion at a finer scale in both directions and avoids ghosting around moving objects; it needs a strong GPU. "Smooth up to" skips videos faster than that (set 60 to smooth 60 fps video). "Output up to" caps how many frames per second are shown; lower saves battery. Smoothing quality sets the resolution the smoothing works at (High and 4K need a strong GPU and lots of memory; the player steps down by itself if memory runs out). Adds about one frame of delay, covered by the latency setting.</p>
                 <label class="override-toggle" style="margin-top:8px;" title="On: slowing playback counts as a lower source rate, so slowed 60 fps video is smoothed and output fills up to the Output limit. Off: speed is ignored.">
                   <input type="checkbox" id="memc-speed-toggle" checked>
                   <span>Smooth slowed playback</span>
@@ -7938,7 +7939,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   try { if (localStorage.getItem(MEMC_SPEED_KEY) === '0') memcSpeedAware = false; } catch (e){}
   const memcRate = () => memcSpeedAware ? (videoEl.playbackRate || 1) : 1;
   let memcMode = 'off';   // 'off' | 'blend' (Simple) | 'motion' (Advanced)
-  try { const m = localStorage.getItem(MEMC_KEY); if (m === 'blend' || m === 'motion') memcMode = m; } catch (e){}
+  try { const m = localStorage.getItem(MEMC_KEY); if (m === 'blend' || m === 'motion' || m === 'ultra') memcMode = m; } catch (e){}
   // Processing-quality tiers: how large the frame ring is, how much GPU memory it may use,
   // and how fine the motion analysis is. Tier 0 is the original behaviour.
   const MEMC_TIERS = [
@@ -8283,10 +8284,13 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   try { const pm = localStorage.getItem(PERF_KEY); if (pm === 'auto' || pm === 'light') perfMode = pm; } catch (e){}
   function perfLightActive(){ return perfMode === 'light' || (perfMode === 'auto' && perfAutoTripped); }
   let memcLEff = null, memcLEffAt = 0, memcLastTT = -Infinity; // eased delay + last shown media time (smooth latency changes)
+  let memcLastDrawMs = 0;
+  let memcPrevSlot = null, memcLastUniqT = null, memcUDts = [];   // held-frame (duplicate) detection
+  let memcDupOff = false, memcDupBuf = null, memcDupFbo = null, memcDupTex = null, memcDupMs = 0, memcDupN = 0;
   let memcExtraSec = 0;   // extra picture lag added by interpolation (subtitles follow it)
   let memcGL = null, memcProgs = null, memcSrcTex = null, memcSrcMip = false;
   let memcRing = [], memcRingW = 0, memcRingH = 0, memcWrite = 0, memcSeq = 0, memcPrevSeq = 0, memcResKey = '';
-  let memcLuma = [], memcMvRaw = null, memcAna = null, memcLumaIdx = 0, memcPrevLumaValid = false;
+  let memcLuma = [], memcMvRaw = null, memcMvRef = null, memcFloatOk = false, memcUniqSlot = null, memcAna = null, memcLumaIdx = 0, memcPrevLumaValid = false;
   let memcDts = [], memcPeriod = 1 / 30, memcPeriodN = 0, memcLastT = null, memcOffMs = 0, memcOffValid = false, memcLastKey = '';
   let memcVfcId = null, memcRafId = null;
   let latencyPresetMs = 150; // a saved value the latency-preset button toggles the slider to/from, e.g. one earbud's known Bluetooth delay
@@ -9935,7 +9939,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   function memcUpdateUI(){
     memcModeBtns.forEach(b => b.classList.toggle('toggled', b.dataset.memcMode === memcMode));
     const pl = document.getElementById('memc-pill-label');
-    if (pl) pl.textContent = memcMode === 'blend' ? 'Simple' : memcMode === 'motion' ? 'Advanced' : 'Off';
+    if (pl) pl.textContent = memcMode === 'blend' ? 'Simple' : memcMode === 'motion' ? 'Advanced' : memcMode === 'ultra' ? 'Ultra' : 'Off';
   }
 
   function memcUpdateStatus(){
@@ -10012,8 +10016,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + '  float s0 = sad(c, best);\n'
       + '  float bestCost = s0;\n'
       + '  float bestSad = s0;\n'
-      + '  int stp = 16;\n'
-      + '  for (int l = 0; l < 5; l++){\n'
+      + '  int stp = 32;\n'
+      + '  for (int l = 0; l < 6; l++){\n'
       + '    ivec2 ctr = best;\n'
       + '    for (int j = -1; j <= 1; j++){\n'
       + '      for (int i = -1; i <= 1; i++){\n'
@@ -10028,14 +10032,14 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + '  }\n'
       + '  if (bestSad > s0 * 0.9 - 0.004){ best = ivec2(0); bestSad = s0; }\n'
       + '  float conf = 1.0 - smoothstep(0.05, 0.16, bestSad);\n'
-      + '  vec2 dv = clamp(vec2(best), -31.0, 31.0);\n'
-      + '  oc = vec4((dv + 32.0) / 64.0, conf, 1.0);\n'
+      + '  vec2 dv = clamp(vec2(best), -63.0, 63.0);\n'
+      + '  oc = vec4((dv + 64.0) / 128.0, conf, 1.0);\n'
       + '}\n';
 
     const FS_MED = 'uniform sampler2D uRaw; uniform ivec2 uGrid;\n'
       + 'vec3 fetchMv(ivec2 p){\n'
       + '  vec4 t = texelFetch(uRaw, clamp(p, ivec2(0), uGrid - 1), 0);\n'
-      + '  return vec3(t.rg * 64.0 - 32.0, t.b);\n'
+      + '  return vec3(t.rg * 128.0 - 64.0, t.b);\n'
       + '}\n'
       + 'void main(){\n'
       + '  ivec2 p = ivec2(gl_FragCoord.xy);\n'
@@ -10054,7 +10058,25 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + '    if (s < bestS){ bestS = s; bi = a; }\n'
       + '  }\n'
       + '  vec3 m = v[bi];\n'
-      + '  oc = vec4((m.xy + 32.0) / 64.0, m.z, 1.0);\n'
+      + '  oc = vec4((m.xy + 64.0) / 128.0, m.z, 1.0);\n'
+      + '}\n';
+
+    // Compares two frames on an 8x8 grid of cells (16x16 samples each). R = mean diff (x32),
+    // G = count of clearly-changed samples, B = coarse mean diff (x2, for hard-cut detection).
+    const FS_DUP = 'uniform sampler2D uA; uniform sampler2D uB;\n'
+      + 'void main(){\n'
+      + '  vec2 cell = floor(gl_FragCoord.xy);\n'
+      + '  float s = 0.0; float n = 0.0;\n'
+      + '  for (int j = 0; j < 16; j++){\n'
+      + '    for (int i = 0; i < 16; i++){\n'
+      + '      vec2 uv = (cell + (vec2(float(i), float(j)) + 0.5) * (1.0 / 16.0)) * 0.125;\n'
+      + '      vec3 d = abs(texture(uA, uv).rgb - texture(uB, uv).rgb);\n'
+      + '      float m = max(d.r, max(d.g, d.b));\n'
+      + '      s += m; if (m > 0.05) n += 1.0;\n'
+      + '    }\n'
+      + '  }\n'
+      + '  s *= (1.0 / 256.0);\n'
+      + '  oc = vec4(clamp(s * 32.0, 0.0, 1.0), min(n, 15.0) / 15.0, clamp(s * 2.0, 0.0, 1.0), 1.0);\n'
       + '}\n';
 
     // Catmull-Rom bicubic (9 taps) - a sharper resampler used when upscaling.
@@ -10083,6 +10105,60 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + '  return clamp(r, 0.0, 1.0);\n'
       + '}\n';
 
+    // Ultra: refine the 8px vectors to 4px blocks (8x8 window). Candidates: the parent's and its
+    // neighbours' vectors, the previous frame's vector at the same spot (temporal prior), then a
+    // local +-1 search and a parabolic sub-pixel fit.
+    const FS_REF = 'uniform sampler2D uCur; uniform sampler2D uPrev; uniform sampler2D uRaw; uniform sampler2D uPrior; uniform float uHasPrior; uniform ivec2 uSize; uniform ivec2 uGrid;\n'
+      + 'float sad4(ivec2 c, ivec2 d){\n'
+      + '  float s = 0.0;\n'
+      + '  for (int j = -4; j < 4; j++){ for (int i = -4; i < 4; i++){\n'
+      + '    ivec2 p = c + ivec2(i, j);\n'
+      + '    s += abs(texelFetch(uCur, clamp(p, ivec2(0), uSize - 1), 0).r - texelFetch(uPrev, clamp(p + d, ivec2(0), uSize - 1), 0).r);\n'
+      + '  } }\n'
+      + '  return s * (1.0 / 64.0);\n'
+      + '}\n'
+      + 'void main(){\n'
+      + '  ivec2 f = ivec2(gl_FragCoord.xy);\n'
+      + '  ivec2 c = f * 4 + 2;\n'
+      + '  ivec2 par = f / 2;\n'
+      + '  float s0 = sad4(c, ivec2(0));\n'
+      + '  ivec2 best = ivec2(0); float bestCost = s0 + 0.0015; float bestSad = s0;\n'
+      + '  for (int j = -1; j <= 1; j++){ for (int i = -1; i <= 1; i++){\n'
+      + '    vec4 t = texelFetch(uRaw, clamp(par + ivec2(i, j), ivec2(0), uGrid - 1), 0);\n'
+      + '    ivec2 d = ivec2(round(t.rg * 128.0 - 64.0));\n'
+      + '    float s = sad4(c, d);\n'
+      + '    float cost = s + 0.0006 * length(vec2(d)) + ((i != 0 || j != 0) ? 0.002 : 0.0);\n'
+      + '    if (cost < bestCost){ bestCost = cost; best = d; bestSad = s; }\n'
+      + '  } }\n'
+      + '  if (uHasPrior > 0.5){\n'
+      + '    vec4 t = texelFetch(uPrior, f, 0);\n'
+      + '    ivec2 d = ivec2(round(t.rg * 128.0 - 64.0));\n'
+      + '    float s = sad4(c, d);\n'
+      + '    float cost = s + 0.0006 * length(vec2(d)) + 0.0005;\n'
+      + '    if (cost < bestCost){ bestCost = cost; best = d; bestSad = s; }\n'
+      + '  }\n'
+      + '  for (int l = 0; l < 2; l++){\n'
+      + '    ivec2 ctr = best;\n'
+      + '    for (int j = -1; j <= 1; j++){ for (int i = -1; i <= 1; i++){\n'
+      + '      if (i == 0 && j == 0) continue;\n'
+      + '      ivec2 d = ctr + ivec2(i, j);\n'
+      + '      float s = sad4(c, d);\n'
+      + '      float cost = s + 0.0006 * length(vec2(d));\n'
+      + '      if (cost < bestCost){ bestCost = cost; best = d; bestSad = s; }\n'
+      + '    } }\n'
+      + '  }\n'
+      + '  if (bestSad > s0 * 0.9 - 0.004){ best = ivec2(0); bestSad = s0; }\n'
+      + '  vec2 sub = vec2(0.0);\n'
+      + '  float xm = sad4(c, best + ivec2(-1, 0)); float xp = sad4(c, best + ivec2(1, 0));\n'
+      + '  float ym = sad4(c, best + ivec2(0, -1)); float yp = sad4(c, best + ivec2(0, 1));\n'
+      + '  float dx = xm - 2.0 * bestSad + xp; float dy = ym - 2.0 * bestSad + yp;\n'
+      + '  if (dx > 1e-5) sub.x = clamp(0.5 * (xm - xp) / dx, -0.5, 0.5);\n'
+      + '  if (dy > 1e-5) sub.y = clamp(0.5 * (ym - yp) / dy, -0.5, 0.5);\n'
+      + '  float conf = 1.0 - smoothstep(0.05, 0.16, bestSad);\n'
+      + '  vec2 dv = clamp(vec2(best) + sub, -63.0, 63.0);\n'
+      + '  oc = vec4((dv + 64.0) / 128.0, conf, 1.0);\n'
+      + '}\n';
+
     const FS_BLEND = SAMP + 'uniform sampler2D uF0; uniform sampler2D uF1; uniform float uA;\n'
       + 'void main(){ oc = vec4(mix(samp(uF0, vUv), samp(uF1, vUv), uA), 1.0); }\n';
 
@@ -10090,7 +10166,11 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + 'uniform float uA; uniform vec2 uInvAna; uniform vec2 uFall;\n'
       + 'void main(){\n'
       + '  vec4 t = texture(uMv, vUv);\n'
-      + '  vec2 d = (t.rg * 64.0 - 32.0) * t.b;\n'
+      + '  vec2 d = (t.rg * 128.0 - 64.0) * t.b;\n'
+      + '  for (int k = 0; k < 2; k++){\n'
+      + '    vec4 t2 = texture(uMv, clamp(vUv - d * uInvAna * (1.0 - uA), 0.0, 1.0));\n'
+      + '    d = (t2.rg * 128.0 - 64.0) * t2.b;\n'
+      + '  }\n'
       + '  vec2 duv = d * uInvAna;\n'
       + '  vec3 c0 = samp(uF0, vUv + duv * uA);\n'
       + '  vec3 c1 = samp(uF1, vUv - duv * (1.0 - uA));\n'
@@ -10107,6 +10187,45 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       + '  float err = useMoved ? em : es;\n'
       + '  float bad = smoothstep(uFall.x, uFall.y, err);\n'
       + '  oc = vec4(mix(m, still, bad), 1.0);\n'
+      + '}\n';
+
+    // Ultra: uses BOTH the forward field (at the later frame) and the backward field (at the
+    // earlier frame). Each candidate is checked for forward/backward consistency (following a
+    // vector and then the opposite field should land back where it started); where neither is
+    // consistent the pixel is occluded or uncovered and the nearest real frame is shown.
+    const FS_MC2 = SAMP + 'uniform sampler2D uF0; uniform sampler2D uF1; uniform sampler2D uMvF; uniform sampler2D uMvB;\n'
+      + 'uniform float uA; uniform vec2 uInvAna; uniform vec2 uFall;\n'
+      + 'vec2 dec(vec4 t){ return (t.rg * 128.0 - 64.0) * t.b; }\n'
+      + 'float mx(vec3 v){ return max(v.r, max(v.g, v.b)); }\n'
+      + 'void main(){\n'
+      + '  vec2 inv = uInvAna;\n'
+      + '  vec2 d = dec(texture(uMvF, vUv));\n'
+      + '  vec2 e = dec(texture(uMvB, vUv));\n'
+      + '  for (int k = 0; k < 2; k++){\n'
+      + '    d = dec(texture(uMvF, clamp(vUv - d * inv * (1.0 - uA), 0.0, 1.0)));\n'
+      + '    e = dec(texture(uMvB, clamp(vUv - e * inv * uA, 0.0, 1.0)));\n'
+      + '  }\n'
+      + '  vec2 p1f = clamp(vUv - d * inv * (1.0 - uA), 0.0, 1.0);\n'
+      + '  vec2 q0b = clamp(vUv - e * inv * uA, 0.0, 1.0);\n'
+      + '  float rF = length(d + dec(texture(uMvB, clamp(p1f + d * inv, 0.0, 1.0))));\n'
+      + '  float rB = length(e + dec(texture(uMvF, clamp(q0b + e * inv, 0.0, 1.0))));\n'
+      + '  vec3 fa0 = samp(uF0, vUv + d * inv * uA);\n'
+      + '  vec3 fa1 = samp(uF1, vUv - d * inv * (1.0 - uA));\n'
+      + '  vec3 ba0 = samp(uF0, vUv - e * inv * uA);\n'
+      + '  vec3 ba1 = samp(uF1, vUv + e * inv * (1.0 - uA));\n'
+      + '  vec3 s0 = samp(uF0, vUv); vec3 s1 = samp(uF1, vUv);\n'
+      + '  float ef = mx(abs(fa0 - fa1)); float eb = mx(abs(ba0 - ba1)); float es = mx(abs(s0 - s1));\n'
+      + '  bool useF = (ef + 0.02 * min(rF, 4.0)) <= (eb + 0.02 * min(rB, 4.0));\n'
+      + '  vec3 c0 = useF ? fa0 : ba0; vec3 c1 = useF ? fa1 : ba1;\n'
+      + '  float em = useF ? ef : eb;\n'
+      + '  float rr = useF ? rF : rB;\n'
+      + '  vec3 still = mix(s0, s1, uA);\n'
+      + '  bool useMoved = em + 0.03 < es;\n'
+      + '  vec3 m = useMoved ? mix(c0, c1, uA) : still;\n'
+      + '  float err = useMoved ? em : es;\n'
+      + '  float bad = max(smoothstep(uFall.x, uFall.y, err), useMoved ? smoothstep(1.5, 4.0, rr) : 0.0);\n'
+      + '  vec3 nearest = mix(s0, s1, smoothstep(0.35, 0.65, uA));\n'
+      + '  oc = vec4(mix(m, nearest, bad), 1.0);\n'
       + '}\n';
 
     const compile = (type, src) => {
@@ -10135,10 +10254,13 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       memcProgs = {
         copy:  mk(FS_COPY,  ['uTex']),
         luma:  mk(FS_LUMA,  ['uTex', 'uOff']),
+        dup:   mk(FS_DUP,   ['uA', 'uB']),
         me:    mk(FS_ME,    ['uCur', 'uPrev', 'uSize', 'uLambda']),
         med:   mk(FS_MED,   ['uRaw', 'uGrid']),
         blend: mk(FS_BLEND, ['uF0', 'uF1', 'uA', 'uUp']),
-        mc:    mk(FS_MC,    ['uF0', 'uF1', 'uMv', 'uA', 'uInvAna', 'uFall', 'uUp'])
+        mc:    mk(FS_MC,    ['uF0', 'uF1', 'uMv', 'uA', 'uInvAna', 'uFall', 'uUp']),
+        ref:   mk(FS_REF,   ['uCur', 'uPrev', 'uRaw', 'uPrior', 'uHasPrior', 'uSize', 'uGrid']),
+        mc2:   mk(FS_MC2,   ['uF0', 'uF1', 'uMvF', 'uMvB', 'uA', 'uInvAna', 'uFall', 'uUp'])
       };
     } catch (e){
       return fail('Shader error: ' + (e && e.message ? e.message : e));
@@ -10163,15 +10285,19 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       memcUpdateStatus();
     }, false);
 
+    memcFloatOk = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
     memcGL = gl;
+    memcDupTex = memcMakeTex(8, 8, gl.NEAREST);
+    memcDupFbo = memcMakeFbo(memcDupTex);
+    memcDupBuf = new Uint8Array(8 * 8 * 4);
     return true;
   }
 
-  function memcMakeTex(w, h, filter){
+  function memcMakeTex(w, h, filter, fmt){
     const gl = memcGL;
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, fmt || gl.RGBA8, w, h);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -10190,10 +10316,16 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     const gl = memcGL;
     const tex = memcMakeTex(memcRingW, memcRingH, gl.LINEAR);
     const slot = { tex, fbo: memcMakeFbo(tex), mvTex: null, mvFbo: null,
-                   t: 0, valid: false, disc: false, hasMv: false, seq: 0, prevSeq: 0 };
+                   t: 0, valid: false, disc: false, dup: false, hasMv: false, seq: 0, prevSeq: 0 };
     if (motion && memcAna){
-      slot.mvTex = memcMakeTex(memcAna.gw, memcAna.gh, gl.LINEAR);
+      const fine = !!memcAna.fw;
+      const mw = fine ? memcAna.fw : memcAna.gw, mh = fine ? memcAna.fh : memcAna.gh;
+      slot.mvTex = memcMakeTex(mw, mh, gl.LINEAR, fine ? memcVecFmt() : undefined);
       slot.mvFbo = memcMakeFbo(slot.mvTex);
+      if (fine){
+        slot.mvTexB = memcMakeTex(mw, mh, gl.LINEAR, fine ? memcVecFmt() : undefined);
+        slot.mvFboB = memcMakeFbo(slot.mvTexB);
+      }
     }
     return slot;
   }
@@ -10206,18 +10338,23 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         if (s.tex) gl.deleteTexture(s.tex);
         if (s.mvFbo) gl.deleteFramebuffer(s.mvFbo);
         if (s.mvTex) gl.deleteTexture(s.mvTex);
+        if (s.mvFboB) gl.deleteFramebuffer(s.mvFboB);
+        if (s.mvTexB) gl.deleteTexture(s.mvTexB);
       });
       memcLuma.forEach(l => { gl.deleteFramebuffer(l.fbo); gl.deleteTexture(l.tex); });
       if (memcMvRaw){ gl.deleteFramebuffer(memcMvRaw.fbo); gl.deleteTexture(memcMvRaw.tex); }
+      if (memcMvRef){ gl.deleteFramebuffer(memcMvRef.fbo); gl.deleteTexture(memcMvRef.tex); }
     }
-    memcRing = []; memcLuma = []; memcMvRaw = null; memcAna = null;
+    memcRing = []; memcLuma = []; memcMvRaw = null; memcMvRef = null; memcAna = null;
     memcResKey = ''; memcWrite = 0; memcPrevSeq = 0; memcPrevLumaValid = false; memcLumaIdx = 0;
+    memcPrevSlot = null; memcUniqSlot = null;
     memcLastKey = '';
   }
 
   function memcInvalidate(){
     for (let i = 0; i < memcRing.length; i++){ memcRing[i].valid = false; memcRing[i].hasMv = false; }
     memcPrevSeq = 0; memcPrevLumaValid = false; memcLastKey = '';
+    memcPrevSlot = null; memcUniqSlot = null;
   }
 
   // Forget timing history (seek, pause, rate change, mode change).
@@ -10226,23 +10363,25 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     memcLastT = null;
     memcOffValid = false;
     memcLastTT = -Infinity;
+    memcLastUniqT = null;
   }
   // Forget everything learned about the current file.
   function memcResetSource(){
     memcResetStream();
     memcPeriod = 1 / 30; memcPeriodN = 0; memcDts = [];
+    memcUDts = []; memcDupMs = 0; memcDupN = 0; memcDupOff = false;
     memcBypass = false;
   }
 
   function memcEnsureResources(vw, vh){
     const gl = memcGL;
     const smoothing = memcSmoothing();
-    const motion = memcMode === 'motion' && !memcBypass;
+    const motion = memcIsMotion() && !memcBypass;
     const fps = Math.min(120, 1 / Math.max(memcPeriod, 0.004));
     const needFrames = Math.ceil((Math.min(Math.max(effLatencyMs(), 0), 2000) / 1000 + (smoothing ? 0.4 : 0.3)) * fps) + 4;
     const wantN = Math.max(12, Math.ceil(needFrames / 8) * 8);
     const tier = MEMC_TIERS[memcQuality];
-    const key = (motion ? 'm' : 'b') + memcQuality + ':' + vw + 'x' + vh;
+    const key = (motion ? (memcMode === 'ultra' ? 'u' : 'm') : 'b') + memcQuality + ':' + vw + 'x' + vh;
     if (key === memcResKey && wantN <= memcRing.length) return;
     // Slider pushed the delay past the ring: grow in place instead of wiping.
     // Old frames stay, new empty slots go in at the write head, so the picture
@@ -10290,6 +10429,11 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       }
       const rawTex = memcMakeTex(memcAna.gw, memcAna.gh, gl.NEAREST);
       memcMvRaw = { tex: rawTex, fbo: memcMakeFbo(rawTex) };
+      if (memcMode === 'ultra'){
+        memcAna.fw = memcAna.gw * 2; memcAna.fh = memcAna.gh * 2;
+        const refTex = memcMakeTex(memcAna.fw, memcAna.fh, gl.NEAREST, memcVecFmt());
+        memcMvRef = { tex: refTex, fbo: memcMakeFbo(refTex) };
+      }
     }
     for (let i = 0; i < N; i++) memcRing.push(memcMakeSlot(motion));
     // Out of GPU memory: drop one tier and rebuild on the next frame.
@@ -10379,10 +10523,27 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     gl.uniform1i(memcProgs.copy.u.uTex, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    slot.t = t; slot.valid = true; slot.disc = disc; slot.hasMv = false;
-    slot.seq = ++memcSeq; slot.prevSeq = memcPrevSeq; memcPrevSeq = slot.seq;
+    let dup = false;
+    if (memcSmoothing() && !memcDupOff && memcPrevSlot && memcPrevSlot.valid && !disc){
+      const r = memcDupCheck(memcPrevSlot, slot);
+      dup = r.dup;
+      if (r.cut) disc = true;   // hard cut: never blend across it, and skip motion search
+    }
+    memcPrevSlot = slot;
+    slot.t = t; slot.valid = true; slot.disc = disc; slot.dup = dup; slot.hasMv = false;
+    slot.seq = ++memcSeq; slot.prevSeq = memcPrevSeq;
+    const puSlot = memcUniqSlot;
+    if (!dup) memcUniqSlot = slot;
+    if (!dup){
+      memcPrevSeq = slot.seq;
+      if (!disc && memcLastUniqT != null){
+        const ug = t - memcLastUniqT;
+        if (ug > 0.004 && ug < 0.5){ memcUDts.push(ug); if (memcUDts.length > 24) memcUDts.shift(); }
+      }
+      memcLastUniqT = t;
+    }
 
-    if (memcMode === 'motion' && memcAna && !memcBypass){
+    if (memcIsMotion() && memcAna && !memcBypass && !dup){
       const cur = memcLumaIdx, prev = 1 - cur;
       const A = memcAna;
       gl.bindFramebuffer(gl.FRAMEBUFFER, memcLuma[cur].fbo);
@@ -10393,7 +10554,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       gl.uniform2f(memcProgs.luma.u.uOff, 0.25 / A.w, 0.25 / A.h);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      if (memcPrevLumaValid && !disc){
+      if (memcPrevLumaValid && !disc && memcMode !== 'ultra'){
         gl.bindFramebuffer(gl.FRAMEBUFFER, memcMvRaw.fbo);
         gl.viewport(0, 0, A.gw, A.gh);
         gl.useProgram(memcProgs.me.p);
@@ -10413,11 +10574,94 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         gl.uniform2i(memcProgs.med.u.uGrid, A.gw, A.gh);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         slot.hasMv = true;
+      } else if (memcPrevLumaValid && !disc && memcMvRef){
+        memcUltraMv(slot, cur, prev, puSlot);
       }
       memcPrevLumaValid = true;
       memcLumaIdx = prev;
     }
     return true;
+  }
+
+  // Returns { dup, cut } comparing frame b against the previous capture a.
+  // One tiny synchronous readback per source frame; switches itself off if that is slow.
+  function memcDupCheck(a, b){
+    const gl = memcGL, P = memcProgs.dup;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, memcDupFbo);
+    gl.viewport(0, 0, 8, 8);
+    gl.useProgram(P.p);
+    memcBind(0, a.tex); memcBind(1, b.tex);
+    gl.uniform1i(P.u.uA, 0); gl.uniform1i(P.u.uB, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const t0 = performance.now();
+    gl.readPixels(0, 0, 8, 8, gl.RGBA, gl.UNSIGNED_BYTE, memcDupBuf);
+    memcDupMs += ((performance.now() - t0) - memcDupMs) * 0.1;
+    if (++memcDupN >= 24 && memcDupMs > 10) memcDupOff = true;
+    let maxMean = 0, cnt = 0, coarse = 0;
+    for (let i = 0; i < 64; i++){
+      const m = memcDupBuf[i * 4] / 255 / 32;
+      if (m > maxMean) maxMean = m;
+      cnt += Math.round(memcDupBuf[i * 4 + 1] / 255 * 15);
+      coarse += memcDupBuf[i * 4 + 2] / 255 / 2;
+    }
+    coarse /= 64;
+    return { dup: maxMean < 0.006 && cnt <= 2, cut: coarse > 0.25 };
+  }
+
+  function memcVecFmt(){ return memcFloatOk ? memcGL.RGBA16F : memcGL.RGBA8; }
+  function memcIsMotion(){ return memcMode === 'motion' || memcMode === 'ultra'; }
+
+  // Ultra motion field: coarse 8px search -> 4px refinement (+temporal prior, sub-pixel) -> median,
+  // run both ways. slot.mvTex: at this frame's positions, pointing into the previous unique frame.
+  // slot.mvTexB: at the previous frame's positions, pointing into this one.
+  // pu: previous unique slot; its fields seed the search (motion is usually continuous).
+  function memcUltraMv(slot, cur, prev, pu){
+    const gl = memcGL, A = memcAna, M = memcProgs;
+    const havePrior = !!(pu && pu.hasMv && pu.mvTex && pu.mvTexB && pu.seq === slot.prevSeq);
+    const run = (la, lb, outFbo, priorTex) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, memcMvRaw.fbo);
+      gl.viewport(0, 0, A.gw, A.gh);
+      gl.useProgram(M.me.p);
+      memcBind(0, la.tex); memcBind(1, lb.tex);
+      gl.uniform1i(M.me.u.uCur, 0); gl.uniform1i(M.me.u.uPrev, 1);
+      gl.uniform2i(M.me.u.uSize, A.w, A.h);
+      gl.uniform1f(M.me.u.uLambda, 0.0006);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, memcMvRef.fbo);
+      gl.viewport(0, 0, A.fw, A.fh);
+      gl.useProgram(M.ref.p);
+      memcBind(0, la.tex); memcBind(1, lb.tex); memcBind(2, memcMvRaw.tex);
+      memcBind(3, priorTex || memcMvRaw.tex);
+      gl.uniform1i(M.ref.u.uCur, 0); gl.uniform1i(M.ref.u.uPrev, 1); gl.uniform1i(M.ref.u.uRaw, 2);
+      gl.uniform1i(M.ref.u.uPrior, 3); gl.uniform1f(M.ref.u.uHasPrior, priorTex ? 1 : 0);
+      gl.uniform2i(M.ref.u.uSize, A.w, A.h);
+      gl.uniform2i(M.ref.u.uGrid, A.gw, A.gh);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      memcBind(2, null); memcBind(3, null);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);
+      gl.viewport(0, 0, A.fw, A.fh);
+      gl.useProgram(M.med.p);
+      memcBind(0, memcMvRef.tex);
+      gl.uniform1i(M.med.u.uRaw, 0);
+      gl.uniform2i(M.med.u.uGrid, A.fw, A.fh);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    run(memcLuma[cur], memcLuma[prev], slot.mvFbo, havePrior ? pu.mvTex : null);
+    run(memcLuma[prev], memcLuma[cur], slot.mvFboB, havePrior ? pu.mvTexB : null);
+    slot.hasMv = true;
+  }
+
+  // Typical gap between UNIQUE source frames (longer than the frame period when the content
+  // holds each picture for 2-3 frames, e.g. animation on twos). Drives the lookahead.
+  function memcUniqGap(){
+    let g = memcPeriod;
+    if (memcUDts.length >= 6){
+      const srt = memcUDts.slice().sort((x, y) => x - y);
+      g = Math.max(g, srt[Math.min(srt.length - 1, Math.floor(srt.length * 0.8))]);
+    }
+    return Math.min(g, memcPeriod * 4);
   }
 
   const memcDrawStamps = [];
@@ -10427,11 +10671,14 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (memcCountDraws) memcDrawStamps.push(performance.now());
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, memcCanvas.width, memcCanvas.height);
-    if (f1 && a > 0 && memcMode === 'motion' && memcAna && f1.hasMv && f1.prevSeq === f0.seq){
-      const P = memcProgs.mc;
+    if (f1 && a > 0 && memcIsMotion() && memcAna && f1.hasMv && f1.prevSeq === f0.seq && (memcMode !== 'ultra' || f1.mvTexB)){
+      const ultra = memcMode === 'ultra';
+      const P = ultra ? memcProgs.mc2 : memcProgs.mc;
       gl.useProgram(P.p);
       memcBind(0, f0.tex); memcBind(1, f1.tex); memcBind(2, f1.mvTex);
-      gl.uniform1i(P.u.uF0, 0); gl.uniform1i(P.u.uF1, 1); gl.uniform1i(P.u.uMv, 2);
+      gl.uniform1i(P.u.uF0, 0); gl.uniform1i(P.u.uF1, 1);
+      if (ultra){ memcBind(3, f1.mvTexB); gl.uniform1i(P.u.uMvF, 2); gl.uniform1i(P.u.uMvB, 3); }
+      else gl.uniform1i(P.u.uMv, 2);
       gl.uniform1f(P.u.uA, a);
       gl.uniform2f(P.u.uInvAna, 1 / memcAna.w, 1 / memcAna.h);
       gl.uniform1f(P.u.uUp, memcOutW > memcRingW ? 1 : 0);
@@ -10465,7 +10712,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       L = memcLEff;
     }
     memcLEffAt = nowMs;
-    const minE = memcPeriod * 1.15 + 0.004;
+    const uGap = memcUniqGap();
+    const minE = uGap * 1.15 + 0.004;
     const smoothing = memcSmoothing();
     memcExtraSec = (hold || !smoothing) ? 0 : Math.max(0, minE - L);
     let tt = mediaNow - ((hold || !smoothing) ? L : Math.max(L, minE));
@@ -10481,29 +10729,36 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       if (tt < memcLastTT && memcLastTT - tt < 0.12) tt = memcLastTT;
       memcLastTT = tt;
     }
-    if (smoothOn) tt = Math.floor(tt / outStep) * outStep;
+    if (smoothOn && nowMs - memcLastDrawMs < 800 / memcOutFps) return;
 
-    let f0 = null, f1 = null, oldest = null, any = false;
+    // While interpolating, repeated (held) frames are not anchors: blend between the
+    // neighbouring UNIQUE frames so held pictures glide instead of sitting still then snapping.
+    let f0 = null, f1 = null, f0a = null, oldest = null, any = false;
     for (let i = 0; i < memcRing.length; i++){
       const s = memcRing[i];
       if (!s.valid) continue;
       any = true;
       if (!oldest || s.t < oldest.t) oldest = s;
-      if (s.t <= tt){ if (!f0 || s.t > f0.t) f0 = s; }
-      else { if (!f1 || s.t < f1.t) f1 = s; }
+      const skip = smoothOn && s.dup;
+      if (s.t <= tt){
+        if (!f0a || s.t > f0a.t) f0a = s;
+        if (!skip && (!f0 || s.t > f0.t)) f0 = s;
+      } else if (!skip && (!f1 || s.t < f1.t)) f1 = s;
     }
     if (!any) return;
+    if (!f0) f0 = f0a;
     if (!f0){ f0 = oldest; f1 = null; }
     let a = 0;
     if (smoothOn && f1 && !f1.disc){
       const gap = f1.t - f0.t;
-      if (gap > 0 && gap <= memcPeriod * 2.6) a = Math.min(1, Math.max(0, (tt - f0.t) / gap));
+      if (gap > 0 && gap <= Math.max(memcPeriod * 2.6, uGap * 1.25)) a = Math.min(1, Math.max(0, (tt - f0.t) / gap));
     } else {
       f1 = null;
     }
     const key = f0.seq + ':' + (f1 ? f1.seq : 0) + ':' + Math.round(a * 64) + ':' + memcMode;
     if (key === memcLastKey) return;
     memcLastKey = key;
+    memcLastDrawMs = nowMs;
     memcDraw(f0, f1, a);
   }
 
@@ -10523,7 +10778,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     memcVfcId = videoEl.requestVideoFrameCallback(memcOnFrame);
     try {
       const ok = memcCapture(meta);
-      if (ok && memcMode !== 'off' && memcPeriodN >= 30 && !memcBypass && (memcEffRate() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
+      if (ok && memcMode !== 'off' && memcPeriodN >= 30 && !memcBypass && (memcRate() / memcUniqGap() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
         memcBypass = true;
         refreshVideoDelayState();
         return;
@@ -10592,7 +10847,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   }
 
   function setMemcMode(m){
-    if (m !== 'off' && m !== 'blend' && m !== 'motion') m = 'off';
+    if (m !== 'off' && m !== 'blend' && m !== 'motion' && m !== 'ultra') m = 'off';
     memcMode = m;
     try { localStorage.setItem(MEMC_KEY, m); } catch (e){}
     memcBypass = false;
@@ -10928,7 +11183,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       if (memcMode !== 'off'){
         if (memcFailed) mode = 'unsupported';
         else if (memcBypass) mode = 'skipped (over ' + memcMaxIn + ' fps)' + (memcActive ? ', delay: GPU' : '');
-        else if (memcActive) mode = 'smoothing: ' + (memcMode === 'motion' ? 'advanced' : 'simple');
+        else if (memcActive) mode = 'smoothing: ' + (memcMode === 'ultra' ? 'ultra' : memcMode === 'motion' ? 'advanced' : 'simple');
       } else if (memcActive) mode = 'delay: GPU';
       el.textContent =
         'Source  ' + f1(src) + ' fps\n' +
@@ -10976,7 +11231,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     memcOffValid = false;
     // Speed changes the effective source rate: un-skip when it now fits under the limit.
     if (memcBypass && memcPeriodN >= 30 && memcMode !== 'off'
-        && !(memcEffRate() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
+        && !(memcRate() / memcUniqGap() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
       memcBypass = false;
       memcResetStream();
       refreshVideoDelayState();
