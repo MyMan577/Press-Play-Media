@@ -4200,6 +4200,10 @@
                   <button type="button" class="memc-mode-btn" data-memc-q="3">4K</button>
                 </div>
                 <p class="menu-section-hint" style="margin:6px 0 0 0;">Adds in-between frames to low-fps video. Simple suits low-end devices, Advanced tracks motion and needs a decent GPU. "Smooth up to" skips videos faster than that (set 60 to smooth 60 fps video). "Output up to" caps how many frames per second are shown; lower saves battery. Smoothing quality sets the resolution the smoothing works at (High and 4K need a strong GPU and lots of memory; the player steps down by itself if memory runs out). Adds about one frame of delay, covered by the latency setting.</p>
+                <label class="override-toggle" style="margin-top:8px;" title="On: slowing playback counts as a lower source rate, so slowed 60 fps video is smoothed and output fills up to the Output limit. Off: speed is ignored.">
+                  <input type="checkbox" id="memc-speed-toggle" checked>
+                  <span>Smooth slowed playback</span>
+                </label>
                 <label class="override-toggle" style="margin-top:8px;">
                   <input type="checkbox" id="fps-counter-toggle">
                   <span>FPS counter</span>
@@ -7929,6 +7933,10 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (a >= 10 && a <= 120) memcMaxIn = a;
     if (b >= 10 && b <= 120) memcOutFps = b;
   } catch (e){}
+  const MEMC_SPEED_KEY = 'playerMemcSpeedAware';
+  let memcSpeedAware = true;   // count playback speed when judging source rate / output spacing
+  try { if (localStorage.getItem(MEMC_SPEED_KEY) === '0') memcSpeedAware = false; } catch (e){}
+  const memcRate = () => memcSpeedAware ? (videoEl.playbackRate || 1) : 1;
   let memcMode = 'off';   // 'off' | 'blend' (Simple) | 'motion' (Advanced)
   try { const m = localStorage.getItem(MEMC_KEY); if (m === 'blend' || m === 'motion') memcMode = m; } catch (e){}
   // Processing-quality tiers: how large the frame ring is, how much GPU memory it may use,
@@ -8765,6 +8773,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     'ppMarathonBgV1',
     'ppModeGateV1',
     'playerPerfModeV1',
+    'playerMemcSpeedAware',
     'playerLayoutMode',
     'playerHistoryV1',
     'playerGestureMapPlayerMode'
@@ -9935,7 +9944,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (memcMode !== 'off'){
       if (memcFailed){ txt = 'Unsupported'; tip = memcFailWhy; }
       else if (memcBypass){ txt = 'Skipped (fps)'; tip = 'This video is faster than the "Smooth up to" limit (or too slow to interpolate).'; }
-      else if (memcActive){ txt = Math.round(1 / Math.max(memcPeriod, 0.004)) + ' fps \u2192 up to ' + memcOutFps; }
+      else if (memcActive){ txt = Math.round(memcEffRate()) + ' fps \u2192 up to ' + memcOutFps; }
       else txt = 'Video only';
     }
     if (memcMode === 'off' && memcActive){ txt = 'Delay via GPU'; tip = 'Smoothing is off; the picture delay is rendered on the GPU.'; }
@@ -10460,7 +10469,10 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     const smoothing = memcSmoothing();
     memcExtraSec = (hold || !smoothing) ? 0 : Math.max(0, minE - L);
     let tt = mediaNow - ((hold || !smoothing) ? L : Math.max(L, minE));
-    const outStep = 1 / memcOutFps;
+    // Media-time step between presented frames. Scaled by playback speed so "Output up to"
+    // is measured per real second: at 0.5x a 60 fps video yields 30 unique frames/s, so it
+    // can be filled out to the full output rate instead of just 60.
+    const outStep = memcRate() / memcOutFps;
     const smoothOn = !hold && smoothing && outStep < memcPeriod * 0.95;
     // Never step backwards by a hair (clock-estimate jitter would flip the
     // picture back a frame); real seeks/big changes still go through.
@@ -10502,13 +10514,16 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     refreshVideoDelayState();
   }
 
+  // Unique source frames per REAL second: source fps x playback speed (0.5x on 60 fps = 30).
+  function memcEffRate(){ return memcRate() / Math.max(memcPeriod, 0.004); }
+
   function memcOnFrame(now, meta){
     memcVfcId = null;
     if (!memcActive) return;
     memcVfcId = videoEl.requestVideoFrameCallback(memcOnFrame);
     try {
       const ok = memcCapture(meta);
-      if (ok && memcMode !== 'off' && memcPeriodN >= 30 && !memcBypass && (1 / memcPeriod > memcMaxIn + 1.5 || memcPeriod > 0.125)){
+      if (ok && memcMode !== 'off' && memcPeriodN >= 30 && !memcBypass && (memcEffRate() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
         memcBypass = true;
         refreshVideoDelayState();
         return;
@@ -10607,6 +10622,19 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     memcUpdateStatus();
   });
   memcUpdateSliders();
+  const memcSpeedEl = document.getElementById('memc-speed-toggle');
+  if (memcSpeedEl){
+    memcSpeedEl.checked = memcSpeedAware;
+    memcSpeedEl.addEventListener('change', () => {
+      memcSpeedAware = memcSpeedEl.checked;
+      try { localStorage.setItem(MEMC_SPEED_KEY, memcSpeedAware ? '1' : '0'); } catch (e){}
+      memcBypass = false;       // re-judge the skip with the new rule
+      memcLastKey = '';
+      memcResetStream();
+      refreshVideoDelayState();
+      memcUpdateStatus();
+    });
+  }
 
   const memcStrEl = document.getElementById('memc-str'), memcStrValEl = document.getElementById('memc-str-val');
   const MEMC_STR_KEY = 'playerMemcStrength';
@@ -10944,7 +10972,16 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   videoEl.addEventListener('loadedmetadata', () => { memcResetSource(); refreshVideoDelayState(); });
   videoEl.addEventListener('emptied', () => { memcResetSource(); });
   videoEl.addEventListener('seeking', () => { if (memcActive) memcResetStream(); });
-  videoEl.addEventListener('ratechange', () => { memcOffValid = false; });
+  videoEl.addEventListener('ratechange', () => {
+    memcOffValid = false;
+    // Speed changes the effective source rate: un-skip when it now fits under the limit.
+    if (memcBypass && memcPeriodN >= 30 && memcMode !== 'off'
+        && !(memcEffRate() > memcMaxIn + 1.5 || memcPeriod / memcRate() > 0.125)){
+      memcBypass = false;
+      memcResetStream();
+      refreshVideoDelayState();
+    }
+  });
   videoEl.addEventListener('pause', () => {
     memcOffValid = false;
     if (memcActive) try { memcPresent(videoEl.currentTime, true); } catch (e){ memcFailHard(e); }
