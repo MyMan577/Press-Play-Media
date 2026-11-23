@@ -140,7 +140,33 @@
     rainbow: ["#E35D5B", "#F2B544", "#7ED081", "#4a90d9", "#9b5fc0"].map((c, i) => `<path d="M${6 + i * 4} 48 A${26 - i * 4} ${26 - i * 4} 0 0 1 ${58 - i * 4} 48" ${N} stroke="${c}" stroke-width="4"/>`).join("") + `<path d="M6 48 A26 26 0 0 1 58 48 M26 48 A6 6 0 0 1 38 48" ${N} ${T}/><ellipse cx="12" cy="50" rx="9" ry="5" fill="#fff" ${T}/><ellipse cx="52" cy="50" rx="9" ry="5" fill="#fff" ${T}/>`,
     crescendo: `<path d="M8 32 L56 14 M8 32 L56 50" ${N} ${O}/>` + [[20, 26, 4], [32, 22, 5], [46, 18, 6]].map(([x, y, r]) => `<ellipse cx="${x}" cy="${y + 20}" rx="${r}" ry="${r * 0.75}" fill="${INK}" transform="rotate(-20 ${x} ${y + 20})"/><path d="M${x + r * 0.9} ${y + 19} V${y + 4}" ${N} ${O}/>`).join(""),
     deadline: `<circle cx="32" cy="36" r="20" fill="#F5EEDC" ${O}/><path d="M16 14 L22 20 M48 14 L42 20" ${N} ${O}/><circle cx="14" cy="12" r="6" fill="#D2453B" ${O}/><circle cx="50" cy="12" r="6" fill="#D2453B" ${O}/><path d="M32 36 V22 M32 36 L42 36" ${N} stroke="${INK}" stroke-width="3" stroke-linecap="round"/><path d="M32 36 L46 30" ${N} stroke="#D2453B" stroke-width="2" stroke-linecap="round"/><path d="M24 56 L20 60 M40 56 L44 60" ${N} ${O}/>`,
+    collector: `<path d="M6 14 Q19 10 32 15 V54 Q19 49 6 53Z" fill="#8b5a2b" ${O}/><path d="M58 14 Q45 10 32 15 V54 Q45 49 58 53Z" fill="#9a6a3a" ${O}/>` +
+      [[11, 18], [20, 18], [11, 32], [20, 32]].map(([x, y]) => `<rect x="${x}" y="${y}" width="8" height="11" rx="1" fill="#F1E6C8" ${T}/>`).join("") +
+      [[36, 18], [45, 18], [36, 32]].map(([x, y]) => `<rect x="${x}" y="${y}" width="8" height="11" rx="1" fill="#F1E6C8" ${T}/>`).join("") +
+      `<rect x="45" y="32" width="8" height="11" rx="1" ${N} stroke="${INK}" stroke-width="1.2" stroke-dasharray="2 1.5"/>` + spade(40, 23, 2.4) + heart(15, 23, 2.2),
     keymaster: `<circle cx="32" cy="32" r="10" ${N} stroke="${INK}" stroke-width="5"/><circle cx="32" cy="32" r="10" ${N} stroke="#C9A227" stroke-width="2.6"/>` + [[-40, "#E8C04A"], [10, "#a9b2bb"], [60, "#b07c44"]].map(([r, c]) => `<g transform="rotate(${r} 32 32)"><circle cx="32" cy="14" r="5" fill="${c}" ${O}/><path d="M32 19 V24" ${N} ${O}/></g><g transform="rotate(${r + 180} 32 32)"><path d="M32 42 V58 M32 52 H37 M32 56 H36" ${N} stroke="${INK}" stroke-width="4.4" stroke-linecap="round"/><path d="M32 42 V58 M32 52 H37 M32 56 H36" ${N} stroke="${c}" stroke-width="2.2" stroke-linecap="round"/></g>`).join(""),
+  };
+
+  // ---------- legendary artifacts ----------
+  const LEGENDS = {
+    phoenix: flame(32, 40, 18) + `<path d="M20 52 Q24 26 44 8 Q40 30 26 54Z" fill="#E8743B" ${O}/><path d="M24 50 Q30 32 42 14 M28 40 L22 36 M31 33 L25 28 M34 26 L29 21 M30 40 L37 38 M33 33 L40 30" ${N} ${T}/>`,
+    hydra: heart(32, 38, 12, "#3FA97A") + [[-1, 14, 16], [0, 32, 8], [1, 50, 16]].map(([d, x, y]) => `<path d="M32 30 Q${32 + d * 10} ${y + 8} ${x} ${y}" ${N} stroke="${INK}" stroke-width="6.2" stroke-linecap="round"/><path d="M32 30 Q${32 + d * 10} ${y + 8} ${x} ${y}" ${N} stroke="#3FA97A" stroke-width="4" stroke-linecap="round"/><ellipse cx="${x}" cy="${y}" rx="4.4" ry="3.4" fill="#3FA97A" ${O}/>`).join(""),
+    midnightSun: sun(32, 32, 14, "#F6C445") + `<circle cx="38" cy="28" r="12" fill="#26304f" ${O}/>` + sparkle(14, 50, 4, "#fff") + sparkle(52, 50, 3, "#fff"),
+    eternalEngine: [[24, 36, 13, 0], [42, 24, 9, 20]].map(([x, y, r, rot]) => Array.from({ length: 8 }, (_, i) => `<rect x="${x - 3}" y="${y - r - 5}" width="6" height="7" rx="1" fill="#a9b2bb" ${T} transform="rotate(${i * 45 + rot} ${x} ${y})"/>`).join("") + `<circle cx="${x}" cy="${y}" r="${r}" fill="#a9b2bb" ${O}/><circle cx="${x}" cy="${y}" r="${r * 0.4}" fill="#5c6670" ${T}/>`).join("") + `<path d="M40 44 A10 10 0 1 0 50 34" ${N} stroke="${INK}" stroke-width="3"/><path d="M50 30 L50 37 L44 34Z" fill="${INK}"/>`,
+    grandLedger: book("#5a1f1f", `<path d="M24 20 H44 M24 25 H44 M24 30 H40" ${N} stroke="#E8C04A" stroke-width="1.6"/>`) + coin(44, 50, 7) + coin(52, 44, 6),
+  };
+
+  // ---------- booster packs: a crimped foil packet with its emblem ----------
+  const packet = (fill, emblem) =>
+    `<path d="M14 10 L16 6 L18 10 L20 6 L22 10 L24 6 L26 10 L28 6 L30 10 L32 6 L34 10 L36 6 L38 10 L40 6 L42 10 L44 6 L46 10 L48 6 L50 10 V54 L48 58 L46 54 L44 58 L42 54 L40 58 L38 54 L36 58 L34 54 L32 58 L30 54 L28 58 L26 54 L24 58 L22 54 L20 58 L18 54 L16 58 L14 54Z" fill="${fill}" ${O}/>` +
+    `<path d="M14 15 H50 M14 49 H50" ${N} ${T} opacity=".6"/><path d="M18 16 L24 48" ${N} stroke="#fff" stroke-width="2" opacity=".35" stroke-linecap="round"/>` +
+    `<circle cx="32" cy="32" r="12" fill="#F5EEDC" ${T}/>` + emblem;
+  const PACKS = {
+    artifactPack: packet("#C9A227", gem(32, 32, 8, "#9b5fc0")),
+    itemPack: packet("#5f9a7a", `<path d="M29 24 H35 V27 Q40 30 40 35 Q40 41 32 41 Q24 41 24 35 Q24 30 29 27Z" fill="#7fb6e0" ${T}/>`),
+    cardPack: packet("#8a3a32", spade(32, 31, 7)),
+    ornatePack: packet("#6e3a68", seal(32, 32, 8, "#C0392B", "")),
+    legendPack: packet("#E8743B", star5(32, 32, 9, "#F6D35B")),
   };
 
   // ---------- items (consumables) ----------
@@ -208,7 +234,7 @@
     pruningShears: `<g transform="rotate(-20 32 32)"><path d="M30 30 L14 6 Q26 10 34 28Z" fill="#a9b2bb" ${O}/><path d="M34 30 L50 6 Q38 10 30 28Z" fill="#c9ccd0" ${O}/><path d="M30 32 L18 56" ${N} stroke="${INK}" stroke-width="8" stroke-linecap="round"/><path d="M30 32 L18 56" ${N} stroke="#D2453B" stroke-width="5" stroke-linecap="round"/><path d="M34 32 L46 56" ${N} stroke="${INK}" stroke-width="8" stroke-linecap="round"/><path d="M34 32 L46 56" ${N} stroke="#D2453B" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="30" r="3" fill="#E8C04A" ${T}/></g>`,
     forgeHammer: `<path d="M6 54 H58 L54 46 H10Z" fill="#3d4148" ${O}/>` + hammer(-35) + sparkle(50, 40, 4, "#FFB84D") + sparkle(42, 44, 3, "#FFE07A"),
     jackpot: `<rect x="8" y="12" width="48" height="40" rx="6" fill="#C0392B" ${O}/>` + [16, 32, 48].map((x) => `<rect x="${x - 6}" y="20" width="12" height="18" rx="2" fill="#F5EEDC" ${T}/>` + txt(x, 34, 12, "J", "#C0392B")).join("") + `<rect x="18" y="42" width="28" height="6" rx="2" fill="${INK}"/><path d="M56 22 H60 V36" ${N} ${O}/><circle cx="60" cy="18" r="3.4" fill="#E8C04A" ${O}/>`,
-    heartsBanner: banner("#E35D5B") + heart(32, 25, 6, "#fbe3dc"),
+    heartsBanner: banner("#8a3a32") + star5(32, 25, 7, "#F6D35B"),
     twinMolds: `<rect x="6" y="18" width="24" height="34" rx="3" fill="#8a96a3" ${O}/><rect x="34" y="18" width="24" height="34" rx="3" fill="#8a96a3" ${O}/><rect x="11" y="23" width="14" height="24" rx="2" fill="#5c6670" ${T}/><rect x="39" y="23" width="14" height="24" rx="2" fill="#E8C04A" ${T}/>` + heart(18, 35, 4, "#E8C04A") + heart(46, 35, 4, "#C9A227"),
     bountyContract: scroll("#EAD9B0", false) + txt(34, 32, 8, "WANTED", INK) + `<path d="M24 38 L42 38" ${N} ${T}/>` + seal(44, 44, 6, "#C0392B", ""),
   };
@@ -255,13 +281,18 @@
       .replace(new RegExp(`fill="${INK}"`, "g"), `fill="${GOLD}"`)
       .replace(/stroke="(#[0-9a-fA-F]{6})" stroke-width="([\d.]+)"/g, (m, c, w) => c === GOLD ? m : `stroke="${en(c)}" stroke-width="${w}"`);
   }
-  function relic(inner, cls = "") {
-    return `<svg class="aart relic ${cls}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
-      `<defs><radialGradient id="relicbg" cx=".5" cy=".38" r=".7"><stop offset="0" stop-color="#2a3a2c"/><stop offset="1" stop-color="#0e1510"/></radialGradient></defs>` +
-      `<rect x="1.5" y="1.5" width="61" height="61" rx="9" fill="url(#relicbg)" stroke="${GOLD}" stroke-width="1.4"/>` +
-      `<rect x="4.5" y="4.5" width="55" height="55" rx="6.5" fill="none" stroke="${GOLD}" stroke-width=".6" opacity=".55"/>` +
-      [[4.5, 4.5], [59.5, 4.5], [4.5, 59.5], [59.5, 59.5]].map(([x, y]) => `<path d="M${x} ${y - 2.6} L${x + 2.6} ${y} L${x} ${y + 2.6} L${x - 2.6} ${y}Z" fill="${GOLD}"/>`).join("") +
-      `<g transform="translate(32 32) scale(.74) translate(-32 -32)">${engrave(inner)}</g></svg>`;
+  // Legendary artifacts get an ember frame and keep more of their colour.
+  function relic(inner, cls = "", legendary = false) {
+    const edge = legendary ? "#F2A65A" : GOLD;
+    const bg = legendary ? ["#3a2418", "#140b07", "legbg"] : ["#2a3a2c", "#0e1510", "relicbg"];
+    return `<svg class="aart relic ${legendary ? "legendary " : ""}${cls}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<defs><radialGradient id="${bg[2]}" cx=".5" cy=".38" r=".7"><stop offset="0" stop-color="${bg[0]}"/><stop offset="1" stop-color="${bg[1]}"/></radialGradient></defs>` +
+      (legendary ? `<rect x="0.5" y="0.5" width="63" height="63" rx="10" fill="none" stroke="#F2A65A" stroke-width="1" opacity=".5"/>` : "") +
+      `<rect x="1.5" y="1.5" width="61" height="61" rx="9" fill="url(#${bg[2]})" stroke="${edge}" stroke-width="${legendary ? 1.8 : 1.4}"/>` +
+      `<rect x="4.5" y="4.5" width="55" height="55" rx="6.5" fill="none" stroke="${edge}" stroke-width=".6" opacity=".55"/>` +
+      [[4.5, 4.5], [59.5, 4.5], [4.5, 59.5], [59.5, 59.5]].map(([x, y]) => `<path d="M${x} ${y - 2.6} L${x + 2.6} ${y} L${x} ${y + 2.6} L${x - 2.6} ${y}Z" fill="${edge}"/>`).join("") +
+      (legendary ? `<path d="M32 1.5 L35 5 L32 8.5 L29 5Z M32 62.5 L35 59 L32 55.5 L29 59Z" fill="${edge}"/>` : "") +
+      `<g transform="translate(32 32) scale(.74) translate(-32 -32)">${engrave(inner, legendary ? 0.45 : 0.22)}</g></svg>`;
   }
 
   function wrap(inner, cls = "") {
@@ -271,7 +302,9 @@
   // def: a charm, item or voucher definition (anything with id + type/color).
   function icon(def, cls) {
     if (!def) return "";
+    if (def.type === "charm" && def.rarity === "legendary") return relic(LEGENDS[def.id] || gem(32, 34, 20, def.color || "#E8743B"), cls, true);
     if (def.type === "charm") return relic(CHARMS[def.id] || gem(32, 34, 20, def.color || "#9b5fc0"), cls);
+    if (def.type === "pack") return wrap(engrave(PACKS[def.id] || packet(def.color || "#C9A227", ""), 0.5), "engraved " + (cls || ""));
     if (def.type === "item") return wrap(engrave(ITEMS[def.id] || gem(32, 34, 20, def.color || "#9b5fc0"), 0.34), "engraved " + (cls || ""));
     const bank = VOUCHERS;
     const inner = bank[def.id] || gem(32, 34, 20, def.color || "#9b5fc0");

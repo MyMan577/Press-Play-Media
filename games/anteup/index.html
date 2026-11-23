@@ -798,6 +798,53 @@ html, body {
 .ware-buy:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
 .ware.sold { cursor: default; }
 .ware.sold .ware-art { border: 1.5px dashed #ffffff18; border-radius: 12px; width: 56px; height: 56px; margin: 5px; filter: none; }
+/* ============================== BOOSTER PACK SCREEN ============================== */
+.pack-overlay {
+  position: fixed; inset: 0; z-index: 90; overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 0%, #2a2618 0%, #0d120e 70%);
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 22px 16px max(16px, env(safe-area-inset-bottom));
+  animation: zonesIn .2s ease-out;
+}
+.pack-head { display: flex; align-items: center; gap: 12px; }
+.pack-art { width: 64px; height: 64px; }
+.pack-title { font-size: 24px; color: #F3ECD9; }
+.pack-sub { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: #9A917A; font-weight: 700; }
+.pack-choices { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 720px; }
+.pack-choice {
+  width: 150px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 10px;
+  font: inherit; color: #F3ECD9; cursor: pointer; text-align: center;
+  background: #16241A; border: 1px solid #C9A22744; border-radius: 14px;
+  box-shadow: 0 10px 24px -10px #000c; transition: transform .12s ease, border-color .12s ease;
+}
+.pack-choice:hover:not(:disabled) { transform: translateY(-3px); border-color: #E9C568; }
+.pack-choice:disabled { opacity: .5; cursor: not-allowed; }
+.pack-choice-art { width: 72px; height: 72px; }
+.pack-choice-art.legendary { filter: drop-shadow(0 0 12px #E8743B99); }
+.pack-choice-name { font-size: 15px; }
+.pack-choice-desc { font-size: 11px; color: #C9BFA4; line-height: 1.35; }
+.pack-choice-desc b { color: #E9C568; }
+.pack-choice-full { font-size: 10px; color: #E8A8A8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.pack-card { width: 62px !important; height: 87px !important; margin: 0 !important; pointer-events: none; }
+.pack-skip {
+  font: inherit; font-weight: 700; font-size: 12px; letter-spacing: .6px; text-transform: uppercase;
+  color: #9A917A; background: none; border: 1px solid #3A4A38; border-radius: 20px; padding: 8px 26px; cursor: pointer;
+}
+
+/* ============================== CARD NOTE (double tap) ============================== */
+.card-note {
+  position: fixed; z-index: 120; max-width: 260px; padding: 9px 11px; border-radius: 12px;
+  background: #101a12f2; border: 1px solid #C9A22766; box-shadow: 0 12px 30px -8px #000e;
+  display: flex; flex-direction: column; gap: 6px; opacity: 0; transform: translateY(-4px);
+  transition: opacity .15s ease, transform .15s ease; pointer-events: none; left: -999px; top: -999px;
+}
+.card-note.shown { opacity: 1; transform: none; }
+.card-note-row { font-size: 11.5px; line-height: 1.35; color: #E6DCC2; }
+.card-note-tag {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px;
+  font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #1a120a;
+}
+
 /* ============================== LANDSCAPE ============================== */
 body.landscape #app { padding: 10px 16px 10px; align-items: stretch; }
 body.landscape .header {
@@ -1067,6 +1114,38 @@ function sleeveGlowShadow(sleeve, px) {
   return `, 0 0 0 ${px(2)}px ${c}, 0 0 ${px(10)}px ${px(2)}px ${c}66`;
 }
 
+let lastCardTap = { id: null, t: 0 };
+
+// The note shown under a double-tapped card: what its sleeve, stamp and Molt
+// marks do for it. Positioned after layout, under the card.
+function CardNote() {
+  const card = state.hand.find((c) => c.id === state.cardNote.id);
+  if (!card) { state.cardNote = null; return null; }
+  const note = document.createElement("div");
+  note.className = "card-note";
+  const rows = [];
+  if (card.sleeve) rows.push(`<div class="card-note-row"><span class="card-note-tag" style="background:${SLEEVE_COLORS[card.sleeve]}">${AnteArt.sleeveLabel(card.sleeve)} sleeve</span>${SLEEVE_INFO[card.sleeve]}</div>`);
+  if (card.stamp) rows.push(`<div class="card-note-row"><span class="card-note-tag" style="background:${STAMP_COLORS[card.stamp]}">${STAMP_LABELS[card.stamp]} stamp</span>${STAMP_INFO[card.stamp]}</div>`);
+  if (card.moltBuff) rows.push(`<div class="card-note-row"><span class="card-note-tag" style="background:#7BC89A">Molt mark</span>+${card.moltBuff} Mult whenever it scores.</div>`);
+  note.innerHTML = rows.join("");
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`.hand-fan .card[data-card-id="${card.id}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const w = note.offsetWidth;
+    note.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+    note.style.top = Math.min(window.innerHeight - note.offsetHeight - 8, r.bottom + 6) + "px";
+    note.classList.add("shown");
+  });
+  return note;
+}
+document.addEventListener("pointerdown", () => {
+  if (state.cardNote && Date.now() - state.cardNote.at > 400) {
+    state.cardNote = null;
+    render();
+  }
+}, true);
+
 function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcIndex, arcCount, onClick }) {
   const { rank, suit } = card;
   const color = SUITS[suit].color;
@@ -1106,6 +1185,18 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
       el.dataset.wasDrag = "0";
       return; // suppress the click that follows a drag gesture
     }
+    // Double tap on a card with a sleeve, stamp or Molt mark: undo the
+    // first tap's select and show what those do instead.
+    const now = performance.now();
+    const hasMods = card.sleeve || card.stamp || card.moltBuff;
+    if (hasMods && lastCardTap.id === card.id && now - lastCardTap.t < 350 && state.overlay === "playing") {
+      lastCardTap = { id: null, t: 0 };
+      onClick();
+      state.cardNote = { id: card.id, at: Date.now() };
+      render();
+      return;
+    }
+    lastCardTap = { id: card.id, t: now };
     el.classList.remove("card-pop");
     void el.offsetWidth;
     el.classList.add("card-pop");
@@ -1332,7 +1423,7 @@ function evaluateSelection(cards) {
   const chipSum = scoreableCards.reduce((s, c) => {
     if (isCardDebuffed(c)) return s; // Boss Blind debuff: card scores 0 chips
     const perPing = rankChipValue(c.rank) + (c.sleeve === "sparkler" ? 20 : 0);
-    const pings = c.stamp === "crimson" ? 2 : 1; // must mirror pingCards' per-card retrigger logic
+    const pings = scoringPings(c); // must mirror pingCards' per-card retrigger logic
     return s + perPing * pings;
   }, 0);
   const totalChips = base.chips + chipSum;
@@ -1723,11 +1814,11 @@ const CHARM_DEFS = [
   {
     id: "anchor",
     name: "Anchor",
-    desc: "Adds +3 Mult to every hand played",
-    price: 9,
+    desc: "X2 Mult on your first hand of each round",
+    price: 8,
     color: "#5F8FA8",
     type: "charm",
-    effect: { type: "anchorFlatMult", value: 3 }
+    effect: { type: "firstHandX", value: 2 }
   },
   {
     id: "tollbooth",
@@ -1813,11 +1904,11 @@ const CHARM_DEFS = [
   {
     id: "chains",
     name: "Chains",
-    desc: "Gain $2 per hand played, but your max hand size is reduced by 1",
-    price: 7,
+    desc: "X1.5 Mult, but you can't discard",
+    price: 8,
     color: "#5F5F5F",
     type: "charm",
-    effect: { type: "chainsMoneyPerHand", value: 2, handSizeReduction: 1 }
+    effect: { type: "chainsNoDiscardX", value: 1.5 }
   },
   {
     id: "thorns",
@@ -1939,11 +2030,11 @@ const CHARM_DEFS = [
   {
     id: "abacus",
     name: "Abacus",
-    desc: "Adds +8 Chips for every card selected to play",
-    price: 6,
+    desc: "Scoring cards give 50% more Chips",
+    price: 7,
     color: "#D7A85D",
     type: "charm",
-    effect: { type: "abacusChipsPerSelected", value: 8 }
+    effect: { type: "abacusCardChipsBoost", value: 0.5 }
   },
   {
     id: "blueprintCharm",
@@ -1957,20 +2048,20 @@ const CHARM_DEFS = [
   {
     id: "satchel",
     name: "Satchel",
-    desc: "Adds +10 Chips for every consumable you are holding",
+    desc: "When you clear a blind, adds a random item if you have room",
     price: 7,
     color: "#9A704D",
     type: "charm",
-    effect: { type: "satchelChipsPerItem", value: 10 }
+    effect: { type: "satchelItemOnClear" }
   },
   {
     id: "croupier",
     name: "Croupier",
-    desc: "Adds +20 Chips while you are holding at least one consumable",
+    desc: "Gain $1 whenever you use an item",
     price: 6,
     color: "#A84F4F",
     type: "charm",
-    effect: { type: "croupierHeldItemChips", value: 20 }
+    effect: { type: "moneyOnItemUse", value: 1 }
   },
   {
     id: "midas",
@@ -1993,11 +2084,11 @@ const CHARM_DEFS = [
   {
     id: "archivist",
     name: "Archivist",
-    desc: "Sleeved scoring cards each add +3 Mult",
+    desc: "Every card you sleeve also gets a random stamp (if it has none)",
     price: 8,
     color: "#6F7FAF",
     type: "charm",
-    effect: { type: "archivistSleevedCardMult", value: 3 }
+    effect: { type: "archivistStampOnSleeve" }
   },
   {
     id: "curator",
@@ -2029,11 +2120,11 @@ const CHARM_DEFS = [
   {
     id: "vulture",
     name: "Vulture",
-    desc: "Adds +1 Chip for every 2 cards discarded this run",
+    desc: "+1 Mult for every card destroyed this run",
     price: 7,
     color: "#6B6B63",
     type: "charm",
-    effect: { type: "vultureChipsPerDiscard", value: 1, per: 2 }
+    effect: { type: "vultureMultPerDestroyed", value: 1 }
   },
   {
     id: "parchment",
@@ -2047,11 +2138,11 @@ const CHARM_DEFS = [
   {
     id: "investor",
     name: "Investor",
-    desc: "Adds +5 Chips for every $5 you are holding",
+    desc: "When you clear a blind, gain $1 for each artifact you own",
     price: 8,
     color: "#5F9A74",
     type: "charm",
-    effect: { type: "investorChipsPerFiveDollars", value: 5 }
+    effect: { type: "investorMoneyPerCharm", value: 1 }
   },
   {
     id: "keepsake",
@@ -2128,11 +2219,11 @@ const CHARM_DEFS = [
   {
     id: "rainbow",
     name: "Rainbow",
-    desc: "Adds +16 Chips for each unique suit among scoring cards",
+    desc: "X2 Mult if your scoring cards include all four suits",
     price: 8,
     color: "#AD7AC1",
     type: "charm",
-    effect: { type: "rainbowChipsPerSuit", value: 16 }
+    effect: { type: "rainbowAllSuitsX", value: 2 }
   },
   {
     id: "crescendo",
@@ -2146,11 +2237,11 @@ const CHARM_DEFS = [
   {
     id: "deadline",
     name: "Deadline",
-    desc: "Multiplies Mult by x1.75 when making your final play of the round",
-    price: 8,
+    desc: "Gain $8 when you clear a blind with your first hand",
+    price: 7,
     color: "#9A6F55",
     type: "charm",
-    effect: { type: "deadlineLastPlayX", value: 1.75 }
+    effect: { type: "deadlineFirstHandClear", value: 8 }
   },
   {
     id: "keymaster",
@@ -2160,8 +2251,49 @@ const CHARM_DEFS = [
     color: "#AF9A58",
     type: "charm",
     effect: { type: "keymasterLuckCharmMult", value: 2 }
+  },
+  {
+    id: "collector",
+    name: "Collector",
+    desc: "If your first discard of a round is a single card, it's destroyed and you gain $4",
+    price: 6,
+    color: "#B98A4E",
+    type: "charm",
+    effect: { type: "collectorFirstDiscard", value: 4 }
   }
 ];
+
+// Legendary artifacts: far stronger than normal ones, found in Legend Packs.
+const LEGENDARY_DEFS = [
+  { id: "phoenix", name: "Phoenix Feather", desc: "Once per run, a blind you'd lose counts as cleared. Then the feather burns up.", price: 20, color: "#E8743B", type: "charm", rarity: "legendary", effect: { type: "phoenixSave" } },
+  { id: "hydra", name: "Hydra Heart", desc: "Each scoring card with a sleeve gives X1.5 Mult", price: 20, color: "#3FA97A", type: "charm", rarity: "legendary", effect: { type: "hydraSleeveX", value: 1.5 } },
+  { id: "midnightSun", name: "Midnight Sun", desc: "X0.5 Mult more for every different hand type you've played this run", price: 20, color: "#6E7BD9", type: "charm", rarity: "legendary", effect: { type: "midnightSunX", value: 0.5 } },
+  { id: "eternalEngine", name: "Eternal Engine", desc: "Every scoring card scores twice", price: 20, color: "#B0B8C0", type: "charm", rarity: "legendary", effect: { type: "engineRetrigger" } },
+  { id: "grandLedger", name: "Grand Ledger", desc: "X0.1 Mult for every $5 you hold", price: 20, color: "#C9A227", type: "charm", rarity: "legendary", effect: { type: "grandLedgerX", value: 0.1 } },
+];
+
+// Booster packs: bought in the shop, opened on the spot, pick one.
+const PACK_DEFS = [
+  { id: "artifactPack", name: "Artifact Pack", desc: "Choose 1 of 3 artifacts", price: 6, color: "#C9A227", type: "pack", choices: 3 },
+  { id: "itemPack", name: "Item Pack", desc: "Choose 1 of 3 items", price: 4, color: "#7FBA9A", type: "pack", choices: 3 },
+  { id: "cardPack", name: "Card Pack", desc: "Choose 1 of 4 playing cards to add to your deck", price: 4, color: "#D9CFB5", type: "pack", choices: 4 },
+  { id: "ornatePack", name: "Ornate Pack", desc: "Choose 1 of 3 playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", type: "pack", choices: 3 },
+  { id: "legendPack", name: "Legend Pack", desc: "Choose 1 of 2 legendary artifacts", price: 12, color: "#E8743B", type: "pack", choices: 2, rare: true },
+];
+
+const SLEEVE_INFO = {
+  sparkler: "+20 Chips every time it scores.",
+  tithe: "Can't score. Discarding it pays $5.",
+  molt: "At round end it hops to another card and leaves +1 Mult behind.",
+  larva: "Still in your hand at round end? It copies itself into your deck.",
+  anchor: "Always drawn first.",
+  mirror: "When you play it, a copy goes into your deck.",
+};
+const STAMP_INFO = {
+  gold: "Pays $3 every time it scores.",
+  crimson: "Scores twice.",
+  azure: "Still in your hand at round end? A copy goes into your deck.",
+};
 
 // ITEMS: Consumable slots, max 2. Can be used during scoring phases.
 const ITEM_DEFS = [
@@ -2240,38 +2372,38 @@ const ITEM_DEFS = [
   {
     id: "lovers",
     name: "The Lovers",
-    desc: "Use: permanently transforms the rightmost card in your hand into a Hearts",
-    price: 4,
+    desc: "Use: your 2 selected cards trade sleeves and stamps",
+    price: 5,
     color: "#A23B3B",
     type: "item",
-    effect: { type: "loversTransformSuit", suit: "hearts" }
+    effect: { type: "loversShareMods" }
   },
   {
     id: "theMerchant",
     name: "The Merchant",
-    desc: "Use: permanently transforms the rightmost card in your hand into a Diamonds",
-    price: 4,
+    desc: "Use: your next purchase in the shop is free",
+    price: 6,
     color: "#C99B3B",
     type: "item",
-    effect: { type: "loversTransformSuit", suit: "diamonds" }
+    effect: { type: "merchantFreeBuy" }
   },
   {
     id: "theGardener",
     name: "The Gardener",
-    desc: "Use: permanently transforms the rightmost card in your hand into a Clubs",
-    price: 4,
+    desc: "Use: adds 2 cards of the suit you hold most of to your deck",
+    price: 5,
     color: "#3B7A4A",
     type: "item",
-    effect: { type: "loversTransformSuit", suit: "clubs" }
+    effect: { type: "gardenerGrowSuit", count: 2 }
   },
   {
     id: "theGravedigger",
     name: "The Gravedigger",
-    desc: "Use: permanently transforms the rightmost card in your hand into a Spades",
-    price: 4,
+    desc: "Use: draw 2 extra cards now (your hand can go over its size)",
+    price: 5,
     color: "#4A4A4A",
     type: "item",
-    effect: { type: "loversTransformSuit", suit: "spades" }
+    effect: { type: "drawExtra", count: 2 }
   },
   {
     id: "justice",
@@ -2483,11 +2615,11 @@ const ITEM_DEFS = [
   {
     id: "batteryPack",
     name: "Battery Pack",
-    desc: "Use: grants +100 Chips to your next played hand only",
-    price: 6,
+    desc: "Use: +1 play this round",
+    price: 7,
     color: "#D9C247",
     type: "item",
-    effect: { type: "fortuneNextHandChips", value: 100 }
+    effect: { type: "extraPlayNow", value: 1 }
   },
   {
     id: "dice",
@@ -2528,236 +2660,236 @@ const ITEM_DEFS = [
   {
     id: "coinPurse",
     name: "Coin Purse",
-    desc: "Use: gain $9 immediately",
+    desc: "Use: every artifact you own sells for $2 more",
     price: 3,
     color: "#C9A227",
     type: "item",
-    effect: { type: "flatMoneyGain", value: 9 }
+    effect: { type: "raiseSellValue", value: 2 }
   },
   {
     id: "luckyBreak",
     name: "Lucky Break",
-    desc: "Use: grants +75 Chips to your next played hand only",
-    price: 5,
+    desc: "Use: until the round ends, every chance-based effect always succeeds",
+    price: 6,
     color: "#49A895",
     type: "item",
-    effect: { type: "fortuneNextHandChips", value: 75 }
+    effect: { type: "luckyRound" }
   },
   {
     id: "doubleDownToken",
     name: "Double Down Token",
-    desc: "Use: your next played hand scores double Mult",
+    desc: "Use: your next hand's base Chips and Mult (from its hand type) are doubled",
     price: 6,
     color: "#D4A53A",
     type: "item",
-    effect: { type: "coinDoubleMult" }
+    effect: { type: "doubleBase" }
   },
   {
     id: "encoreTicket",
     name: "Encore Ticket",
-    desc: "Use: your next played hand's scoring cards retrigger once",
+    desc: "Use: your next hand also scores your previous hand's score again",
     price: 7,
     color: "#B86E9D",
     type: "item",
-    effect: { type: "empressRetrigger" }
+    effect: { type: "encoreLastScore" }
   },
   {
     id: "meteorShard",
     name: "Meteor Shard",
-    desc: "Use: your next played hand scores double Chips",
-    price: 6,
+    desc: "Use: raises every card in your hand by one rank",
+    price: 7,
     color: "#597FC0",
     type: "item",
-    effect: { type: "starDoubleChips" }
+    effect: { type: "rankUpHand" }
   },
   {
     id: "deepPockets",
     name: "Deep Pockets",
-    desc: "Use: doubles your money, up to a maximum of +$30",
-    price: 6,
+    desc: "Use: gain $2 for each artifact you own",
+    price: 5,
     color: "#7D9F70",
     type: "item",
-    effect: { type: "hermitDoubleMoney", cap: 30 }
+    effect: { type: "moneyPerCharm", value: 2 }
   },
   {
     id: "secondWind",
     name: "Second Wind",
-    desc: "Use: refills your discards to full immediately",
+    desc: "Use: +1 hand size until the round ends, and draw a card now",
     price: 5,
     color: "#E2BD56",
     type: "item",
-    effect: { type: "sunRefillDiscards" }
+    effect: { type: "roundHandSize", value: 1 }
   },
   {
     id: "loadedDice",
     name: "Loaded Dice",
-    desc: "Use: your next played hand's Mult is multiplied by a random amount between x1.5 and x3",
-    price: 7,
+    desc: "Use: your next hand's Chips are multiplied by a random amount between x1.5 and x2.5",
+    price: 6,
     color: "#BD5C4D",
     type: "item",
-    effect: { type: "diceRandomMultX", min: 1.5, max: 3 }
+    effect: { type: "diceRandomChipsX", min: 1.5, max: 2.5 }
   },
   {
     id: "pocketChange",
     name: "Pocket Change",
-    desc: "Use: gain $7 immediately",
+    desc: "Use: gain $1 for each play and discard you have left",
     price: 3,
     color: "#78A66F",
     type: "item",
-    effect: { type: "flatMoneyGain", value: 7 }
+    effect: { type: "moneyPerActionLeft", value: 1 }
   },
   {
     id: "savingsBond",
     name: "Savings Bond",
-    desc: "Use: converts each discard you have remaining this round into $4",
-    price: 3,
+    desc: "Use: collect interest on your money right now",
+    price: 4,
     color: "#C9A55D",
     type: "item",
-    effect: { type: "piggyBankDiscardsToMoney", value: 4 }
+    effect: { type: "interestNow" }
   },
   {
     id: "shufflePass",
     name: "Shuffle Pass",
-    desc: "Use: discards your entire hand and draws a new one, without costing a discard",
-    price: 5,
+    desc: "Use: shuffles every card played or discarded this round back into your deck",
+    price: 4,
     color: "#5F9BC9",
     type: "item",
-    effect: { type: "freshDealRedraw" }
+    effect: { type: "reshuffleUsed" }
   },
   {
     id: "blueprintScroll",
     name: "Blueprint Scroll",
-    desc: "Use: adds a random charm to your charm slots (if you have room)",
-    price: 8,
+    desc: "Use: copies your leftmost card's sleeve onto every card of the same rank in your hand",
+    price: 7,
     color: "#6D8FBE",
     type: "item",
-    effect: { type: "judgementCreateCharm" }
+    effect: { type: "spreadSleeve" }
   },
   {
     id: "supplyCrate",
     name: "Supply Crate",
-    desc: "Use: adds 2 random consumables to your slots (if you have room)",
-    price: 8,
+    desc: "Use: open a free Item Pack",
+    price: 6,
     color: "#A67750",
     type: "item",
-    effect: { type: "emperorCreateItems", count: 2 }
+    effect: { type: "openPack", pack: "itemPack" }
   },
   {
     id: "goldenSeal",
     name: "Golden Seal",
-    desc: "Use: stamps your leftmost card with a Gold Stamp",
-    price: 6,
+    desc: "Use: stamps 2 random cards in your hand with random stamps",
+    price: 7,
     color: "#E1B93E",
     type: "item",
-    effect: { type: "stampCard", stamp: "gold" }
+    effect: { type: "stampRandom", count: 2 }
   },
   {
     id: "echoSeal",
     name: "Echo Seal",
-    desc: "Use: stamps your leftmost card with a Crimson Stamp",
-    price: 8,
+    desc: "Use: copies your leftmost card's stamp onto the card beside it",
+    price: 6,
     color: "#C33E38",
     type: "item",
-    effect: { type: "stampCard", stamp: "crimson" }
+    effect: { type: "echoStamp" }
   },
   {
     id: "nurserySeal",
     name: "Nursery Seal",
-    desc: "Use: stamps your leftmost card with an Azure Stamp",
-    price: 7,
+    desc: "Use: every sleeved card in your hand gets a random stamp",
+    price: 8,
     color: "#4F8BCF",
     type: "item",
-    effect: { type: "stampCard", stamp: "azure" }
+    effect: { type: "stampSleeved" }
   },
   {
     id: "sparklerKit",
     name: "Sparkler Kit",
-    desc: "Use: sleeves your leftmost card in a Sparkler Sleeve",
-    price: 6,
+    desc: "Use: Sparkler Sleeves on 2 random cards in your hand",
+    price: 8,
     color: "#ECAC4B",
     type: "item",
-    effect: { type: "magicianSleeveCard", sleeve: "sparkler" }
+    effect: { type: "sleeveRandom", sleeve: "sparkler", count: 2 }
   },
   {
     id: "moltCapsule",
     name: "Molt Capsule",
-    desc: "Use: sleeves your leftmost card in a Molt Sleeve",
-    price: 8,
+    desc: "Use: strips the sleeve from your leftmost card and gives it +2 Mult for good",
+    price: 6,
     color: "#6BA89A",
     type: "item",
-    effect: { type: "magicianSleeveCard", sleeve: "molt" }
+    effect: { type: "moltCapsule", value: 2 }
   },
   {
     id: "larvaJar",
     name: "Larva Jar",
-    desc: "Use: sleeves your leftmost card in a Larva Sleeve",
+    desc: "Use: adds 2 Larva-sleeved copies of your leftmost card to your deck",
     price: 7,
     color: "#8C7A56",
     type: "item",
-    effect: { type: "magicianSleeveCard", sleeve: "larva" }
+    effect: { type: "larvaJar", count: 2 }
   },
   {
     id: "copycat",
     name: "Copycat",
-    desc: "Use: select 1 card to permanently add a copy of to your deck",
-    price: 6,
+    desc: "Use: turns into a copy of another item you're holding",
+    price: 5,
     color: "#5CA17D",
     type: "item",
-    effect: { type: "duplicatorCopyCard", maxCards: 1 }
+    effect: { type: "copycatItem" }
   },
   {
     id: "pruningShears",
     name: "Pruning Shears",
-    desc: "Use: select 1 card to permanently remove from your deck",
-    price: 2,
+    desc: "Use: removes every 2 and 3 from your deck (cards in hand stay)",
+    price: 4,
     color: "#898989",
     type: "item",
-    effect: { type: "eraserRemoveCard", maxCards: 1 }
+    effect: { type: "pruneLow" }
   },
   {
     id: "forgeHammer",
     name: "Forge Hammer",
-    desc: "Use: select up to 3 cards — each has its rank raised by 1",
-    price: 5,
+    desc: "Use: turns 1 selected card into an Ace",
+    price: 6,
     color: "#BD7255",
     type: "item",
-    effect: { type: "strengthRankUp", maxCards: 3, value: 1 }
+    effect: { type: "forgeAce" }
   },
   {
     id: "jackpot",
     name: "Jackpot",
-    desc: "Use: turns 4 random cards in your hand into Jacks",
-    price: 6,
+    desc: "Use: 1 in 4 chance to win $25",
+    price: 4,
     color: "#7FAA9E",
     type: "item",
-    effect: { type: "temperanceSetRank", rank: "J", count: 4 }
+    effect: { type: "jackpotRoll", chance: 0.25, value: 25 }
   },
   {
     id: "heartsBanner",
-    name: "Hearts Banner",
-    desc: "Use: turns 4 random cards in your hand into Hearts",
-    price: 6,
+    name: "Rally Banner",
+    desc: "Use: every card in your hand takes the suit of your leftmost card",
+    price: 7,
     color: "#C95D78",
     type: "item",
-    effect: { type: "transformRandomSuit", suit: "hearts", count: 4 }
+    effect: { type: "rallySuit" }
   },
   {
     id: "twinMolds",
     name: "Twin Molds",
-    desc: "Use: turns your leftmost selected card into a copy of your rightmost selected card",
-    price: 5,
+    desc: "Use: your 2 selected cards swap ranks",
+    price: 3,
     color: "#534E78",
     type: "item",
-    effect: { type: "deathCopyCard" }
+    effect: { type: "swapRanks" }
   },
   {
     id: "bountyContract",
     name: "Bounty Contract",
-    desc: "Use: destroys up to 2 selected cards from your hand for $4 each",
-    price: 5,
+    desc: "Use: gain $2 for each face card in your hand",
+    price: 4,
     color: "#665B50",
     type: "item",
-    effect: { type: "hangedManSellCards", pricePerCard: 4, maxCards: 2 }
+    effect: { type: "bountyFaces", value: 2 }
   }
 ];
 
@@ -2854,6 +2986,41 @@ const VOUCHERS = [
     effect: { type: "previewCards", value: 2 }
   }
 ];
+
+// Chance-based effects: Horseshoe doubles the odds, Lucky Break makes them certain.
+function chanceMultiplier() {
+  if (state.luckyRound) return 1000;
+  return state.charms.some((c) => c.effect.type === "horseshoeDoubleChance") ? 2 : 1;
+}
+function hasCharm(type) {
+  return state.charms.some((c) => c.effect.type === type);
+}
+function newUid() {
+  return Math.random().toString(36).slice(2, 9);
+}
+const STAMP_KINDS = ["gold", "crimson", "azure"];
+const SLEEVE_KINDS = ["sparkler", "tithe", "molt", "larva", "anchor", "mirror"];
+function randomOf(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+// Puts a sleeve on a card (returns the new card). Archivist adds a stamp too.
+function withSleeve(card, sleeve) {
+  const out = { ...card, sleeve };
+  if (hasCharm("archivistStampOnSleeve") && !out.stamp) out.stamp = randomOf(STAMP_KINDS);
+  return out;
+}
+function makeCard(rank, suit, extra) {
+  return { rank, suit, id: `${rank}-${suit}-${Math.random().toString(36).slice(2, 8)}`, ...(extra || {}) };
+}
+function scoringPings(card) {
+  return (card.stamp === "crimson" ? 2 : 1) * (hasCharm("engineRetrigger") ? 2 : 1);
+}
+// Price in the shop after Clearance Sale, or $0 while The Merchant's free buy is waiting.
+function shopPriceFor(entry) {
+  if (state.freeBuy) return 0;
+  const shopDiscount = state.vouchers.filter((v) => v.effect.type === "shopDiscount").reduce((m, v) => m * v.effect.value, 1);
+  return Math.ceil(entry.price * shopDiscount);
+}
 
 function generateShopStock(count) {
   // Check if Ringmaster is equipped (allows duplicates)
@@ -2970,8 +3137,8 @@ function applyCharmEffects(result, cards, charms) {
       case "scaleMultPerDiscard":
         totalMult += state.discardsLeft * eff.value;
         break;
-      case "anchorFlatMult":
-        totalMult += eff.value;
+      case "firstHandX":
+        if ((state.handsThisRound || 0) === 0) totalMult *= eff.value;
         break;
       case "pppEncore":   // Press Play exclusive
         totalMult = (totalMult + eff.add) * eff.x;
@@ -3067,17 +3234,11 @@ function applyCharmEffects(result, cards, charms) {
         totalMult *= Math.pow(eff.value, extraCards);
         break;
       }
-      case "abacusChipsPerSelected":
-        totalChips += state.selected.length * eff.value;
+      case "abacusCardChipsBoost":
+        totalChips += cards.filter((c) => !isCardDebuffed(c)).reduce((sum, c) => sum + rankChipValue(c.rank), 0) * eff.value;
         break;
       case "blueprintSleeveChips":
         totalChips += cards.filter((c) => c.sleeve).length * eff.value;
-        break;
-      case "satchelChipsPerItem":
-        totalChips += state.items.length * eff.value;
-        break;
-      case "croupierHeldItemChips":
-        if (state.items.length > 0) totalChips += eff.value;
         break;
       case "midasGoldStampChips":
         totalChips += cards.filter((c) => c.stamp === "gold").length * eff.value;
@@ -3085,8 +3246,17 @@ function applyCharmEffects(result, cards, charms) {
       case "redThreadCrimsonMult":
         totalMult += cards.filter((c) => c.stamp === "crimson").length * eff.value;
         break;
-      case "archivistSleevedCardMult":
-        totalMult += cards.filter((c) => c.sleeve).length * eff.value;
+      case "hydraSleeveX":
+        totalMult *= Math.pow(eff.value, cards.filter((c) => c.sleeve).length);
+        break;
+      case "midnightSunX":
+        totalMult *= 1 + Object.keys(state.handTypeCounts || {}).length * eff.value;
+        break;
+      case "grandLedgerX":
+        totalMult *= 1 + Math.floor(Math.max(0, state.money) / 5) * eff.value;
+        break;
+      case "chainsNoDiscardX":
+        totalMult *= eff.value;
         break;
       case "curatorStampedCardChips":
         totalChips += cards.filter((c) => c.stamp).length * eff.value;
@@ -3099,14 +3269,11 @@ function applyCharmEffects(result, cards, charms) {
       case "pocketwatchChipsPerHand":
         totalChips += (state.handsPlayedRun || 0) * eff.value;
         break;
-      case "vultureChipsPerDiscard":
-        totalChips += Math.floor((state.totalDiscardedRun || 0) / eff.per) * eff.value;
+      case "vultureMultPerDestroyed":
+        totalMult += (state.cardsDestroyedRun || 0) * eff.value;
         break;
       case "parchmentChipsPerUsedCard":
         totalChips += state.usedCards.length * eff.value;
-        break;
-      case "investorChipsPerFiveDollars":
-        totalChips += Math.floor(state.money / 5) * eff.value;
         break;
       case "keepsakeMultPerItem":
         totalMult += state.items.length * eff.value;
@@ -3132,14 +3299,11 @@ function applyCharmEffects(result, cards, charms) {
       case "checkmateStraightX":
         if (handName.includes("Straight")) totalMult *= eff.value;
         break;
-      case "rainbowChipsPerSuit":
-        totalChips += new Set(cards.map((c) => c.suit)).size * eff.value;
+      case "rainbowAllSuitsX":
+        if (new Set(cards.map((c) => c.suit)).size >= 4) totalMult *= eff.value;
         break;
       case "crescendoMultPerRoundHand":
         totalMult += (state.handTypesPlayedThisRound || []).length * eff.value;
-        break;
-      case "deadlineLastPlayX":
-        if (state.playsLeft === 1) totalMult *= eff.value;
         break;
       case "keymasterLuckCharmMult": {
         const luckTypes = new Set(["calculatorReplay", "cameraPreserve", "horseshoeDoubleChance", "rouletteRandomBonus", "coinFlip"]);
@@ -3157,6 +3321,13 @@ function applyCharmEffects(result, cards, charms) {
   
   const score = Math.round(totalChips * totalMult);
   return { ...result, totalChips: Math.round(totalChips), totalMult: Math.round(totalMult * 100) / 100, score };
+}
+
+// Double Down Token: adds the hand type's base Chips/Mult a second time.
+function withNextHandBase(result) {
+  if (!state.nextHandDoubleBase || !result || !HAND_TABLE[result.name]) return result;
+  const base = HAND_TABLE[result.name];
+  return { ...result, totalChips: result.totalChips + base.chips, totalMult: result.totalMult + base.mult };
 }
 
 function getExtraPlays(items) {
@@ -3303,6 +3474,20 @@ function loadGame() {
     if (!raw) return false;
     const saved = JSON.parse(raw);
     Object.assign(state, saved);
+    // Saves from before the rework hold old effect definitions: refresh every
+    // owned/stocked artifact and item from the current lists by id, keeping
+    // per-instance progress (uid, Ratchet/Oracle bonuses, sell bonus, saves).
+    const refresh = (d, pools) => {
+      if (!d) return d;
+      for (const pool of pools) {
+        const def = pool.find((x) => x.id === d.id);
+        if (def) return { ...d, name: def.name, desc: def.desc, price: def.price, color: def.color, effect: { ...def.effect, ...(d.effect && d.effect.blindCounter != null ? { blindCounter: d.effect.blindCounter } : {}) }, rarity: def.rarity };
+      }
+      return d;
+    };
+    state.charms = (state.charms || []).map((c) => refresh(c, [CHARM_DEFS, LEGENDARY_DEFS]));
+    state.items = (state.items || []).map((i) => refresh(i, [ITEM_DEFS]));
+    state.shopStock = (state.shopStock || []).map((x) => (x && x.type === "charm" ? refresh(x, [CHARM_DEFS, LEGENDARY_DEFS]) : refresh(x, [ITEM_DEFS])));
     return true;
   } catch (e) {
     console.warn("Load failed:", e);
@@ -3341,7 +3526,7 @@ function getHandSize() {
   const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraHandSize").reduce((s, v) => s + v.effect.value, 0);
   const chainsReduction = state.charms.filter((c) => c.effect.type === "chainsMoneyPerHand").reduce((s, c) => s + c.effect.handSizeReduction, 0);
   const bossDelta = (state.bossBlind && state.bossBlind.handSizeDelta) || 0;
-  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta);
+  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta + (state.roundHandSizeBonus || 0));
 }
 
 function computeFanLayout() {
@@ -3371,6 +3556,19 @@ function dealInitialHand(freshDeckArg) {
 
 function startGame() {
   const d = freshDeck();
+  state.handsThisRound = 0;
+  state.luckyRound = false;
+  state.roundHandSizeBonus = 0;
+  state.collectorUsedThisRound = false;
+  state.cardsDestroyedRun = 0;
+  state.nextHandDoubleBase = false;
+  state.nextHandChipsX = 1;
+  state.nextHandBonusScore = 0;
+  state.lastHandScore = 0;
+  state.freeBuy = false;
+  state.packStock = [];
+  state.packOpen = null;
+  state.cardNote = null;
   state.ante = 1;
   state.blindIdx = 0;
   state.roundScore = 0;
@@ -3468,9 +3666,9 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.larvaTracking = {};
 
   // ===== AZURE STAMP: every Azure-stamped card still held copies itself into the deck =====
-  // Only the stamp is stripped from the clone; any sleeve on the card carries over.
+  // Copies keep the card's stamp and sleeve.
   state.hand.filter((c) => c.stamp === "azure").forEach((card) => {
-    const clone = { ...card, id: card.id + "_azure_" + Date.now() + "_" + Math.random().toString(36).slice(2), stamp: undefined };
+    const clone = { ...card, id: card.id + "_azure_" + Date.now() + "_" + Math.random().toString(36).slice(2) };
     state.deck.push(clone);
   });
   state.azureTracking = {};
@@ -3511,6 +3709,10 @@ function startNextBlind(nextAnte, nextBlindIdx) {
     if (state.bossBlind.forcedDiscards != null) state.discardsLeft = state.bossBlind.forcedDiscards;
   }
   state.streakCounter = 0; // Reset Streak for new round
+  state.handsThisRound = 0;
+  state.luckyRound = false;
+  state.roundHandSizeBonus = 0;
+  state.collectorUsedThisRound = false;
   
   // Apply starting money bonus from Liquid Assets voucher
   const startingMoneyBonus = state.vouchers.filter((v) => v.effect.type === "startingMoneyBonus").reduce((s, v) => s + v.effect.value, 0);
@@ -3627,9 +3829,10 @@ function activateCharmSlide(charm, callback) {
 function triggerCharmEffects(result, cards) {
   // Process each charm and trigger effects
   let cardsToReplay = [];
-  const chanceMult = state.charms.some((c) => c.effect.type === "horseshoeDoubleChance") ? 2 : 1;
+  const chanceMult = chanceMultiplier();
 
   state.charms.forEach((charm) => {
+    if (charm.effect.type === "engineRetrigger") return;
     if (charm.effect.type === "calculatorReplay") {
       if (Math.random() < Math.min(1, charm.effect.chance * chanceMult)) {
         // Trigger Calculator: replay scoring cards
@@ -3687,7 +3890,9 @@ function playHand() {
     }
   }
 
-  const handBaseChips = HAND_TABLE[baseResult.name].chips;
+  const handBaseChips = HAND_TABLE[baseResult.name].chips * (state.nextHandDoubleBase ? 2 : 1);
+  const baseResultMult = withNextHandBase(baseResult).totalMult;
+  state.nextHandDoubleBase = false;
   const scoringCards = baseResult.scoringCards;
   const scoringIds = scoringCards.map((c) => c.id);
   const newPlaysLeft = state.playsLeft - 1;
@@ -3729,7 +3934,7 @@ function playHand() {
   
   state.charms.forEach((charm) => {
     if (charm.effect.type === "rouletteRandomBonus") {
-      const chanceMult = state.charms.some((c) => c.effect.type === "horseshoeDoubleChance") ? 2 : 1;
+      const chanceMult = chanceMultiplier();
       const chipsChance = Math.min(1, charm.effect.chipsChance * chanceMult);
       const moneyChance = Math.min(1 - chipsChance, charm.effect.moneyChance * chanceMult);
       const rand = Math.random();
@@ -3740,7 +3945,7 @@ function playHand() {
       }
     }
     if (charm.effect.type === "coinFlip") {
-      if (Math.random() < 0.5) {
+      if (Math.random() < Math.min(1, 0.5 * chanceMultiplier())) {
         state.coinMultBonus = true;
       } else {
         state.money += charm.effect.moneyGain;
@@ -3816,7 +4021,7 @@ function playHand() {
       if (i >= cardIds.length) { onDone(running); return; }
       const id = cardIds[i];
       const card = state.hand.find((c) => c.id === id) || scoringCards.find((c) => c.id === id);
-      const pingsForThisCard = card.stamp === "crimson" ? 2 : 1;
+      const pingsForThisCard = scoringPings(card);
       let pingsDone = 0;
       function nextPing() {
         if (pingsDone >= pingsForThisCard) { i++; step(); return; }
@@ -3833,7 +4038,7 @@ function playHand() {
     // isn't a per-card ping: item/charm flat bonuses, the hand's mult, Fortune/Star
     // bonuses, and whether a retrigger effect (Calculator or The Empress) fires.
     const itemResult = applyItemEffects(
-      { ...baseResult, totalChips: chipsAfterCards },
+      { ...baseResult, totalChips: chipsAfterCards, totalMult: baseResultMult },
       scoringCards,
       state.items
     );
@@ -3846,7 +4051,9 @@ function playHand() {
     // fires below, we re-derive from the undoubled chip total so the doubling covers
     // retriggered chips too, not just the pre-retrigger subtotal (the fix for the bug
     // where retrigger chips weren't getting doubled by Star).
-    let chipsWithBonus = doubleChips ? chipsWithFortune * 2 : chipsWithFortune;
+    const chipsX = state.nextHandChipsX || 1;
+    state.nextHandChipsX = 1;
+    let chipsWithBonus = (doubleChips ? chipsWithFortune * 2 : chipsWithFortune) * chipsX;
     state.nextHandChipBonus = 0;
     state.nextHandDoubleChips = false;
     // Coin: doubles this hand's Mult, resolved before Justice's balance step
@@ -3893,7 +4100,7 @@ function playHand() {
         // once at the very end, to the full chip total including retriggered cards.
         setTimeout(() => {
           pingCards(idsToReping, chipsWithFortune, (finalChipsUndoubled) => {
-            const finalChips = doubleChips ? finalChipsUndoubled * 2 : finalChipsUndoubled;
+            const finalChips = (doubleChips ? finalChipsUndoubled * 2 : finalChipsUndoubled) * chipsX;
             const finalScore = Math.round(finalChips * totalMult * state.runMultiplier);
             state.popup = { name: baseResult.name, runningChips: finalChips, totalMult, score: finalScore, phase: "done" };
             render();
@@ -3910,6 +4117,13 @@ function playHand() {
 }
 
 function finishPlay(finalScore, newPlaysLeft) {
+  // Encore Ticket: this hand also scores the previous hand's score again.
+  const handScore = finalScore;
+  if (state.nextHandBonusScore) {
+    finalScore += state.nextHandBonusScore;
+    state.nextHandBonusScore = 0;
+  }
+  state.lastHandScore = handScore;
   setTimeout(() => {
     // fly the scoring cards up and fade the popup before the hand refills
     const popupEl = document.querySelector(".score-popup");
@@ -3986,7 +4200,26 @@ function finishPlay(finalScore, newPlaysLeft) {
       });
 
       const target = targetForAnte(state.ante, state.blindIdx);
-      if (state.roundScore >= target) {
+      const firstHandOfRound = (state.handsThisRound || 0) === 0;
+      state.handsThisRound = (state.handsThisRound || 0) + 1;
+      let cleared = state.roundScore >= target;
+      // Phoenix Feather: once per run, a lost blind counts as cleared.
+      if (!cleared && newPlaysLeft <= 0) {
+        const feather = state.charms.find((c) => c.effect.type === "phoenixSave");
+        if (feather) {
+          state.charms = state.charms.filter((c) => c.uid !== feather.uid);
+          cleared = true;
+          setTimeout(() => activateCharmSlide(feather, () => {}), 100);
+        }
+      }
+      if (cleared) {
+        state.charms.forEach((c) => {
+          if (c.effect.type === "deadlineFirstHandClear" && firstHandOfRound) state.money += c.effect.value;
+          if (c.effect.type === "investorMoneyPerCharm") state.money += state.charms.length * c.effect.value;
+          if (c.effect.type === "satchelItemOnClear" && state.items.length < getEffectiveItemSlots()) {
+            state.items = [...state.items, { ...randomOf(ITEM_DEFS), uid: newUid() }];
+          }
+        });
         const interest = getInterestBonus(state.items, state.money);
         const base = 3 + state.blindIdx;
         const leftover = getLeftoverHandsBonus(state.playsLeft, state.discardsLeft);
@@ -4026,6 +4259,12 @@ function finishPlay(finalScore, newPlaysLeft) {
 
 function discard() {
   if (state.selected.length === 0 || state.discardsLeft <= 0 || state.overlay !== "playing") return;
+  if (hasCharm("chainsNoDiscardX")) {
+    state.bossBlindMessage = "Chains: you can't discard";
+    render();
+    setTimeout(() => { state.bossBlindMessage = null; render(); }, 1600);
+    return;
+  }
   // fly discarded cards downward and fade before refilling
   state.selected.forEach((id) => {
     const el = document.querySelector(`.hand-fan .card[data-card-id="${id}"]`);
@@ -4039,11 +4278,22 @@ function discard() {
     // Check for Tithe sleeves and add money bonus
     const discardedCards = state.hand.filter(c => state.selected.includes(c.id));
     const titheBonus = discardedCards.filter(c => c.sleeve === "tithe").length * 5;
+    // Collector: a lone first discard of the round is destroyed for cash.
+    let collected = [];
+    if (!state.collectorUsedThisRound) {
+      state.collectorUsedThisRound = true;
+      const collector = state.charms.find((c) => c.effect.type === "collectorFirstDiscard");
+      if (collector && discardedCards.length === 1) {
+        collected = discardedCards;
+        state.money += collector.effect.value;
+        state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + 1;
+      }
+    }
     
     const { newDeck, newHand } = refillHand(state.deck, state.hand, state.selected);
     state.deck = newDeck;
     state.hand = newHand;
-    state.usedCards = [...state.usedCards, ...discardedCards];
+    state.usedCards = [...state.usedCards, ...discardedCards.filter((c) => !collected.includes(c))];
     state.selected = [];
     state.discardsLeft -= 1;
     state.totalDiscardedRun = (state.totalDiscardedRun || 0) + discardedCards.length;
@@ -4145,9 +4395,122 @@ function goToShop() {
     voucherPool.splice(randomIdx, 1);
   }
   
+  // Booster packs: two per visit (rerolling doesn't change them); a Legend
+  // Pack turns up in a slot 12% of the time.
+  const commonPacks = PACK_DEFS.filter((p) => !p.rare);
+  state.packStock = [0, 1].map(() => ({ ...(Math.random() < 0.12 ? PACK_DEFS.find((p) => p.rare) : randomOf(commonPacks)) }));
+
   state.overlay = "shop";
   saveGame();
   render();
+}
+
+function buyPack(index) {
+  const pack = state.packStock && state.packStock[index];
+  if (!pack) return;
+  const price = shopPriceFor(pack);
+  if (state.money < price) return;
+  state.money -= price;
+  if (state.freeBuy) state.freeBuy = false;
+  state.packStock = state.packStock.map((p, i) => (i === index ? null : p));
+  openPack(pack.id);
+}
+
+// Opens a pack: rolls its choices and shows the pick-one screen.
+function openPack(packId) {
+  const pack = PACK_DEFS.find((p) => p.id === packId);
+  if (!pack) return;
+  const ringmaster = hasCharm("ringmasterDuplicates");
+  const owned = new Set(state.charms.map((c) => c.id));
+  const pickDefs = (pool, n) => shuffleArray(pool).slice(0, n).map((d) => ({ ...d }));
+  let choices = [];
+  if (packId === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), pack.choices);
+  if (packId === "itemPack") choices = pickDefs(ITEM_DEFS, pack.choices);
+  if (packId === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), pack.choices);
+  if (packId === "cardPack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
+  if (packId === "ornatePack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  state.packOpen = { id: packId, name: pack.name, choices };
+  state.shopDetail = null;
+  saveGame();
+  render();
+}
+
+function takePackChoice(index) {
+  const po = state.packOpen;
+  if (!po) return;
+  const choice = po.choices[index];
+  if (!choice) return;
+  if (choice.type === "charm") {
+    if (state.charms.length >= state.charmSlots) return;
+    state.charms = [...state.charms, { ...choice, uid: newUid() }];
+  } else if (choice.type === "item") {
+    if (state.items.length >= getEffectiveItemSlots()) return;
+    state.items = [...state.items, { ...choice, uid: newUid() }];
+  } else {
+    // a playing card: straight into the deck
+    state.deck = shuffleArray([...state.deck, { ...choice }]);
+  }
+  state.packOpen = null;
+  saveGame();
+  render();
+}
+
+function skipPack() {
+  state.packOpen = null;
+  saveGame();
+  render();
+}
+
+function PackOverlay() {
+  const po = state.packOpen;
+  const wrap = document.createElement("div");
+  wrap.className = "pack-overlay";
+  const def = PACK_DEFS.find((p) => p.id === po.id) || {};
+  wrap.innerHTML = `
+    <div class="pack-head">
+      <div class="pack-art">${AnteArt.icon(def)}</div>
+      <div>
+        <div class="pack-title serif">${po.name}</div>
+        <div class="pack-sub">Choose one</div>
+      </div>
+    </div>`;
+  const grid = document.createElement("div");
+  grid.className = "pack-choices";
+  po.choices.forEach((choice, i) => {
+    const tile = document.createElement("button");
+    tile.className = "pack-choice";
+    const isCard = !choice.type;
+    let full = false;
+    if (choice.type === "charm") full = state.charms.length >= state.charmSlots;
+    if (choice.type === "item") full = state.items.length >= getEffectiveItemSlots();
+    if (isCard) {
+      const cardEl = renderCard(choice, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => takePackChoice(i) });
+      cardEl.classList.add("pack-card");
+      cardEl.style.transform = "none";
+      cardEl.dataset.finalTransform = "none";
+      tile.appendChild(cardEl);
+      const lines = [];
+      if (choice.sleeve) lines.push(`<b>${AnteArt.sleeveLabel(choice.sleeve)}</b> ${SLEEVE_INFO[choice.sleeve]}`);
+      if (choice.stamp) lines.push(`<b>${STAMP_LABELS[choice.stamp]} stamp</b> ${STAMP_INFO[choice.stamp]}`);
+      tile.insertAdjacentHTML("beforeend", `<div class="pack-choice-desc">${lines.join("<br>") || "Plain card"}</div>`);
+    } else {
+      tile.innerHTML = `
+        <div class="pack-choice-art${choice.rarity === "legendary" ? " legendary" : ""}">${AnteArt.icon(choice)}</div>
+        <div class="pack-choice-name serif">${choice.name}</div>
+        <div class="pack-choice-desc">${choice.desc}</div>
+        ${full ? `<div class="pack-choice-full">Slots full</div>` : ""}`;
+    }
+    tile.disabled = full;
+    tile.onclick = () => takePackChoice(i);
+    grid.appendChild(tile);
+  });
+  wrap.appendChild(grid);
+  const skip = document.createElement("button");
+  skip.className = "pack-skip";
+  skip.textContent = "Skip";
+  skip.onclick = skipPack;
+  wrap.appendChild(skip);
+  return wrap;
 }
 
 // Rerolls the charm/item stock (not vouchers) for a price. Each reroll this
@@ -4188,7 +4551,7 @@ function buyItem(shopIndex) {
   
   // Calculate shop discount from Clearance Sale voucher
   const shopDiscount = state.vouchers.filter((v) => v.effect.type === "shopDiscount").reduce((m, v) => m * v.effect.value, 1);
-  const discountedPrice = Math.ceil(item.price * shopDiscount);
+  const discountedPrice = shopPriceFor(item);
   
   if (state.money < discountedPrice) return;
   
@@ -4202,6 +4565,7 @@ function buyItem(shopIndex) {
     state.items = [...state.items, { ...item, uid: Math.random().toString(36).slice(2, 9) }];
   }
   
+  if (state.freeBuy) state.freeBuy = false;
   state.shopStock = state.shopStock.map((it, i) => (i === shopIndex ? null : it));
   saveGame();
   render();
@@ -4243,7 +4607,7 @@ function sellCharm(uid) {
     }
   }
   
-  state.money += Math.max(1, Math.floor(charm.price / 2));
+  state.money += sellValue(charm);
   // Removing the charm updates getEffectiveItemSlots() automatically. If The Fool's
   // slot was occupied, the item in it stays put, it just becomes an overflow item
   // until it's used or a new slot is gained again.
@@ -4259,8 +4623,9 @@ function sellCharm(uid) {
 // Camera can preserve any single item instance at most 4 times - after that,
 // the item is always consumed on use regardless of Camera's roll.
 function tryConsumeItem(item, itemUid) {
+  state.charms.forEach((c) => { if (c.effect.type === "moneyOnItemUse") state.money += c.effect.value; });
   const cameraCharms = state.charms.filter((c) => c.effect.type === "cameraPreserve");
-  const chanceMult = state.charms.some((c) => c.effect.type === "horseshoeDoubleChance") ? 2 : 1;
+  const chanceMult = chanceMultiplier();
   const saveCount = item.cameraSaves || 0;
   let preservedBy = null;
   if (saveCount < 4) {
@@ -4348,6 +4713,7 @@ function useItem(itemUid) {
     if (state.overlay !== "playing" || state.selected.length === 0) return;
     const idsToRemove = state.selected.slice(0, eff.maxCards);
     activateCharmSlide(item, () => {
+      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + idsToRemove.length;
       state.hand = state.hand.filter((c) => !idsToRemove.includes(c.id));
       state.deck = state.deck.filter((c) => !idsToRemove.includes(c.id));
       state.usedCards = state.usedCards.filter((c) => !idsToRemove.includes(c.id));
@@ -4364,7 +4730,7 @@ function useItem(itemUid) {
     const source = state.hand.find((c) => c.id === targetId);
     if (!source) return;
     activateCharmSlide(item, () => {
-      const clone = { ...source, id: source.id + "_dup_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined, stamp: undefined };
+      const clone = { ...source, id: source.id + "_dup_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined };
       state.deck = [...state.deck, clone];
       tryConsumeItem(item, itemUid);
       saveGame();
@@ -4397,6 +4763,177 @@ function useItem(itemUid) {
     return;
   }
 
+  // ----- reworked and new items -----
+  const quick = (fn) => {
+    activateCharmSlide(item, () => {
+      fn();
+      tryConsumeItem(item, itemUid);
+      saveGame();
+      render();
+    });
+  };
+  const inPlay = state.overlay === "playing";
+  const selectedInOrder = () => getSortedHand().filter((c) => state.selected.includes(c.id));
+  const mapHand = (fn) => { state.hand = state.hand.map(fn); };
+
+  if (eff.type === "loversShareMods") {
+    const sel = selectedInOrder();
+    if (!inPlay || sel.length < 2) return;
+    const a = sel[0], b = sel[sel.length - 1];
+    return quick(() => mapHand((c) => c.id === a.id ? { ...c, sleeve: b.sleeve, stamp: b.stamp } : c.id === b.id ? { ...c, sleeve: a.sleeve, stamp: a.stamp } : c));
+  }
+  if (eff.type === "merchantFreeBuy") return quick(() => { state.freeBuy = true; });
+  if (eff.type === "gardenerGrowSuit") {
+    if (state.hand.length === 0) return;
+    return quick(() => {
+      const counts = {};
+      state.hand.forEach((c) => { counts[c.suit] = (counts[c.suit] || 0) + 1; });
+      const suit = Object.keys(counts).sort((x, y) => counts[y] - counts[x])[0];
+      for (let n = 0; n < eff.count; n++) state.deck.push(makeCard(randomOf(RANKS), suit));
+      state.deck = shuffleArray(state.deck);
+    });
+  }
+  if (eff.type === "drawExtra") {
+    if (!inPlay || state.deck.length === 0) return;
+    return quick(() => {
+      const drawn = state.deck.slice(0, eff.count);
+      state.deck = state.deck.slice(drawn.length);
+      tagBossDebuffedCards(drawn);
+      state.hand = [...state.hand, ...drawn];
+    });
+  }
+  if (eff.type === "extraPlayNow") {
+    if (!inPlay) return;
+    return quick(() => { state.playsLeft += eff.value; });
+  }
+  if (eff.type === "luckyRound") return quick(() => { state.luckyRound = true; });
+  if (eff.type === "rankUpHand") {
+    if (state.hand.length === 0) return;
+    return quick(() => mapHand((c) => ({ ...c, rank: RANKS[(RANKS.indexOf(c.rank) + 1) % RANKS.length] })));
+  }
+  if (eff.type === "doubleBase") return quick(() => { state.nextHandDoubleBase = true; });
+  if (eff.type === "encoreLastScore") {
+    if (!state.lastHandScore) return;
+    return quick(() => { state.nextHandBonusScore = state.lastHandScore; });
+  }
+  if (eff.type === "moneyPerCharm") return quick(() => { state.money += state.charms.length * eff.value; });
+  if (eff.type === "roundHandSize") {
+    if (!inPlay) return;
+    return quick(() => {
+      state.roundHandSizeBonus = (state.roundHandSizeBonus || 0) + eff.value;
+      const { newDeck, newHand } = refillHand(state.deck, state.hand, []);
+      state.deck = newDeck;
+      state.hand = newHand;
+    });
+  }
+  if (eff.type === "diceRandomChipsX") return quick(() => { state.nextHandChipsX = eff.min + Math.random() * (eff.max - eff.min); });
+  if (eff.type === "raiseSellValue") {
+    if (state.charms.length === 0) return;
+    return quick(() => { state.charms = state.charms.map((c) => ({ ...c, sellBonus: (c.sellBonus || 0) + eff.value })); });
+  }
+  if (eff.type === "moneyPerActionLeft") return quick(() => { state.money += (state.playsLeft + state.discardsLeft) * eff.value; });
+  if (eff.type === "interestNow") return quick(() => { state.money += getInterestBonus(state.items, state.money); });
+  if (eff.type === "reshuffleUsed") {
+    if (state.usedCards.length === 0) return;
+    return quick(() => {
+      state.deck = shuffleArray([...state.deck, ...state.usedCards]);
+      state.usedCards = [];
+    });
+  }
+  if (eff.type === "spreadSleeve") {
+    const lead = getSortedHand()[0];
+    if (!lead || !lead.sleeve) return;
+    return quick(() => mapHand((c) => (c.rank === lead.rank && c.id !== lead.id ? withSleeve(c, lead.sleeve) : c)));
+  }
+  if (eff.type === "openPack") {
+    activateCharmSlide(item, () => {
+      tryConsumeItem(item, itemUid);
+      openPack(eff.pack);
+    });
+    return;
+  }
+  if (eff.type === "stampRandom") {
+    if (state.hand.length === 0) return;
+    const ids = shuffleArray(state.hand).slice(0, eff.count).map((c) => c.id);
+    return quick(() => mapHand((c) => (ids.includes(c.id) ? { ...c, stamp: randomOf(STAMP_KINDS) } : c)));
+  }
+  if (eff.type === "echoStamp") {
+    const hand = getSortedHand();
+    if (hand.length < 2 || !hand[0].stamp) return;
+    return quick(() => mapHand((c) => (c.id === hand[1].id ? { ...c, stamp: hand[0].stamp } : c)));
+  }
+  if (eff.type === "stampSleeved") {
+    if (!state.hand.some((c) => c.sleeve)) return;
+    return quick(() => mapHand((c) => (c.sleeve ? { ...c, stamp: randomOf(STAMP_KINDS) } : c)));
+  }
+  if (eff.type === "sleeveRandom") {
+    if (state.hand.length === 0) return;
+    const ids = shuffleArray(state.hand).slice(0, eff.count).map((c) => c.id);
+    return quick(() => mapHand((c) => (ids.includes(c.id) ? withSleeve(c, eff.sleeve) : c)));
+  }
+  if (eff.type === "moltCapsule") {
+    const lead = getSortedHand()[0];
+    if (!lead) return;
+    return quick(() => mapHand((c) => (c.id === lead.id ? { ...c, sleeve: undefined, moltBuff: (c.moltBuff || 0) + eff.value } : c)));
+  }
+  if (eff.type === "larvaJar") {
+    const lead = getSortedHand()[0];
+    if (!lead) return;
+    return quick(() => {
+      for (let n = 0; n < eff.count; n++) state.deck.push(withSleeve({ ...lead, id: lead.id + "_jar_" + Date.now() + "_" + n + Math.random().toString(36).slice(2, 6) }, "larva"));
+      state.deck = shuffleArray(state.deck);
+    });
+  }
+  if (eff.type === "copycatItem") {
+    const others = state.items.filter((i) => i.uid !== itemUid && i.effect.type !== "copycatItem");
+    if (others.length === 0) return;
+    activateCharmSlide(item, () => {
+      const pick = randomOf(others);
+      state.items = state.items.map((i) => (i.uid === itemUid ? { ...pick, uid: newUid(), cameraSaves: 0 } : i));
+      saveGame();
+      render();
+    });
+    return;
+  }
+  if (eff.type === "pruneLow") {
+    const isLow = (c) => c.rank === "2" || c.rank === "3";
+    const count = state.deck.filter(isLow).length + state.usedCards.filter(isLow).length;
+    if (count === 0) return;
+    return quick(() => {
+      state.deck = state.deck.filter((c) => !isLow(c));
+      state.usedCards = state.usedCards.filter((c) => !isLow(c));
+      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + count;
+    });
+  }
+  if (eff.type === "forgeAce") {
+    if (!inPlay || state.selected.length === 0) return;
+    const id = state.selected[0];
+    return quick(() => mapHand((c) => (c.id === id ? { ...c, rank: "A" } : c)));
+  }
+  if (eff.type === "jackpotRoll") {
+    return quick(() => {
+      if (Math.random() < Math.min(1, eff.chance * chanceMultiplier())) {
+        state.money += eff.value;
+        state.bossBlindMessage = `Jackpot! +$${eff.value}`;
+      } else {
+        state.bossBlindMessage = "No luck this time";
+      }
+      setTimeout(() => { state.bossBlindMessage = null; render(); }, 1600);
+    });
+  }
+  if (eff.type === "rallySuit") {
+    const lead = getSortedHand()[0];
+    if (!lead) return;
+    return quick(() => mapHand((c) => ({ ...c, suit: lead.suit })));
+  }
+  if (eff.type === "swapRanks") {
+    const sel = selectedInOrder();
+    if (!inPlay || sel.length < 2) return;
+    const a = sel[0], b = sel[sel.length - 1];
+    return quick(() => mapHand((c) => (c.id === a.id ? { ...c, rank: b.rank } : c.id === b.id ? { ...c, rank: a.rank } : c)));
+  }
+  if (eff.type === "bountyFaces") return quick(() => { state.money += state.hand.filter((c) => ["J", "Q", "K"].includes(c.rank)).length * eff.value; });
+
   if (eff.type === "piggyBankDiscardsToMoney") {
     activateCharmSlide(item, () => {
       state.money += state.discardsLeft * eff.value;
@@ -4420,6 +4957,7 @@ function useItem(itemUid) {
     const idsToDestroy = state.selected.slice(0, eff.maxCards);
     activateCharmSlide(item, () => {
       const earned = idsToDestroy.length * eff.pricePerCard;
+      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + idsToDestroy.length;
       state.hand = state.hand.filter((c) => !idsToDestroy.includes(c.id));
       state.deck = state.deck.filter((c) => !idsToDestroy.includes(c.id));
       state.selected = state.selected.filter((id) => !idsToDestroy.includes(id));
@@ -4554,7 +5092,7 @@ function useItem(itemUid) {
     const rightmostCard = selectedInOrder[selectedInOrder.length - 1];
     activateCharmSlide(item, () => {
       state.hand = state.hand.map((c) =>
-        c.id === leftmostId ? { ...c, rank: rightmostCard.rank, suit: rightmostCard.suit, sleeve: rightmostCard.sleeve } : c
+        c.id === leftmostId ? { ...c, rank: rightmostCard.rank, suit: rightmostCard.suit, sleeve: rightmostCard.sleeve, stamp: rightmostCard.stamp } : c
       );
       tryConsumeItem(item, itemUid);
       saveGame();
@@ -4568,7 +5106,7 @@ function useItem(itemUid) {
     const targetId = visualHand[0].id; // leftmost card in hand
     activateCharmSlide(item, () => {
       playSleeveAnimation(targetId, eff.sleeve, () => {
-        state.hand = state.hand.map((c) => (c.id === targetId ? { ...c, sleeve: eff.sleeve } : c));
+        state.hand = state.hand.map((c) => (c.id === targetId ? withSleeve(c, eff.sleeve) : c));
         if (eff.sleeve === "molt") {
           state.moltTargets = { ...state.moltTargets, [targetId]: true };
         }
@@ -5135,7 +5673,7 @@ function render() {
   const previewBar = document.createElement("div");
   previewBar.className = "preview-bar";
   const selectedCards = state.hand.filter((c) => state.selected.includes(c.id));
-  const previewBase = evaluateSelection(selectedCards);
+  const previewBase = selectedCards.length ? withNextHandBase(evaluateSelection(selectedCards)) : evaluateSelection(selectedCards);
   const preview = previewBase ? (() => {
     const r = applyBossBlindScoringEffects(
       applyCharmEffects(
@@ -5221,7 +5759,7 @@ function render() {
   actionsRow.className = "actions-row";
 
   actionsRow.appendChild(
-    ActionButton("Discard", `${state.discardsLeft} left`, "#A23B3B", false, discard, state.selected.length === 0 || state.discardsLeft === 0, cardScale)
+    ActionButton("Discard", hasCharm("chainsNoDiscardX") ? "chained" : `${state.discardsLeft} left`, "#A23B3B", false, discard, state.selected.length === 0 || state.discardsLeft === 0 || hasCharm("chainsNoDiscardX"), cardScale)
   );
   actionsRow.appendChild(
     ActionButton("Play Hand", `${state.playsLeft} left`, "#C9A227", true, playHand, state.selected.length === 0 || state.playsLeft === 0, cardScale)
@@ -5374,6 +5912,15 @@ function render() {
     activation.appendChild(text);
     
     app.appendChild(activation);
+  }
+
+  // ===== BOOSTER PACK (pick one) =====
+  if (state.packOpen) app.appendChild(PackOverlay());
+
+  // ===== CARD NOTE (double-tap a card with a sleeve/stamp) =====
+  if (state.cardNote) {
+    const noteEl = CardNote();
+    if (noteEl) app.appendChild(noteEl);
   }
 
   // ===== GEAR DETAIL (tap an artifact/item on the shelf) =====
@@ -5544,7 +6091,7 @@ function ItemSidebar() {
 const SHELF_PIECE = 46;
 
 function sellValue(def) {
-  return Math.max(1, Math.floor(def.price / 2));
+  return Math.max(1, Math.floor(def.price / 2)) + (def.sellBonus || 0);
 }
 
 function sellItem(uid) {
@@ -5877,6 +6424,30 @@ function ShopOverlay() {
   counter.appendChild(waresLabel);
   const wares = document.createElement("div");
   wares.className = "shop-wares";
+  (state.packStock || []).forEach((pack, i) => {
+    const ware = document.createElement("div");
+    ware.className = "ware is-pack" + (!pack ? " sold" : "");
+    if (!pack) {
+      ware.innerHTML = `<div class="ware-art"></div><div class="ware-plank"></div><div class="ware-sold">Opened</div>`;
+      wares.appendChild(ware);
+      return;
+    }
+    const price = shopPriceFor(pack);
+    ware.innerHTML = `
+      <div class="ware-art">${AnteArt.icon(pack)}</div>
+      <div class="ware-plank"></div>
+      <span class="ware-tag">${price < pack.price ? `<s>$${pack.price}</s> ` : ""}$${price}</span>
+      <div class="ware-kind">${pack.rare ? "Rare pack" : "Booster pack"}</div>
+      <div class="ware-name serif">${pack.name}</div>
+      <button class="ware-buy" ${state.money < price ? "disabled" : ""}>Open</button>
+    `;
+    ware.querySelector(".ware-buy").onclick = (e) => { e.stopPropagation(); buyPack(i); };
+    ware.addEventListener("click", (e) => {
+      if (e.target.closest(".ware-buy")) return;
+      openShopDetail("pack", i);
+    });
+    wares.appendChild(ware);
+  });
   state.shopStock.forEach((item, i) => {
     const ware = document.createElement("div");
     ware.className = "ware" + (!item ? " sold" : "");
@@ -5885,7 +6456,7 @@ function ShopOverlay() {
       wares.appendChild(ware);
       return;
     }
-    const discountedPrice = Math.ceil(item.price * shopDiscount);
+    const discountedPrice = shopPriceFor(item);
     const slotsFull = item.type === "charm"
       ? state.charms.length >= state.charmSlots
       : state.items.length >= getEffectiveItemSlots();
@@ -5893,7 +6464,7 @@ function ShopOverlay() {
     ware.innerHTML = `
       <div class="ware-art${item.type === "charm" ? " is-relic" : ""}">${AnteArt.icon(item)}</div>
       <div class="ware-plank"></div>
-      <span class="ware-tag">${shopDiscount < 1 ? `<s>$${item.price}</s> ` : ""}$${discountedPrice}</span>
+      <span class="ware-tag">${discountedPrice < item.price ? `<s>$${item.price}</s> ` : ""}$${discountedPrice}</span>
       <div class="ware-kind">${item.type === "charm" ? "Artifact" : "Item"}</div>
       <div class="ware-name serif">${item.name}</div>
       <button class="ware-buy" ${disabled ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>
@@ -5922,7 +6493,7 @@ function ShopOverlay() {
   // ===== DETAIL POPUP: full name/description for whichever slot was tapped =====
   if (state.shopDetail) {
     const { kind, index } = state.shopDetail;
-    const entry = kind === "voucher" ? state.voucherStock[index] : state.shopStock[index];
+    const entry = kind === "voucher" ? state.voucherStock[index] : kind === "pack" ? (state.packStock || [])[index] : state.shopStock[index];
     if (entry) {
       const backdrop = document.createElement("div");
       backdrop.className = "shop-detail-backdrop";
@@ -5933,16 +6504,17 @@ function ShopOverlay() {
       card.style.setProperty("--glow", entry.color);
 
       const isVoucher = kind === "voucher";
-      const discountedPrice = isVoucher ? entry.price : Math.ceil(entry.price * shopDiscount);
+      const discountedPrice = isVoucher ? entry.price : shopPriceFor(entry);
       const disabled = isVoucher
         ? state.money < entry.price
-        : (state.money < discountedPrice) || (entry.type === "charm"
+        : kind === "pack" ? state.money < discountedPrice : (state.money < discountedPrice) || (entry.type === "charm"
             ? state.charms.length >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
-      const typeLabel = isVoucher ? "PERMANENT UPGRADE" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
-      const slotsFull = !isVoucher && entry.type === "charm"
+      const isPack = kind === "pack";
+      const typeLabel = isVoucher ? "PERMANENT UPGRADE" : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
+      const slotsFull = !isVoucher && !isPack && entry.type === "charm"
         ? state.charms.length >= state.charmSlots
-        : (!isVoucher && state.items.length >= getEffectiveItemSlots());
+        : (!isVoucher && !isPack && state.items.length >= getEffectiveItemSlots());
 
       // Set all static content in a single innerHTML assignment first — appending
       // the close button afterwards (rather than before, via +=) avoids the whole
@@ -5957,7 +6529,7 @@ function ShopOverlay() {
         <button class="shop-detail-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : disabled ? "Can't Afford" : "Buy"}</button>
       `;
       card.querySelector(".shop-detail-buy-btn").onclick = () => {
-        if (isVoucher) buyVoucher(index); else buyItem(index);
+        if (isVoucher) buyVoucher(index); else if (isPack) { closeShopDetail(); buyPack(index); return; } else buyItem(index);
         closeShopDetail();
       };
 
