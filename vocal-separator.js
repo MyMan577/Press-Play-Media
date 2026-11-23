@@ -4732,6 +4732,7 @@
       qwen05i4:  { id: 'leuconoe/litert-lm-unity-quantized', label: 'Qwen2.5 0.5B 4-bit (LiteRT-LM, app only, ~265 MB, community build, short memory)', mb: 265, lm: true, lid: 'lm_qwen05_i4', url: 'https://huggingface.co/leuconoe/litert-lm-unity-quantized/resolve/main/qwen2.5-0.5b-instruct/Qwen2.5-0.5B-Instruct_wi4b64_ekv1280.litertlm' },
       smol135: { id: 'HuggingFaceTB/SmolLM2-135M-Instruct', label: 'SmolLM2 135M (tiny, ~150 MB, the old one)', mb: 150, file: 'onnx/model_quantized.onnx', eos: ['<|im_end|>'], lid: 'llm_smollm2' }
     };
+    window.__ppvChatModels = CHAT_MODELS;   // read by Settings, Downloads
     // Users who already downloaded the old SmolLM2 keep it; everyone else gets Qwen2.5 0.5B.
     const chatKey = () => {
       try {
@@ -9400,6 +9401,173 @@
     try { smartUI(p, { mas, status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
     refresh();
   }
+  // ================= Settings, Downloads: everything the app has downloaded, in one place =================
+  // Lists what is really on the phone, wherever it lives (the app's models folder, this page's model store, the
+  // transformers.js cache, the translator's language packs), grouped by feature with its size, each with Remove.
+  // Below that, the add-ons that are not installed yet, each with Install (the same download each feature does itself).
+  (function downloadsManager(){
+    const box = document.getElementById('downloads-section'); if (!box) return;
+    const listEl = box.querySelector('#dl-installed'), availEl = box.querySelector('#dl-available'), sumEl = box.querySelector('#dl-summary');
+    const TC = 'transformers-cache';
+    const TR = () => window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.PPTranslate;
+    const LANG = (() => { try { return new Intl.DisplayNames(['en'], { type: 'language' }); } catch (e) { return null; } })();
+    const mb = b => b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? Math.round(b / 1048576) + ' MB' : b > 0 ? Math.max(1, Math.round(b / 1024)) + ' KB' : '';
+    const short = s => String(s || '').replace(/\s*\([^)]*\)\s*$/, '');
+    const chat = () => window.__ppvChatModels || {};
+    let busy = false;
+
+    // which feature a stored file belongs to
+    function groupOf(id) {
+      for (const [mid, m] of Object.entries(MODELS)) {
+        if (parts(mid).some(([k]) => k === id) || (m.kind === 'sp4' && id.startsWith('sp4f_')) || (mid === 'spleeter2' && (id === 'vocals' || id === 'accomp')))
+          return { key: 'stem:' + mid, name: 'Stem splitter: ' + short(m.label), kind: 'AI' };
+      }
+      for (const [s, pre] of Object.entries(WHN)) if (id === pre + '_enc' || id === pre + '_dec' || id === pre + '_encf')
+        return { key: 'wh:' + s, name: 'Lyrics and subtitles: Whisper ' + short(WH[s] ? WH[s][1] : s), kind: 'AI' };
+      if (/^pk_/.test(id)) return { key: 'pk', name: 'Lyrics and subtitles: Parakeet', kind: 'AI' };
+      if (/^tg(h)?_/.test(id)) return { key: 'tag', name: 'Auto-tagging (genre, mood, instruments)', kind: 'AI' };
+      if (/^(llm|lm)_/.test(id)) { const m = Object.values(chat()).find(c => c.lid === id); return { key: 'chat:' + id, name: 'Bloopy chat: ' + (m ? short(m.label) : id), kind: 'AI' }; }
+      if (/^ww_/.test(id)) return { key: 'ww', name: 'Bloopy wake word', kind: 'AI' };
+      return { key: 'other:' + id, name: id, kind: 'File' };
+    }
+
+    // ---------- what is installed ----------
+    async function scan() {
+      const groups = new Map(), add = (g, item) => { let x = groups.get(g.key); if (!x) groups.set(g.key, x = Object.assign({ bytes: 0, items: [] }, g)); x.items.push(item); x.bytes += item.bytes || 0; };
+      let free = null;
+      if (NATIVE && NP.listModels) {
+        try {
+          const r = await NP.listModels(); free = r.free;
+          for (const f of r.files || []) {
+            const n = f.name, part = /\.part$/.test(n), qnn = /\.qnn\.onnx$/.test(n);
+            const id = n.replace(/\.qnn\.onnx$/, '').replace(/\.(onnx|litertlm|part)$/, '');
+            const g = groupOf(id);
+            add(part ? { key: 'part', name: 'Unfinished downloads', kind: 'File' } : g, { where: part || qnn ? 'raw' : 'native', id, name: n, bytes: f.bytes });
+          }
+        } catch (e) { console.warn('listModels failed', e); }
+      }
+      try {                                                            // this page's own model store (every model in a browser; small extras in the app)
+        const db = await idb();
+        await new Promise(res => {
+          const q = db.transaction('models').objectStore('models').openCursor();
+          q.onsuccess = () => { const c = q.result; if (!c) return res(); const v = c.value, k = String(c.key);
+            const bytes = v ? (v.size || v.byteLength || v.length || 0) : 0;
+            add(k === 'tg_manifest' ? groupOf('tg_') : groupOf(k), { where: 'idb', id: k, bytes }); c.continue(); };
+          q.onerror = () => res();
+        });
+      } catch (e) { console.warn('model store scan failed', e); }
+      try {                                                            // transformers.js downloads (chat in a browser, voice, embeddings, web Whisper)
+        if (window.caches && (await caches.has(TC))) {
+          const c = await caches.open(TC);
+          for (const req of await c.keys()) {
+            const m = /huggingface\.co\/([^/]+\/[^/]+)\/resolve\//.exec(req.url), repo = m ? m[1] : 'other';
+            const res = await c.match(req), bytes = +(res && res.headers.get('content-length')) || 0;
+            const wh = Object.entries(WH).find(([, v]) => v[0] === repo), ch = Object.values(chat()).find(v => v.id === repo);
+            const name = wh ? 'Lyrics and subtitles: Whisper ' + short(wh[1][1]) + ' (web)' : ch ? 'Bloopy chat: ' + short(ch.label) + ' (web)' :
+              /Kokoro/i.test(repo) ? 'Bloopy voice (Kokoro)' : /MiniLM/i.test(repo) ? 'Smart search (MiniLM)' : /moonshine/i.test(repo) ? 'Voice commands (Moonshine)' : repo;
+            add({ key: 'tc:' + repo, name, kind: 'AI' }, { where: 'cache', url: req.url, bytes });
+          }
+        }
+      } catch (e) { console.warn('cache scan failed', e); }
+      if (NATIVE && TR() && TR().listPacks) {
+        try { for (const l of (await TR().listPacks()).packs || []) add({ key: 'tr:' + l, name: 'Translation: ' + ((LANG && LANG.of(l)) || l), kind: 'Language pack' }, { where: 'lang', id: l, bytes: 0 }); }
+        catch (e) { console.warn('listPacks failed', e); }
+      }
+      if (free == null) { try { const est = navigator.storage && await navigator.storage.estimate(); if (est) free = est.quota - est.usage; } catch (e) {} }
+      return { groups: [...groups.values()].sort((a, b) => b.bytes - a.bytes), free };
+    }
+
+    async function removeGroup(g) {
+      for (const it of g.items) {
+        try {
+          if (it.where === 'native') await NP.remove({ id: it.id });
+          else if (it.where === 'raw') await NP.removeRaw({ name: it.name });
+          else if (it.where === 'idb') await idbDel(it.id);
+          else if (it.where === 'cache') await (await caches.open(TC)).delete(it.url);
+          else if (it.where === 'lang') await TR().deletePack({ lang: it.id });
+        } catch (e) { console.warn('remove failed', it, e); }
+      }
+      if (g.key === 'tag') { try { await resetHeads(); } catch (e) {} }
+    }
+
+    // ---------- what can be installed ----------
+    function catalog(have) {
+      const out = [], has = k => have.has(k);
+      for (const [mid, m] of Object.entries(MODELS)) {
+        if (m.nativeOnly && !NATIVE) continue;
+        out.push({ key: 'stem:' + mid, name: 'Stem splitter: ' + short(m.label), size: (/\(([^)]*)\)/.exec(m.label) || [])[1] || '',
+          installed: has('stem:' + mid), install: s => downloadModel(mid, s, true) });
+      }
+      if (NATIVE) {
+        for (const s of Object.keys(WH)) {
+          if (WH[s][2] && WH[s][2].pk) out.push({ key: 'pk', name: 'Lyrics and subtitles: Parakeet', size: '~650 MB', installed: has('pk'), install: async st => { await pkFiles(st); try { await pkVocab(); } catch (e) {} } });
+          else out.push({ key: 'wh:' + s, name: 'Lyrics and subtitles: Whisper ' + short(WH[s][1]), size: (/\(~?([^,)]*)/.exec(WH[s][1]) || [])[1] || '',
+            installed: has('wh:' + s), install: st => whNativeFiles(s, st, false) });
+        }
+        for (const m of Object.values(chat())) {
+          if (!m.lid) continue;
+          const url = m.url || ('https://huggingface.co/' + m.id + '/resolve/main/' + m.file);
+          out.push({ key: 'chat:' + m.lid, name: 'Bloopy chat: ' + short(m.label), size: m.mb ? mb(m.mb * 1048576) : '', installed: has('chat:' + m.lid), install: st => nativeFetch(m.lid, url, st) });
+        }
+      }
+      out.push({ key: 'tag', name: 'Auto-tagging (genre, mood, instruments)', size: '~60 MB', installed: has('tag'), install: async st => {
+        for (const k of Object.keys(TAG_FILES)) { try { await ensureTagFile(k, st, true); } catch (e) { if (k !== 'tg_hgenre' && k !== 'tg_effstyle') throw e; } }
+        await loadHeads(st, true);
+      } });
+      return out;
+    }
+
+    // ---------- drawing ----------
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const btn = (k, t, cls) => '<button type="button" class="lt-btn dl-btn' + (cls ? ' ' + cls : '') + '" data-dl="' + esc(k) + '">' + t + '</button>';
+    let last = null;
+    async function render() {
+      if (busy) return;
+      sumEl.textContent = 'Checking what is on this device…';
+      const r = await scan(); last = r;
+      const total = r.groups.reduce((a, g) => a + g.bytes, 0);
+      sumEl.textContent = (r.groups.length ? r.groups.length + ' installed, ' + (mb(total) || '0 MB') : 'Nothing downloaded yet') + (r.free != null ? ' · ' + mb(r.free) + ' free' : '') + '.';
+      listEl.innerHTML = r.groups.length ? r.groups.map(g => '<div class="settings-row dl-row"><div class="settings-row-text"><div class="settings-row-title">' + esc(g.name) + '</div>' +
+          '<div class="settings-row-sub">' + esc(g.kind) + (g.bytes ? ' · ' + mb(g.bytes) : '') + '</div><div class="settings-row-sub dl-msg" hidden></div></div>' + btn('rm:' + g.key, 'Remove', 'danger') + '</div>').join('') +
+          (r.groups.length > 1 ? '<div class="dl-all">' + btn('rm:*', 'Remove everything', 'danger') + '</div>' : '')
+        : '<div class="settings-row-sub">Nothing downloaded yet. AI features download their models the first time you use them, or install them below.</div>';
+      const have = new Set(r.groups.map(g => g.key));
+      const cat = catalog(have).filter(c => !c.installed);
+      availEl.innerHTML = '<div class="settings-row-title" style="margin:14px 0 6px">Available to install</div>' + (cat.length ? cat.map(c => '<div class="settings-row dl-row"><div class="settings-row-text"><div class="settings-row-title">' + esc(c.name) + '</div>' +
+          '<div class="settings-row-sub">' + esc(c.size ? 'About ' + c.size.replace(/^~/, '') : 'AI model') + '</div><div class="settings-row-sub dl-msg" hidden></div></div>' + btn('in:' + c.key, 'Install') + '</div>').join('') : '<div class="settings-row-sub">Everything is installed.</div>') +
+        (NATIVE ? '<div class="settings-row-sub" style="margin-top:8px">Translation language packs download by themselves the first time you translate into a language.</div>'
+                : '<div class="settings-row-sub" style="margin-top:8px">In a browser, Whisper, Bloopy’s chat and voice download the first time you use them.</div>');
+      availEl._cat = cat;
+    }
+    box.addEventListener('click', async e => {
+      const b = e.target.closest('[data-dl]'); if (!b || busy || !last) return;
+      const [op, key] = [b.dataset.dl.slice(0, 2), b.dataset.dl.slice(3)];
+      const row = b.closest('.dl-row'), msg = row && row.querySelector('.dl-msg');
+      const say = t => { if (msg) { msg.hidden = !t; msg.textContent = t || ''; } else sumEl.textContent = t; };
+      if (op === 'rm') {
+        const gs = key === '*' ? last.groups : last.groups.filter(g => g.key === key);
+        const what = key === '*' ? 'everything listed here (' + mb(gs.reduce((a, g) => a + g.bytes, 0)) + ')' : '“' + gs[0].name + '”';
+        if (!confirm('Remove ' + what + '? It downloads again the next time it is needed.')) return;
+        busy = true; box.querySelectorAll('[data-dl]').forEach(x => x.disabled = true); say('Removing…');
+        for (const g of gs) await removeGroup(g);
+        busy = false; render();
+      } else {
+        if (heavyJob) { say('Wait until the split or transcription that is running has finished.'); return; }
+        const c = (availEl._cat || []).find(x => x.key === key); if (!c) return;
+        busy = true; box.querySelectorAll('[data-dl]').forEach(x => x.disabled = true); say('Starting…');
+        try { await c.install(t => say(String(t))); say('Installed.'); }
+        catch (err) { say('Install failed: ' + errText(err)); busy = false; box.querySelectorAll('[data-dl]').forEach(x => x.disabled = false); return; }
+        busy = false; render();
+      }
+    });
+    // drawn when Settings is opened (scanning big caches costs a moment), and again after each change
+    let seen = false;
+    const io = window.IntersectionObserver ? new IntersectionObserver(es => { if (es.some(x => x.isIntersecting) && !seen) { seen = true; render(); } }) : null;
+    if (io) io.observe(box); else render();
+    box.querySelector('#dl-refresh') && box.querySelector('#dl-refresh').addEventListener('click', () => render());
+    window.__ppDownloads = { render, scan };
+  })();
+
   window.PPVocals = { muxVideo, wavToMp3, subtitleSpans, makeMask, alignLines, separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
   const boot = () => { try { ui(); } catch (e) { console.error(e); } };
   if (typeof document !== 'undefined' && document.body) boot();
