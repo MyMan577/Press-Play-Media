@@ -36,6 +36,14 @@
     // how many of a boost are waiting, without using them
     peek: function(kind){ return +call('peek', [kind], 0) || 0; },
     // take just one of a pending boost (for rewards that each need a tap, like crates)
-    takeOne: function(kind){ return +call('takeOne', [kind], 0) || 0; }
+    takeOne: function(kind){ return +call('takeOne', [kind], 0) || 0; },
+    // leave the game: presses the app's own Exit button, or goes back outside the app
+    quit: function(){
+      try {
+        var exit = window.parent && window.parent !== window && window.parent.document.querySelector('.ppg-exit');
+        if (exit) { exit.click(); return; }
+      } catch(e){}
+      try { history.back(); } catch(e){}
+    }
   };
 })();

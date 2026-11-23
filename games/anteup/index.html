@@ -13,7 +13,8 @@
 * { box-sizing: border-box; }
 html, body {
   margin: 0; padding: 0;
-  background: radial-gradient(ellipse at 50% -10%, #1B2A1E 0%, #0F1811 55%, #0A100C 100%);
+  background: radial-gradient(ellipse at 50% -10%, var(--f1, #1B2A1E) 0%, var(--f2, #0F1811) 55%, var(--f3, #0A100C) 100%);
+  background-attachment: fixed;
   color: #F3ECD9;
   font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
   min-height: 100vh;
@@ -73,28 +74,6 @@ html, body {
 .stat-value { font-size: 20px; font-weight: 700; }
 .stat-label { font-size: 10px; letter-spacing: 1px; color: #8B8368; text-transform: uppercase; }
 
-.menu-wrap { position: fixed; top: 16px; right: 16px; z-index: 500; }
-.menu-btn {
-  width: 38px; height: 38px; border-radius: 10px;
-  background: #1B241C; border: 1px solid #3A4A38; color: #F3ECD9;
-  font-size: 16px; letter-spacing: 2px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 10px #00000055;
-}
-.menu-btn:hover { background: #23301F; border-color: #C9A227; }
-.menu-dropdown {
-  position: absolute; top: 46px; right: 0; min-width: 160px;
-  background: #1B241C; border: 1px solid #3A4A38; border-radius: 10px;
-  padding: 6px; box-shadow: 0 6px 20px #00000077;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.menu-dropdown-item {
-  background: transparent; border: none; color: #F3ECD9;
-  font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600;
-  text-align: left; padding: 9px 10px; border-radius: 7px; cursor: pointer;
-}
-.menu-dropdown-item:hover { background: #A23B3B33; color: #E8A8A8; }
-
 .preview-bar {
   min-height: 54px; display: flex; align-items: center; gap: 14px; margin-bottom: 8px;
 }
@@ -112,7 +91,7 @@ html, body {
 .bottom-bar {
   position: fixed; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; align-items: center;
-  background: linear-gradient(to top, #0A100C 55%, #0A100Ccc 80%, transparent 100%);
+  background: linear-gradient(to top, var(--f3, #0A100C) 55%, color-mix(in srgb, var(--f3, #0A100C) 80%, transparent) 80%, transparent 100%);
   padding-bottom: max(8px, env(safe-area-inset-bottom));
   z-index: 4;
 }
@@ -419,7 +398,7 @@ html, body {
 /* ============================== SHOP — COUNTERTOP ============================== */
 .shop-overlay {
   position: fixed; inset: 0;
-  background: radial-gradient(ellipse at 50% -8%, #24391F 0%, #16241A 45%, #0A100C 100%);
+  background: radial-gradient(ellipse at 50% -8%, var(--f1s, #24391F) 0%, var(--f2s, #16241A) 45%, var(--f3, #0A100C) 100%);
   display: flex; flex-direction: column; align-items: center;
   z-index: 30; padding: 16px 14px max(12px, env(safe-area-inset-bottom));
   overflow: hidden;
@@ -428,7 +407,6 @@ html, body {
   width: 100%; max-width: 640px;
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 4px; flex-shrink: 0;
-  padding-right: 48px; /* keeps content clear of the fixed top-right menu button */
 }
 .shop-header-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .shop-title {
@@ -856,7 +834,7 @@ body.landscape .bcard-name { font-size: 10.5px; }
 /* ============================== BOOSTER PACK SCREEN ============================== */
 .pack-overlay {
   position: fixed; inset: 0; z-index: 90; overflow-y: auto; overscroll-behavior: contain;
-  background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--pc, #C9A227) 22%, #16241A) 0%, #16241A 45%, #0A100C 100%);
+  background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--pc, #C9A227) 22%, var(--f2s, #16241A)) 0%, var(--f2s, #16241A) 45%, var(--f3, #0A100C) 100%);
   display: flex; flex-direction: column; align-items: center; gap: 0;
   padding: 16px 14px max(12px, env(safe-area-inset-bottom));
   animation: zonesIn .2s ease-out;
@@ -1012,6 +990,211 @@ body.landscape .pack-actions .bbtn { min-height: 40px; padding: 4px; }
 body.landscape .pack-hand { margin-top: 8px; }
 body.landscape .pack-hand-card { height: 58px; }
 body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
+
+/* ----- artifact progress: value badge + bar on the shelf, bigger in the popup ----- */
+.prog-stat {
+  position: absolute; top: -6px; right: -6px; z-index: 2; pointer-events: none;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 9.5px; line-height: 1; white-space: nowrap;
+  color: #fff; background: #C23A30; border: 1.5px solid #0a0f0c; border-radius: 7px; padding: 2px 4px 3px;
+}
+.prog-stat.chips { background: #3866B8; }
+.prog-bar {
+  position: absolute; left: 5px; right: 5px; bottom: 2px; height: 5px; z-index: 2; pointer-events: none;
+  background: #0a0f0c; border-radius: 3px; border: 1px solid #0a0f0c; overflow: hidden;
+}
+.prog-bar i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); border-radius: 2px; transition: width .4s ease; }
+.prog-bar.ready i { background: linear-gradient(90deg, #4DB873, #9CF0B4); animation: progReady 1s ease-in-out infinite alternate; }
+@keyframes progReady { to { filter: brightness(1.35); } }
+.prog-block { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 10px; border-radius: 10px; background: #0a0f0c80; }
+.prog-block-stat { font-size: 12px; color: #C9BFA4; }
+.prog-block-stat b { font-family: 'Fraunces', Georgia, serif; font-size: 15px; padding: 0 5px; border-radius: 5px; color: #fff; }
+.prog-block-stat b.m { background: #C23A30; }
+.prog-block-stat b.c { background: #3866B8; }
+.prog-block-bar { width: 100%; height: 10px; border-radius: 6px; background: #0a0f0c; border: 1px solid #C9A22755; overflow: hidden; }
+.prog-block-bar i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); }
+.prog-block-bar.ready i { background: linear-gradient(90deg, #4DB873, #9CF0B4); }
+.prog-block-label { font-size: 11px; color: #E9C568; font-weight: 700; }
+
+/* ----- picking cards in a pack's hand (Arcana) ----- */
+.pack-hand-card { transition: transform .15s ease; }
+.pack-hand-card.can-pick { cursor: pointer; }
+.pack-hand-card.can-pick .pack-card { pointer-events: none; }
+.pack-hand-card.sel { transform: translateY(-14px); }
+.pack-hand-card.sel .pack-card, .pack-hand-card.target .pack-card { box-shadow: 0 0 0 2px #FFD45E, 0 0 14px #FFD45E; }
+.pack-hand-card.target { transform: translateY(-8px); }
+
+/* full cards in the shop and in packs */
+.bcard-face.full { aspect-ratio: 64 / 86; max-width: 80px; background: none !important; border: none !important; box-shadow: none !important; border-radius: 6px; }
+.bcard-face.full .bcard-art { width: 100%; filter: drop-shadow(0 6px 8px #000b); }
+.bcard.legendary .bcard-face.full .bcard-art { filter: drop-shadow(0 0 10px #E8743B) drop-shadow(0 6px 8px #000b); }
+.pchoice-face.full-face { display: flex; filter: drop-shadow(0 8px 12px #000b); }
+.pchoice-face.full-face svg { width: 100%; height: 100%; display: block; }
+.pchoice.picked .pchoice-face.full-face { box-shadow: none; filter: drop-shadow(0 0 3px #FFD45E) drop-shadow(0 0 12px #FFD45E); }
+.pchoice.legendary .pchoice-face.full-face { background: none; box-shadow: none; filter: drop-shadow(0 0 10px #E8743B) drop-shadow(0 8px 12px #000b); }
+/* ----- artifact sleeves ----- */
+.full-card.is-negative { filter: invert(1) hue-rotate(180deg); }
+.card.card-negative { filter: invert(.9) hue-rotate(180deg); }
+.shelf-piece.csl-sparkler svg { filter: drop-shadow(0 0 4px #FFB84D); }
+.shelf-piece.csl-tithe svg { filter: drop-shadow(0 0 3px #B8956A); }
+.shelf-piece.csl-gilded svg { filter: drop-shadow(0 0 5px #F2C94C); }
+.shelf-piece.csl-prismatic svg { animation: cslPrism 3s linear infinite; }
+@keyframes cslPrism { 0% { filter: drop-shadow(0 0 4px #ff6b6b); } 33% { filter: drop-shadow(0 0 4px #7FD08A); } 66% { filter: drop-shadow(0 0 4px #6bb8ff); } 100% { filter: drop-shadow(0 0 4px #ff6b6b); } }
+.shelf-piece.csl-negative svg { filter: invert(1) hue-rotate(180deg) drop-shadow(0 0 4px #b9a0ff); }
+.bcard-sleeve {
+  font-size: 8px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #0a0f0c;
+  background: var(--sc); border: 1.5px solid #0a0f0c; border-radius: 6px; padding: 0 6px; margin-top: -2px;
+}
+.sleeve-line { font-size: 12px; color: #C9BFA4; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); }
+.sleeve-line b { color: var(--sc); }
+.bcard-face.is-playing-ware { display: flex; align-items: center; justify-content: center; }
+.bcard-face.is-playing-ware .bcard-art { display: flex; justify-content: center; filter: drop-shadow(0 6px 8px #000b); }
+/* ============================== MENUS ============================== */
+:root { --f1: #1B2A1E; --f2: #0F1811; --f3: #0A100C; --f1s: #24391F; --f2s: #16241A; }
+.opt-btn {
+  display: flex; align-items: center; gap: 6px; cursor: pointer; font-family: 'Manrope', sans-serif;
+  padding: 6px 10px; border-radius: 10px; border: 2px solid #0a0f0c; color: #fff;
+  background: linear-gradient(180deg, #F29A2E 0%, #D9761B 100%); box-shadow: 0 3px 0 #8a4a10, 0 6px 12px #0006;
+}
+.opt-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #8a4a10; }
+.opt-lines { display: flex; flex-direction: column; gap: 2.5px; }
+.opt-lines i { display: block; width: 13px; height: 2.4px; border-radius: 2px; background: #fff; }
+.opt-txt { font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+.opt-btn.compact .opt-txt { display: none; }
+.opt-btn.compact { padding: 8px 9px; }
+.sub-controls-row .opt-btn { align-self: center; }
+
+.mbtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%;
+  font-family: 'Fraunces', Georgia, serif; color: #fff; cursor: pointer; text-shadow: 0 2px 0 #0006;
+  border: 2px solid #0a0f0c; border-radius: 12px; padding: 12px 10px; min-height: 52px;
+  transition: transform .08s ease, box-shadow .08s ease, filter .12s ease;
+}
+.mbtn:active { transform: translateY(4px); }
+.mbtn:hover { filter: brightness(1.08); }
+.mbtn-label { font-size: 21px; font-weight: 700; letter-spacing: .5px; }
+.mbtn-sub { font-family: 'Manrope', sans-serif; font-size: 10.5px; font-weight: 600; opacity: .85; text-shadow: none; }
+.mbtn-blue { background: linear-gradient(180deg, #4a90d9, #2f6fb8); box-shadow: 0 5px 0 #1a3f6e, 0 9px 16px #0007; }
+.mbtn-orange { background: linear-gradient(180deg, #F29A2E, #D9761B); box-shadow: 0 5px 0 #8a4a10, 0 9px 16px #0007; }
+.mbtn-purple { background: linear-gradient(180deg, #9b6fd6, #7550b5); box-shadow: 0 5px 0 #452a72, 0 9px 16px #0007; }
+.mbtn-red { background: linear-gradient(180deg, #E5574A, #C23A30); box-shadow: 0 5px 0 #7d231c, 0 9px 16px #0007; }
+.mbtn-green { background: linear-gradient(180deg, #4DB873, #2E8E50); box-shadow: 0 5px 0 #1b5a31, 0 9px 16px #0007; }
+.mbtn-grey { background: linear-gradient(180deg, #6b7a72, #4a5751); box-shadow: 0 5px 0 #2a332e, 0 9px 16px #0007; }
+.mbtn:active { box-shadow: 0 1px 0 #0008; }
+.mbtn-small { min-height: 40px; padding: 7px 10px; }
+.mbtn-small .mbtn-label { font-size: 15px; }
+
+.pause-back {
+  position: fixed; inset: 0; z-index: 400; background: #050805d9; backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 20px; animation: zonesIn .18s ease-out;
+}
+.mpanel {
+  position: relative; width: 100%; max-width: 320px; max-height: calc(100vh - 40px); display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 16px 16px; border-radius: 18px; border: 2px solid #0a0f0c;
+  background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
+  box-shadow: 0 0 0 2px #C9A22766, 0 24px 60px -12px #000c;
+}
+.mpanel.wide { max-width: 420px; }
+.mpanel-title { text-align: center; font-size: 26px; font-weight: 700; color: #FFE9A8; letter-spacing: 1px; text-shadow: 0 2px 0 #0008; }
+.mpanel-sub { text-align: center; font-size: 11px; color: #9A917A; margin-top: -8px; letter-spacing: .5px; text-transform: uppercase; font-weight: 700; }
+.mpanel-scroll { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #131d18; box-shadow: inset 0 2px 6px #0008; }
+.mrow-label { font-size: 13px; font-weight: 700; color: #F3ECD9; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.mrow-label span { font-size: 10.5px; font-weight: 500; color: #9A917A; }
+.mrow-btns { display: flex; gap: 8px; }
+.mseg { display: flex; flex-shrink: 0; border: 2px solid #0a0f0c; border-radius: 9px; overflow: hidden; background: #0a0f0c; }
+.mseg-opt { font: inherit; font-size: 11.5px; font-weight: 800; color: #9A917A; background: #1b2822; border: none; padding: 6px 9px; cursor: pointer; }
+.mseg-opt + .mseg-opt { border-left: 1px solid #0a0f0c; }
+.mseg-opt.on { color: #16230E; background: linear-gradient(180deg, #FFD45E, #E9A83A); }
+.mpanel > .mseg { align-self: center; }
+.mskin-head { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: #E9C568; margin-top: 4px; }
+.mskin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; overflow-y: auto; min-height: 0; padding: 4px 2px; }
+.mskin { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border-radius: 12px; cursor: pointer; font: inherit; color: #C9BFA4; background: #131d18; border: 2px solid transparent; }
+.mskin.on { border-color: #FFD45E; color: #FFE9A8; box-shadow: 0 0 14px -2px #FFD45E; }
+.mskin-name { font-size: 11px; font-weight: 700; }
+.fp-card, .bp-card { width: 48px; height: 67px; border-radius: 6px; position: relative; box-shadow: 0 4px 8px #0008; }
+.fp-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: linear-gradient(160deg, #FBF6E8 0%, #F3ECD9 55%, #ECE2C5 100%); }
+.fp-card b { font-family: 'Fraunces', Georgia, serif; font-size: 20px; line-height: 1; }
+.fp-pips { display: grid; grid-template-columns: 1fr 1fr; gap: 0 4px; font-size: 13px; line-height: 1; font-style: normal; }
+.fp-pips i { font-style: normal; }
+.bp-card .bp-inner { position: absolute; inset: 4px; border-radius: 4px; border: 1px solid #ffffff33; }
+.felt-swatch { width: 64px; height: 46px; border-radius: 8px; border: 2px solid #0a0f0c; box-shadow: inset 0 0 14px #0008, 0 4px 8px #0008; }
+
+/* ----- main menu ----- */
+.main-menu {
+  position: fixed; inset: 0; z-index: 300; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, var(--f1s) 0%, var(--f2) 55%, var(--f3) 100%);
+  padding: 24px 18px max(24px, env(safe-area-inset-bottom));
+}
+.mm-swirl {
+  position: absolute; inset: -40%; pointer-events: none; opacity: .55;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, #ffffff08 0deg 10deg, transparent 10deg 20deg);
+  animation: packSpin 90s linear infinite;
+}
+.mm-cards { position: relative; width: 300px; height: 170px; margin-bottom: -40px; }
+.mm-card {
+  position: absolute; left: 50%; top: 20px; transform-origin: 50% 140%;
+  transform: translateX(-50%) rotate(calc((var(--i) - 2) * 14deg)) translateY(calc(var(--d) * 6px));
+  animation: mmCard 4s ease-in-out infinite; animation-delay: calc(var(--i) * -0.8s);
+  filter: drop-shadow(0 10px 14px #000a);
+}
+@keyframes mmCard { 0%, 100% { margin-top: 0; } 50% { margin-top: -8px; } }
+.mm-title { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; line-height: .82; filter: drop-shadow(0 6px 0 #0a0f0c) drop-shadow(0 14px 24px #000c); }
+.mm-ante { font-size: 72px; font-weight: 700; letter-spacing: 6px; color: #FFE9A8; -webkit-text-stroke: 2px #0a0f0c; }
+.mm-up { font-size: 92px; font-weight: 700; letter-spacing: 10px; color: #E5574A; -webkit-text-stroke: 2.5px #0a0f0c; margin-top: -4px; animation: mmUp 3s ease-in-out infinite; }
+@keyframes mmUp { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.05); } }
+.mm-tag { position: relative; z-index: 2; margin-top: 14px; font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: #C9BFA4; font-weight: 700; }
+.mm-bar {
+  position: relative; z-index: 2; margin-top: 34px; width: 100%; max-width: 360px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  padding: 14px; border-radius: 18px; border: 2px solid #0a0f0c; background: #131d18e6; box-shadow: 0 0 0 2px #C9A22755, 0 18px 40px #000a;
+}
+.mm-bar .mbtn-blue:first-child { grid-column: 1 / -1; min-height: 64px; }
+.mm-bar .mbtn-blue:first-child .mbtn-label { font-size: 28px; }
+.mm-bar.choosing .mbtn-grey { grid-column: 1 / -1; min-height: 40px; }
+body.landscape .main-menu { flex-direction: row; gap: 30px; }
+.mm-head { position: relative; display: flex; flex-direction: column; align-items: center; }
+body.landscape .mm-cards { width: 260px; height: 150px; margin-bottom: -46px; transform: scale(.85); }
+body.landscape .mm-ante { font-size: 58px; }
+body.landscape .mm-up { font-size: 74px; }
+.mm-bar .mbtn-red { grid-column: 1 / -1; }
+body.landscape .mm-bar { margin-top: 0; max-width: 340px; }
+
+/* ----- settings: left-handed, badges ----- */
+body.lefty .actions-row { flex-direction: row-reverse; }
+body.lefty.landscape .bottom-bar .actions-row { grid-column: 1; justify-self: end; }
+body.lefty.landscape .bottom-bar .sub-controls-row { grid-column: 3; justify-self: start; }
+body.no-badges .prog-stat, body.no-badges .prog-bar { display: none; }
+body.reduce-motion .bcard-face, body.reduce-motion .bvoucher-art, body.reduce-motion .pchoice-face,
+body.reduce-motion .pack-rays, body.reduce-motion .mm-swirl, body.reduce-motion .mm-card, body.reduce-motion .mm-up,
+body.reduce-motion .shelf-piece.csl-prismatic svg { animation: none !important; }
+
+/* ----- skins: card faces ----- */
+body.face-contrast .card { background: linear-gradient(160deg, #ffffff 0%, #f6f4ee 100%); }
+body.face-midnight .card { background: linear-gradient(160deg, #2b3252 0%, #1c2139 60%, #141829 100%); }
+body.face-parchment .card { background: linear-gradient(160deg, #eedcae 0%, #dcc28a 60%, #c9a86a 100%); }
+body.face-neon .card { background: linear-gradient(160deg, #1a1530 0%, #0e0b1c 100%); box-shadow: 0 0 0 1px #5ff2ff55; }
+body.face-neon .card > * { filter: drop-shadow(0 0 2px currentColor); }
+body.face-rose .card { background: linear-gradient(160deg, #fbe9ec 0%, #f3d2d8 60%, #e9bcc5 100%); }
+body.face-slate .card { background: linear-gradient(160deg, #eef2f6 0%, #dde4ec 60%, #cbd5df 100%); }
+body.face-jade .card { background: linear-gradient(160deg, #eaf5ec 0%, #d4ebd9 60%, #bcdcc3 100%); }
+.face-prev-contrast .fp-card { background: linear-gradient(160deg, #ffffff 0%, #f6f4ee 100%); }
+.face-prev-midnight .fp-card { background: linear-gradient(160deg, #2b3252 0%, #141829 100%); }
+.face-prev-parchment .fp-card { background: linear-gradient(160deg, #eedcae 0%, #c9a86a 100%); }
+.face-prev-neon .fp-card { background: linear-gradient(160deg, #1a1530 0%, #0e0b1c 100%); }
+.face-prev-neon .fp-card * { text-shadow: 0 0 6px currentColor; }
+.face-prev-rose .fp-card { background: linear-gradient(160deg, #fbe9ec 0%, #e9bcc5 100%); }
+.face-prev-slate .fp-card { background: linear-gradient(160deg, #eef2f6 0%, #cbd5df 100%); }
+.face-prev-jade .fp-card { background: linear-gradient(160deg, #eaf5ec 0%, #bcdcc3 100%); }
+
+/* ----- skins: card backs (the deck pile and the previews) ----- */
+.back-prev-emerald .bp-card { background: repeating-linear-gradient(135deg, #2E4A38 0px, #2E4A38 4px, #24391F 4px, #24391F 8px); }
+body.back-crimson .deck-card-back, .back-prev-crimson .bp-card { background: repeating-linear-gradient(135deg, #7a2420 0 4px, #5a1814 4px 8px); }
+body.back-royal .deck-card-back, .back-prev-royal .bp-card { background: repeating-linear-gradient(45deg, #23428a 0 4px, #1a3170 4px 8px); }
+body.back-gold .deck-card-back, .back-prev-gold .bp-card { background: radial-gradient(circle at 50% 50%, #F2C94C 0 18%, transparent 19%), repeating-linear-gradient(135deg, #a8801e 0 4px, #8a6814 4px 8px); }
+body.back-onyx .deck-card-back, .back-prev-onyx .bp-card { background: linear-gradient(135deg, transparent 46%, #C9A227 47% 53%, transparent 54%), linear-gradient(45deg, transparent 46%, #C9A22788 47% 53%, transparent 54%), #141414; }
+body.back-plaid .deck-card-back, .back-prev-plaid .bp-card { background: repeating-linear-gradient(0deg, #a8352d55 0 3px, transparent 3px 9px), repeating-linear-gradient(90deg, #1f5c3a88 0 3px, transparent 3px 9px), #5a1e1a; }
+body.back-stars .deck-card-back, .back-prev-stars .bp-card { background: radial-gradient(circle at 20% 30%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 70% 20%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 40% 70%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 80% 80%, #ffe28a 0 1.2px, transparent 1.7px), radial-gradient(circle at 55% 45%, #9fb8ff55 0 30%, transparent 60%), #141a3a; }
+body.back-checker .deck-card-back, .back-prev-checker .bp-card { background: repeating-conic-gradient(#b0302a 0 25%, #1a1a1a 0 50%) 0 0 / 8px 8px; }
+body.back-sunset .deck-card-back, .back-prev-sunset .bp-card { background: radial-gradient(circle at 50% 70%, #ffd36b 0 14%, transparent 15%), linear-gradient(180deg, #4a2a6a 0%, #c2416b 55%, #f29a2e 100%); }
 
 /* ============================== CARD NOTE (double tap) ============================== */
 .card-note {
@@ -1236,6 +1419,7 @@ function computeDropIndex(draggedEl, clientX) {
 
 /* ============================== PLAYING CARD DOM ============================== */
 const SLEEVE_COLORS = {
+  negative: "#7a55b0",
   sparkler: "#FFB84D",
   tithe: "#B8956A",
   molt: "#7BC89A",
@@ -1439,6 +1623,7 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
 
   // Sleeves are drawn as a tinted plastic sleeve over the whole card, and
   // stamps as a wax seal pressed into the top-right corner (art.js).
+  if (card.sleeve === "negative") el.classList.add("card-negative");
   if (card.sleeve && window.AnteArt) {
     const sleeveEl = document.createElement("div");
     sleeveEl.className = "card-sleeve";
@@ -1546,7 +1731,8 @@ function evaluateSelection(cards) {
     const longestRun = (vals) => {
       const u = [...new Set(vals)].sort((a, b) => a - b);
       let best = 1, run = 1;
-      for (let i = 1; i < u.length; i++) { run = u[i] === u[i - 1] + 1 ? run + 1 : 1; best = Math.max(best, run); }
+      const gap = hasCharm("shortcutStraights") ? 2 : 1;
+      for (let i = 1; i < u.length; i++) { run = u[i] - u[i - 1] >= 1 && u[i] - u[i - 1] <= gap ? run + 1 : 1; best = Math.max(best, run); }
       return best;
     };
     const highVals = cards.map((c) => rankStraightValueHigh(c.rank));
@@ -1605,12 +1791,14 @@ function evaluateSelection(cards) {
   // Tithe-sleeved cards never score. They are dropped from scoringCards itself
   // (not just from this chip sum) so the per-card pings, retriggers and charm
   // effects that all read scoringCards skip them too.
+  // Downpour: every played card scores.
+  if (hasCharm("splashAllScore")) scoringCards = cards;
   scoringCards = scoringCards.filter((c) => c.sleeve !== "tithe");
   const base = handBase(name);
   const scoreableCards = scoringCards;
   const chipSum = scoreableCards.reduce((s, c) => {
     if (isCardDebuffed(c)) return s; // Boss Blind debuff: card scores 0 chips
-    const perPing = rankChipValue(c.rank) + (c.sleeve === "sparkler" ? 20 : 0);
+    const perPing = rankChipValue(c.rank) + (c.sleeve === "sparkler" ? 20 : 0) + (c.bonusChips || 0);
     const pings = scoringPings(c); // must mirror pingCards' per-card retrigger logic
     return s + perPing * pings;
   }, 0);
@@ -1804,7 +1992,7 @@ function isCardDebuffed(card) {
   if (!boss) return false;
   if (card.bossDebuffed) return true;
   if (boss.debuffSuit && card.suit === boss.debuffSuit) return true;
-  if (boss.debuffFaceCards && ["J", "Q", "K"].includes(card.rank)) return true;
+  if (boss.debuffFaceCards && isFace(card)) return true;
   return false;
 }
 
@@ -2556,7 +2744,36 @@ const CHARM_DEFS = [
     color: "#F2C94C",
     type: "charm",
     effect: { type: "gildedHeldX", value: 1.3 }
-  }
+  },
+  // ----- modelled on the genre's best-known jokers, under our own names -----
+  { id: "carbonCopy", name: "Carbon Copy", desc: "Copies the scoring ability of the artifact to its right", price: 10, color: "#4A90D9", type: "charm", effect: { type: "copyRight" } },
+  { id: "echoChamber", name: "Echo Chamber", desc: "Copies the scoring ability of your leftmost artifact", price: 10, color: "#E35D5B", type: "charm", effect: { type: "copyLeftmost" } },
+  { id: "understudy", name: "Understudy", desc: "Effects of cards held in your hand fire twice", price: 6, color: "#e6eef2", type: "charm", effect: { type: "mimeHeld" } },
+  { id: "wildPlum", name: "Wild Plum", desc: "+15 Mult. 1 in 6 chance it rots away when you clear a blind", price: 5, color: "#7A55B0", type: "charm", effect: { type: "plumMult", value: 15, rot: 1 / 6 } },
+  { id: "ripePlum", name: "Ripe Plum", desc: "X3 Mult. 1 in 1000 chance it rots away when you clear a blind. Only grows after a Wild Plum has rotted", price: 5, color: "#9b5fc0", type: "charm", locked: "plum", effect: { type: "ripePlumX", value: 3, rot: 1 / 1000 } },
+  { id: "chalkboard", name: "Chalkboard", desc: "X3 Mult if every card held in your hand is a Spade or a Club", price: 8, color: "#2b3a33", type: "charm", effect: { type: "chalkboardX", value: 3 } },
+  { id: "leech", name: "Leech", desc: "Eats the sleeve and stamp off every scoring card, gaining X0.1 Mult for each card it eats", price: 7, color: "#A8352D", type: "charm", effect: { type: "leechX", value: 0.1 } },
+  { id: "bonfire", name: "Bonfire", desc: "Gains X0.25 Mult for every artifact or item you sell. Burns out after each Boss Blind", price: 6, color: "#E8743B", type: "charm", effect: { type: "bonfireX", value: 0.25 } },
+  { id: "commuter", name: "Commuter", desc: "+1 Mult for every hand in a row with no scoring face card. A face card resets it", price: 6, color: "#E8C04A", type: "charm", effect: { type: "commuterMult", value: 1 } },
+  { id: "stargazer", name: "Stargazer", desc: "Gains X0.1 Mult every time you use a Star Chart", price: 6, color: "#4a6fb3", type: "charm", effect: { type: "stargazerX", value: 0.1 } },
+  { id: "downpour", name: "Downpour", desc: "Every card you play counts as scoring", price: 4, color: "#4FA3C7", type: "charm", effect: { type: "splashAllScore" } },
+  { id: "maskMaker", name: "Mask Maker", desc: "Every card counts as a face card", price: 6, color: "#C9A227", type: "charm", effect: { type: "pareidoliaFaces" } },
+  { id: "gapJump", name: "Gap Jump", desc: "Straights can skip one rank between cards (like 3 5 7 8 9)", price: 6, color: "#5FAF7A", type: "charm", effect: { type: "shortcutStraights" } },
+  { id: "fizz", name: "Fizz", desc: "Every scoring card scores twice, for the next 10 hands. Then it goes flat", price: 6, color: "#7fd0e0", type: "charm", effect: { type: "fizzRetrigger", hands: 10 } },
+  { id: "sundae", name: "Sundae", desc: "+100 Chips, melting 5 Chips with every hand you play", price: 5, color: "#F2A7BD", type: "charm", effect: { type: "sundaeChips", value: 100, drop: -5 } },
+  { id: "popcornBucket", name: "Popcorn Bucket", desc: "+20 Mult, losing 4 Mult every round", price: 5, color: "#E35D5B", type: "charm", effect: { type: "popcornMult", value: 20, drop: -4 } },
+  { id: "bullion", name: "Bullion", desc: "+2 Chips for every $1 you hold", price: 6, color: "#E8C04A", type: "charm", effect: { type: "bullionChips", value: 2 } },
+  { id: "trailMark", name: "Trail Mark", desc: "Every card that scores keeps +5 Chips for good", price: 6, color: "#b07c44", type: "charm", effect: { type: "trailMark", value: 5 } },
+  { id: "dejaVu", name: "Déjà Vu", desc: "X3 Mult if you already played this hand type this round", price: 7, color: "#8e7cc3", type: "charm", effect: { type: "dejaVuX", value: 3 } },
+  { id: "emptyFrame", name: "Empty Frame", desc: "X1 Mult for every empty artifact slot (Empty Frame counts as empty)", price: 8, color: "#d8c290", type: "charm", effect: { type: "stencilX" } },
+  { id: "punchCard", name: "Punch Card", desc: "X4 Mult on every 6th hand you play", price: 6, color: "#D2453B", type: "charm", effect: { type: "punchCardX", value: 4, everyN: 6 } },
+  { id: "clenchedFist", name: "Clenched Fist", desc: "The lowest card held in your hand adds double its rank as Mult", price: 5, color: "#E8A65F", type: "charm", effect: { type: "fistMult" } },
+  { id: "cosmonaut", name: "Cosmonaut", desc: "1 in 4 chance to level up the hand you play", price: 6, color: "#3866B8", type: "charm", effect: { type: "cosmonautLevel", chance: 0.25 } },
+  { id: "nestEgg", name: "Nest Egg", desc: "Its sell value grows $3 every time you clear a blind", price: 4, color: "#F5EEDC", type: "charm", effect: { type: "nestEgg", value: 3 } },
+  { id: "jackknife", name: "Jackknife", desc: "Gains X0.5 Mult for every Jack you discard this round", price: 7, color: "#8a96a3", type: "charm", effect: { type: "jackknifeX", value: 0.5 } },
+  { id: "twilight", name: "Twilight", desc: "Every scoring card scores twice on the last hand of the round", price: 7, color: "#5C6BC0", type: "charm", effect: { type: "twilightRetrigger" } },
+  { id: "catBurglar", name: "Cat Burglar", desc: "+3 hands every round, but you get no discards", price: 6, color: "#2b3a33", type: "charm", effect: { type: "burglarHands", value: 3 } },
+  { id: "littleDeuce", name: "Little Deuce", desc: "Gains +8 Chips for every 2 that scores", price: 7, color: "#E35D5B", type: "charm", effect: { type: "deuceChips", value: 8 } },
 ];
 
 // Legendary artifacts: far stronger than normal ones, found in Legend Packs.
@@ -2582,7 +2799,7 @@ const PACK_SIZES = {
 };
 const PACK_BASES = [
   { id: "artifactPack", name: "Artifact Pack", what: "artifacts", price: 6, color: "#C9A227", choices: 3 },
-  { id: "itemPack", name: "Item Pack", what: "items", price: 4, color: "#7FBA9A", choices: 3 },
+  { id: "itemPack", name: "Arcana Pack", what: "Arcana cards, used on your hand right away", price: 4, color: "#7FBA9A", choices: 3 },
   { id: "cardPack", name: "Card Pack", what: "playing cards for your deck", price: 4, color: "#D9CFB5", choices: 4 },
   { id: "ornatePack", name: "Ornate Pack", what: "playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", choices: 3 },
   { id: "celestialPack", name: "Celestial Pack", what: "Star Charts", price: 4, color: "#4a6fb3", choices: 3 },
@@ -2605,8 +2822,9 @@ const SLEEVE_INFO = {
   tithe: "Can't score. Discarding it pays $5.",
   molt: "At round end it hops to another card and leaves +1 Mult behind.",
   larva: "Still in your hand at round end? It copies itself into your deck.",
-  anchor: "Always drawn first.",
+  anchor: "Drawn in your opening hand each round (up to 3 Anchor cards a round).",
   mirror: "When you play it, a copy goes into your deck.",
+  negative: "+1 hand size while it's in your hand.",
 };
 const STAMP_INFO = {
   gold: "Pays $3 every time it scores.",
@@ -2808,7 +3026,7 @@ const ITEM_DEFS = [
   {
     id: "anchor",
     name: "The Anchor",
-    desc: "Use: sleeves your leftmost card in an Anchor Sleeve — it's always drawn first each round",
+    desc: "Use: sleeves your leftmost card in an Anchor Sleeve — it's in your opening hand each round (up to 3 Anchor cards)",
     price: 5,
     color: "#7A8B9A",
     type: "item",
@@ -3087,7 +3305,7 @@ const ITEM_DEFS = [
   {
     id: "supplyCrate",
     name: "Supply Crate",
-    desc: "Use: open a free Item Pack",
+    desc: "Use: open a free Arcana Pack",
     price: 6,
     color: "#A67750",
     type: "item",
@@ -3365,8 +3583,8 @@ const VOUCHERS = [
   { id: "deepPockets", upgrades: "largerAbdomen", name: "Deep Pockets", desc: "+1 more hand size", color: "#C9853F", effect: { type: "extraHandSize", value: 1 } },
   { id: "moreOre", name: "More Ore", desc: "+1 item slot", color: "#8B9B7A", effect: { type: "extraItemSlot", value: 1 } },
   { id: "motherLode", upgrades: "moreOre", name: "Mother Lode", desc: "+1 more item slot", color: "#3FA9A0", effect: { type: "extraItemSlot", value: 1 } },
-  { id: "displayCase", name: "Display Case", desc: "+1 artifact slot", color: "#9B7BC8", effect: { type: "extraCharmSlot", value: 1 } },
-  { id: "grandGallery", upgrades: "displayCase", name: "Grand Gallery", desc: "+1 more artifact slot", color: "#7A55B0", effect: { type: "extraCharmSlot", value: 1 } },
+  { id: "displayCase", name: "Display Case", desc: "Does nothing… but it's empty for a reason", color: "#9B7BC8", effect: { type: "nothing", value: 0 } },
+  { id: "grandGallery", upgrades: "displayCase", name: "Grand Gallery", desc: "+1 artifact slot", color: "#7A55B0", effect: { type: "extraCharmSlot", value: 1 } },
   // --- money ---
   { id: "liquidAssets", name: "Liquid Assets", desc: "+$5 at the start of every blind", color: "#4FA3C7", effect: { type: "startingMoneyBonus", value: 5 } },
   { id: "trustFund", upgrades: "liquidAssets", name: "Trust Fund", desc: "+$5 more at the start of every blind", color: "#2F7FA8", effect: { type: "startingMoneyBonus", value: 5 } },
@@ -3379,6 +3597,19 @@ const VOUCHERS = [
   // --- star charts ---
   { id: "clairvoyance", name: "Clairvoyance", desc: "Celestial Packs always hold the Star Chart for your most played hand", color: "#7E57C2", effect: { type: "chartFavourite", value: 1 } },
   { id: "starMap", upgrades: "clairvoyance", name: "Star Map", desc: "Celestial Packs offer 2 more Star Charts to choose from", color: "#4a6fb3", effect: { type: "packExtraChoices", value: 2, pack: "celestialPack" } },
+  // --- what turns up in the shop ---
+  { id: "polish", name: "Polish", desc: "Sleeved artifacts turn up twice as often", color: "#c9a06a", effect: { type: "charmSleeveRate", value: 2 } },
+  { id: "lacquer", upgrades: "polish", name: "Lacquer", desc: "Sleeved artifacts turn up four times as often", color: "#C0392B", effect: { type: "charmSleeveRate", value: 4 } },
+  { id: "peddler", name: "Peddler", desc: "Items turn up twice as often in the shop", color: "#b07c44", effect: { type: "itemRate", value: 2 } },
+  { id: "bazaar", upgrades: "peddler", name: "Bazaar", desc: "Items turn up four times as often in the shop", color: "#7E57C2", effect: { type: "itemRate", value: 4 } },
+  { id: "starVendor", name: "Star Vendor", desc: "Star Charts turn up twice as often in the shop", color: "#4a6fb3", effect: { type: "chartRate", value: 2 } },
+  { id: "planetarium", upgrades: "starVendor", name: "Planetarium", desc: "Star Charts turn up four times as often in the shop", color: "#24325c", effect: { type: "chartRate", value: 4 } },
+  { id: "sleightOfHand", name: "Sleight of Hand", desc: "Playing cards can be bought in the shop", color: "#E8A65F", effect: { type: "shopPlayingCards", value: 1 } },
+  { id: "grandIllusion", upgrades: "sleightOfHand", name: "Grand Illusion", desc: "Shop playing cards often come sleeved or stamped", color: "#D2453B", effect: { type: "shopPlayingCards", value: 1 } },
+  { id: "packRat", name: "Pack Rat", desc: "+1 booster pack in every shop", color: "#8a96a3", effect: { type: "packSlots", value: 1 } },
+  { id: "hoarder", upgrades: "packRat", name: "Hoarder", desc: "+1 more booster pack in every shop", color: "#7a5836", effect: { type: "packSlots", value: 1 } },
+  { id: "teaLeaves", name: "Tea Leaves", desc: "Arcana Packs show 1 more card", color: "#4E9A6E", effect: { type: "arcanaExtra", value: 1 } },
+  { id: "omenGlobe", upgrades: "teaLeaves", name: "Omen Globe", desc: "Cards in Arcana Packs can be Spectral cards", color: "#5a6fd8", effect: { type: "arcanaSpectral", value: 0.2 } },
   // --- time ---
   { id: "timeWarp", name: "Time Warp", desc: "Go back 1 ante. −1 hand every round", color: "#5C6BC0", effect: { type: "extraPlays", value: -1, anteDown: 1 } },
   { id: "rewind", upgrades: "timeWarp", name: "Rewind", desc: "Go back 1 more ante. −1 discard every round", color: "#3949AB", effect: { type: "extraDiscards", value: -1, anteDown: 1 } },
@@ -3410,6 +3641,533 @@ function rollVoucher() {
   return pool.length ? { ...randomOf(pool) } : null;
 }
 
+/* ============================== MENUS ==============================
+   Main menu (title screen) and the pause menu, both with Play / Settings /
+   Skins / Quit. Settings and Skins are panels that open over either.
+   Preferences live in their own localStorage key, apart from the run. */
+const SETTINGS_KEY = "anteup_settings_v1";
+const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
+const SETTINGS = { ...SETTINGS_DEFAULTS };
+try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch (e) {}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); } catch (e) {}
+}
+const MENU = { screen: "main", pause: false, panel: null, confirmAbandon: false, confirmReset: false, choosingRun: false, skinTab: "face" };
+
+const FACE_SKINS = {
+  classic: { name: "Classic", suits: { spades: "#201D19", clubs: "#201D19", hearts: "#A23B3B", diamonds: "#A23B3B" } },
+  contrast: { name: "High Contrast", suits: { spades: "#1d2a4a", clubs: "#1f7a46", hearts: "#d0342c", diamonds: "#e07b12" } },
+  midnight: { name: "Midnight", suits: { spades: "#e9e3d2", clubs: "#e9e3d2", hearts: "#ff7f73", diamonds: "#ff7f73" } },
+  parchment: { name: "Parchment", suits: { spades: "#3d2a16", clubs: "#3d2a16", hearts: "#8e2a1a", diamonds: "#8e2a1a" } },
+  neon: { name: "Neon", suits: { spades: "#5ff2ff", clubs: "#9dff5f", hearts: "#ff4fd8", diamonds: "#ffd84f" } },
+  rose: { name: "Rosewood", suits: { spades: "#4a1f3a", clubs: "#4a1f3a", hearts: "#c2185b", diamonds: "#c2185b" } },
+  slate: { name: "Slate", suits: { spades: "#16243a", clubs: "#1f5c5c", hearts: "#b33a3a", diamonds: "#c46a1a" } },
+  jade: { name: "Jade", suits: { spades: "#12352a", clubs: "#12352a", hearts: "#a8322d", diamonds: "#a8322d" } },
+};
+const BACK_SKINS = {
+  emerald: { name: "Emerald" },
+  crimson: { name: "Crimson" },
+  royal: { name: "Royal" },
+  gold: { name: "Gilt" },
+  onyx: { name: "Onyx" },
+  plaid: { name: "Tartan" },
+  stars: { name: "Starfield" },
+  checker: { name: "Checker" },
+  sunset: { name: "Sunset" },
+};
+const FELT_SKINS = {
+  emerald: { name: "Emerald", c: ["#1B2A1E", "#0F1811", "#0A100C", "#24391F", "#16241A"] },
+  ocean: { name: "Ocean", c: ["#17283a", "#0d1824", "#080f17", "#1f3650", "#132336"] },
+  burgundy: { name: "Burgundy", c: ["#3a1b20", "#22100f", "#140909", "#4a2229", "#2c1418"] },
+  violet: { name: "Violet", c: ["#2a1b3a", "#180f24", "#0e0916", "#35234a", "#21162f"] },
+  teal: { name: "Teal", c: ["#123a36", "#0a221f", "#061513", "#1a4a44", "#10302c"] },
+  charcoal: { name: "Charcoal", c: ["#262626", "#151515", "#0b0b0b", "#303030", "#1c1c1c"] },
+};
+function applySkins() {
+  const face = FACE_SKINS[SETTINGS.face] || FACE_SKINS.classic;
+  Object.entries(face.suits).forEach(([s, c]) => { SUITS[s].color = c; });
+  Object.keys(FACE_SKINS).forEach((k) => document.body.classList.toggle("face-" + k, k === SETTINGS.face));
+  Object.keys(BACK_SKINS).forEach((k) => document.body.classList.toggle("back-" + k, k === SETTINGS.back));
+  document.body.classList.toggle("reduce-motion", !!SETTINGS.reduceMotion);
+  document.body.classList.toggle("lefty", !!SETTINGS.lefty);
+  document.body.classList.toggle("no-badges", !SETTINGS.badges);
+  const felt = (FELT_SKINS[SETTINGS.felt] || FELT_SKINS.emerald).c;
+  ["--f1", "--f2", "--f3", "--f1s", "--f2s"].forEach((v, i) => document.documentElement.style.setProperty(v, felt[i]));
+}
+// A short buzz on phones that support it (Settings > Haptics).
+function buzz(ms) {
+  try { if (SETTINGS.haptics && navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+}
+function gameSpeed() {
+  return SETTINGS.speed || 1;
+}
+// A run worth continuing: anything but a finished or lost one.
+function hasLiveRun() {
+  return state.overlay && !["start", "over", "won"].includes(state.overlay) && state.deck && state.deck.length + state.hand.length > 0;
+}
+function quitGame() {
+  saveGame();
+  if (window.PPHub && PPHub.quit) PPHub.quit();
+}
+
+function openPause() { MENU.pause = true; MENU.panel = null; MENU.confirmAbandon = false; render(); }
+function closePause() { MENU.pause = false; MENU.panel = null; render(); }
+function toMainMenu() { saveGame(); MENU.screen = "main"; MENU.pause = false; MENU.panel = null; MENU.choosingRun = false; render(); }
+function continueRun() {
+  MENU.screen = null; MENU.choosingRun = false;
+  // a run picks up Pocket Money when it resumes
+  const ppCash = PPHub.take('cash');
+  if (ppCash) { state.money += ppCash; saveGame(); }
+  render();
+}
+function newRun() { MENU.screen = null; MENU.choosingRun = false; MENU.pause = false; clearSave(); startGame(); }
+
+// The small button that opens the pause menu.
+function OptionsButton(extraClass = "") {
+  const b = document.createElement("button");
+  b.className = "opt-btn " + extraClass;
+  b.setAttribute("aria-label", "Options");
+  b.innerHTML = `<span class="opt-lines"><i></i><i></i><i></i></span><span class="opt-txt">Options</span>`;
+  b.onclick = (e) => { e.stopPropagation(); openPause(); };
+  return b;
+}
+function MenuButton(label, color, onClick, sub) {
+  const b = document.createElement("button");
+  b.className = "mbtn mbtn-" + color;
+  b.innerHTML = `<span class="mbtn-label">${label}</span>${sub ? `<span class="mbtn-sub">${sub}</span>` : ""}`;
+  b.onclick = (e) => { e.stopPropagation(); onClick(); };
+  return b;
+}
+
+function MainMenu() {
+  const wrap = document.createElement("div");
+  wrap.className = "main-menu";
+  // drifting cards behind the title
+  const fan = document.createElement("div");
+  fan.className = "mm-cards";
+  [["A", "spades"], ["K", "hearts"], ["Q", "clubs"], ["J", "diamonds"], ["10", "hearts"]].forEach(([r, s], i) => {
+    const el = playingCardEl(makeCard(r, s), 1.5);
+    const slot = document.createElement("div");
+    slot.className = "mm-card";
+    slot.style.setProperty("--i", i);
+    slot.style.setProperty("--d", Math.abs(i - 2));
+    slot.appendChild(el);
+    fan.appendChild(slot);
+  });
+  wrap.innerHTML = `<div class="mm-swirl"></div>`;
+  const head = document.createElement("div");
+  head.className = "mm-head";
+  head.appendChild(fan);
+  head.insertAdjacentHTML("beforeend", `<div class="mm-title serif"><span class="mm-ante">ANTE</span><span class="mm-up">UP</span></div><div class="mm-tag">A poker roguelike</div>`);
+  wrap.appendChild(head);
+
+  const bar = document.createElement("div");
+  bar.className = "mm-bar";
+  if (MENU.choosingRun) {
+    bar.classList.add("choosing");
+    bar.appendChild(MenuButton("Continue", "blue", continueRun, `Ante ${state.ante} · $${state.money}`));
+    bar.appendChild(MenuButton("New Run", "green", newRun));
+    bar.appendChild(MenuButton("Back", "grey", () => { MENU.choosingRun = false; render(); }));
+  } else {
+    bar.appendChild(MenuButton("Play", "blue", () => { if (hasLiveRun()) { MENU.choosingRun = true; render(); } else newRun(); }));
+    bar.appendChild(MenuButton("Settings", "orange", () => { MENU.panel = "settings"; render(); }));
+    bar.appendChild(MenuButton("Skins", "purple", () => { MENU.panel = "skins"; render(); }));
+    bar.appendChild(MenuButton("Quit", "red", quitGame));
+  }
+  wrap.appendChild(bar);
+  if (MENU.panel) wrap.appendChild(MenuPanel());
+  return wrap;
+}
+
+function PauseMenu() {
+  const back = document.createElement("div");
+  back.className = "pause-back";
+  back.onclick = (e) => { if (e.target === back) closePause(); };
+  if (MENU.panel) { back.appendChild(MenuPanel()); return back; }
+  const box = document.createElement("div");
+  box.className = "mpanel pause-panel";
+  box.innerHTML = `<div class="mpanel-title serif">Paused</div><div class="mpanel-sub">Ante ${state.ante} · ${BLIND_TYPES[state.blindIdx].label}</div>`;
+  box.appendChild(MenuButton("Play", "blue", closePause));
+  box.appendChild(MenuButton("Settings", "orange", () => { MENU.panel = "settings"; render(); }));
+  box.appendChild(MenuButton("Skins", "purple", () => { MENU.panel = "skins"; render(); }));
+  box.appendChild(MenuButton("Quit", "red", toMainMenu, "to the main menu · your run is saved"));
+  back.appendChild(box);
+  return back;
+}
+
+function seg(options, value, onPick) {
+  const w = document.createElement("div");
+  w.className = "mseg";
+  options.forEach(([v, label]) => {
+    const b = document.createElement("button");
+    b.className = "mseg-opt" + (v === value ? " on" : "");
+    b.textContent = label;
+    b.onclick = (e) => { e.stopPropagation(); onPick(v); };
+    w.appendChild(b);
+  });
+  return w;
+}
+function row(label, control, hint) {
+  const r = document.createElement("div");
+  r.className = "mrow";
+  r.innerHTML = `<div class="mrow-label">${label}${hint ? `<span>${hint}</span>` : ""}</div>`;
+  r.appendChild(control);
+  return r;
+}
+
+function MenuPanel() {
+  const box = document.createElement("div");
+  box.className = "mpanel wide";
+  const done = () => { MENU.panel = null; MENU.confirmAbandon = false; render(); };
+  if (MENU.panel === "settings") {
+    box.innerHTML = `<div class="mpanel-title serif">Settings</div>`;
+    const list = document.createElement("div");
+    list.className = "mpanel-scroll";
+    const set = (k, v, re = true) => { SETTINGS[k] = v; saveSettings(); applySkins(); if (re) render(); };
+    list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Gameplay</div>`);
+    list.appendChild(row("Game speed", seg([[1, "1×"], [2, "2×"], [4, "4×"], [8, "8×"]], SETTINGS.speed, (v) => set("speed", v)), "How fast hands score"));
+    list.appendChild(row("Hand preview", seg([[true, "On"], [false, "Off"]], !!SETTINGS.preview, (v) => set("preview", v)), "Show the hand and score before you play"));
+    list.appendChild(row("Sort new hands by", seg([["rank", "Rank"], ["suit", "Suit"]], SETTINGS.sort, (v) => set("sort", v)), "Used when a run starts"));
+    list.appendChild(row("Pack opening", seg([[true, "Animate"], [false, "Skip"]], !!SETTINGS.packAnim, (v) => set("packAnim", v))));
+    list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Display</div>`);
+    list.appendChild(row("Left-handed", seg([[false, "Off"], [true, "On"]], !!SETTINGS.lefty, (v) => set("lefty", v)), "Swaps Play Hand and Discard"));
+    list.appendChild(row("Progress badges", seg([[true, "Show"], [false, "Hide"]], !!SETTINGS.badges, (v) => set("badges", v)), "Values and bars on artifacts"));
+    list.appendChild(row("Reduce motion", seg([[false, "Off"], [true, "On"]], !!SETTINGS.reduceMotion, (v) => set("reduceMotion", v)), "Stops floating cards and spinning rays"));
+    list.appendChild(row("Haptics", seg([[true, "On"], [false, "Off"]], !!SETTINGS.haptics, (v) => { set("haptics", v); buzz(30); }), "Buzz on scoring and buying"));
+    list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Data</div>`);
+    const danger = document.createElement("div");
+    danger.className = "mrow-btns";
+    if (hasLiveRun() && MENU.screen !== "main") {
+      const ab = MenuButton(MENU.confirmAbandon ? "Tap again" : "Abandon run", "red", () => {
+        if (!MENU.confirmAbandon) { MENU.confirmAbandon = true; render(); return; }
+        MENU.confirmAbandon = false; MENU.panel = null; newRun();
+      });
+      ab.classList.add("mbtn-small");
+      danger.appendChild(ab);
+    }
+    const rs = MenuButton(MENU.confirmReset ? "Tap again" : "Reset settings", "grey", () => {
+      if (!MENU.confirmReset) { MENU.confirmReset = true; render(); return; }
+      MENU.confirmReset = false; Object.assign(SETTINGS, SETTINGS_DEFAULTS); saveSettings(); applySkins(); render();
+    });
+    rs.classList.add("mbtn-small");
+    danger.appendChild(rs);
+    list.appendChild(danger);
+    box.appendChild(list);
+  } else {
+    box.innerHTML = `<div class="mpanel-title serif">Skins</div>`;
+    box.appendChild(seg([["face", "Card faces"], ["back", "Card backs"], ["felt", "Table"]], MENU.skinTab, (v) => { MENU.skinTab = v; render(); }));
+    const grid = document.createElement("div");
+    grid.className = "mskin-grid";
+    const pick = (k, v) => { SETTINGS[k] = v; saveSettings(); applySkins(); buzz(15); render(); };
+    if (MENU.skinTab === "face") {
+      Object.entries(FACE_SKINS).forEach(([k, sk]) => {
+        const t = document.createElement("button");
+        t.className = "mskin face-prev face-prev-" + k + (SETTINGS.face === k ? " on" : "");
+        t.innerHTML = `<span class="fp-card"><b style="color:${sk.suits.hearts}">K</b><span class="fp-pips"><i style="color:${sk.suits.spades}">♠</i><i style="color:${sk.suits.hearts}">♥</i><i style="color:${sk.suits.clubs}">♣</i><i style="color:${sk.suits.diamonds}">♦</i></span></span><span class="mskin-name">${sk.name}</span>`;
+        t.onclick = (e) => { e.stopPropagation(); pick("face", k); };
+        grid.appendChild(t);
+      });
+    } else if (MENU.skinTab === "back") {
+      Object.entries(BACK_SKINS).forEach(([k, sk]) => {
+        const t = document.createElement("button");
+        t.className = "mskin back-prev back-prev-" + k + (SETTINGS.back === k ? " on" : "");
+        t.innerHTML = `<span class="bp-card"><span class="bp-inner"></span></span><span class="mskin-name">${sk.name}</span>`;
+        t.onclick = (e) => { e.stopPropagation(); pick("back", k); };
+        grid.appendChild(t);
+      });
+    } else {
+      Object.entries(FELT_SKINS).forEach(([k, sk]) => {
+        const t = document.createElement("button");
+        t.className = "mskin felt-prev" + (SETTINGS.felt === k ? " on" : "");
+        t.innerHTML = `<span class="felt-swatch" style="background:radial-gradient(ellipse at 50% 0%, ${sk.c[3]} 0%, ${sk.c[1]} 60%, ${sk.c[2]} 100%)"></span><span class="mskin-name">${sk.name}</span>`;
+        t.onclick = (e) => { e.stopPropagation(); pick("felt", k); };
+        grid.appendChild(t);
+      });
+    }
+    box.appendChild(grid);
+  }
+  box.appendChild(MenuButton("Back", "grey", done));
+  return box;
+}
+
+/* ============================== ARTIFACT SLEEVES ==============================
+   Shop artifacts (and Artifact Pack ones) sometimes come in a sleeve. Two
+   are shared with playing cards, three are artifact-only. Chances are per
+   artifact; Polish / Lacquer multiply them. Negative is the rarest: an
+   artifact with it doesn't take up a slot. */
+const CHARM_SLEEVES = {
+  sparkler: { name: "Sparkler", desc: "+50 Chips", price: 2, chance: 0.02, color: "#FFB84D" },
+  tithe: { name: "Tithe", desc: "Earns $2 every time you clear a blind", price: 2, chance: 0.015, color: "#B8956A" },
+  gilded: { name: "Gilded", desc: "+10 Mult", price: 3, chance: 0.015, color: "#F2C94C" },
+  prismatic: { name: "Prismatic", desc: "X1.5 Mult", price: 5, chance: 0.007, color: "#c38bff" },
+  negative: { name: "Negative", desc: "Doesn't take up an artifact slot", price: 5, chance: 0.003, color: "#7a55b0" },
+};
+function rollCharmSleeve(def) {
+  const rate = voucherBest("charmSleeveRate", Math.max);
+  let r = Math.random();
+  for (const [k, sl] of Object.entries(CHARM_SLEEVES)) {
+    if (r < sl.chance * rate) return withCharmSleeve(def, k);
+    r -= sl.chance * rate;
+  }
+  return def;
+}
+function withCharmSleeve(def, sleeve) {
+  const base = def.price - (def.sleevePrice || 0);
+  const sp = CHARM_SLEEVES[sleeve] ? CHARM_SLEEVES[sleeve].price : 0;
+  return { ...def, sleeve, sleevePrice: sp, price: base + sp };
+}
+// Artifacts that take up a slot (Negative ones don't).
+function charmsUsed() {
+  return state.charms.filter((c) => c.sleeve !== "negative").length;
+}
+function hasCharmRoom() {
+  return charmsUsed() < state.charmSlots;
+}
+function charmSleeveLine(def) {
+  const sl = def && def.sleeve && CHARM_SLEEVES[def.sleeve];
+  return sl ? `<div class="sleeve-line" style="--sc:${sl.color}"><b>${sl.name} sleeve</b> ${sl.desc}</div>` : "";
+}
+
+/* Negative playing cards: +1 hand size while in your hand. Drawing one means
+   you draw another card on top. */
+function handSizeFor(hand) {
+  return getHandSize() - (state.hand || []).filter((c) => c.sleeve === "negative").length + hand.filter((c) => c.sleeve === "negative").length;
+}
+function drawInto(hand, deck) {
+  const drawn = [];
+  while (deck.length && hand.length + drawn.length < handSizeFor([...hand, ...drawn])) drawn.push(deck.shift());
+  return drawn;
+}
+
+/* ============================== NEWER ARTIFACTS ==============================
+   Helpers for the artifacts modelled on the genre's best-known jokers. */
+function isFace(card) {
+  return ["J", "Q", "K"].includes(card.rank) || hasCharm("pareidoliaFaces");
+}
+// Artifacts the shop and packs can offer. Ripe Plum only turns up once a
+// Wild Plum has rotted away this run.
+function artifactPool() {
+  return CHARM_DEFS.filter((c) => !c.locked || (c.locked === "plum" && state.plumGone));
+}
+// The shelf as scoring sees it: Carbon Copy takes on the artifact to its
+// right, Echo Chamber your leftmost one (copies of copies follow the chain).
+function effectiveCharms() {
+  const list = state.charms;
+  const resolve = (i, depth) => {
+    const c = list[i];
+    if (!c || depth > list.length) return null;
+    if (c.effect.type === "copyRight") return resolve(i + 1, depth + 1);
+    if (c.effect.type === "copyLeftmost") return i === 0 ? null : resolve(0, depth + 1);
+    return c;
+  };
+  return list.map((c, i) => {
+    if (c.effect.type !== "copyRight" && c.effect.type !== "copyLeftmost") return c;
+    const src = resolve(i, 0);
+    return src ? { ...src, uid: c.uid, name: c.name, copyOf: src.uid, sleeve: c.sleeve } : c;
+  });
+}
+// What a copier is copying right now (for its popup).
+function copyTarget(charm) {
+  const e = effectiveCharms().find((c) => c.uid === charm.uid);
+  return e && e.copyOf ? state.charms.find((c) => c.uid === e.copyOf) : null;
+}
+function flashMessage(text, ms = 1800) {
+  state.bossBlindMessage = text;
+  setTimeout(() => { if (state.bossBlindMessage === text) { state.bossBlindMessage = null; render(); } }, ms);
+}
+function noteSold() {
+  state.charms = state.charms.map((c) => (c.effect.type === "bonfireX" ? { ...c, bonfireBonus: (c.bonfireBonus || 0) + c.effect.value } : c));
+}
+function noteChartUsed() {
+  state.charms = state.charms.map((c) => (c.effect.type === "stargazerX" ? { ...c, stars: (c.stars || 0) + 1 } : c));
+}
+// After every played hand: Fizz and Sundae run down.
+function afterHandCharms() {
+  const gone = [];
+  state.charms = state.charms.map((c) => {
+    const e = c.effect;
+    if (e.type === "fizzRetrigger") { const n = (c.fizzLeft ?? e.hands) - 1; if (n <= 0) gone.push(c); return { ...c, fizzLeft: n }; }
+    if (e.type === "sundaeChips") { const n = (c.chipsLeft ?? e.value) + e.drop; if (n <= 0) gone.push(c); return { ...c, chipsLeft: n }; }
+    return c;
+  });
+  if (gone.length) {
+    state.charms = state.charms.filter((c) => !gone.some((g) => g.uid === c.uid));
+    flashMessage(gone.map((g) => (g.effect.type === "fizzRetrigger" ? `${g.name} went flat` : `${g.name} melted`)).join(" · "));
+  }
+}
+// When a blind is cleared: plums may rot, Popcorn shrinks, Nest Egg grows,
+// Bonfire burns out after a boss.
+function roundEndCharms(wasBoss) {
+  const notes = [];
+  const gone = [];
+  state.charms = state.charms.map((c) => {
+    const e = c.effect;
+    if ((e.type === "plumMult" || e.type === "ripePlumX") && Math.random() < e.rot) {
+      gone.push(c);
+      if (e.type === "plumMult") state.plumGone = true;
+      notes.push(`${c.name} rotted away`);
+      return c;
+    }
+    if (e.type === "popcornMult") { const n = (c.multLeft ?? e.value) + e.drop; if (n <= 0) { gone.push(c); notes.push(`${c.name} is empty`); } return { ...c, multLeft: n }; }
+    if (c.sleeve === "tithe") state.money += 2;
+    if (e.type === "nestEgg") return { ...c, sellBonus: (c.sellBonus || 0) + e.value };
+    if (e.type === "bonfireX" && wasBoss && c.bonfireBonus) { notes.push(`${c.name} burned out`); return { ...c, bonfireBonus: 0 }; }
+    return c;
+  });
+  if (gone.length) state.charms = state.charms.filter((c) => !gone.some((g) => g.uid === c.uid));
+  if (notes.length) flashMessage(notes.join(" · "), 2400);
+}
+
+/* ============================== ARTIFACT PROGRESS ==============================
+   What an artifact has built up, for the shelf and its detail popup:
+   bar   — progress toward its next trigger (Specter, Oracle, Tally Lantern)
+   stat  — its current value, for artifacts that grow over the run */
+function charmProgress(c) {
+  const e = c.effect || {};
+  const out = {};
+  switch (e.type) {
+    case "specterDuplicate": {
+      const n = Math.min(3, e.blindCounter || 0);
+      out.bar = { value: n, max: 3, label: n >= 3 ? "Ready: sell to copy an artifact" : `${n} / 3 blinds`, ready: n >= 3 };
+      break;
+    }
+    case "oracleCompoundMult": {
+      const n = (state.handsPlayedRun || 0) % e.everyN;
+      out.bar = { value: n, max: e.everyN, label: `${n} / ${e.everyN} hands to the next X${e.value}` };
+      out.stat = `X${(c.oracleMultBonus || 1).toFixed(2)}`;
+      break;
+    }
+    case "lanternDiscardX": {
+      const d = c.lanternDiscards || 0;
+      out.bar = { value: d % e.per, max: e.per, label: `${d % e.per} / ${e.per} discards to the next X1` };
+      out.stat = `X${1 + Math.floor(d / e.per) * e.value}`;
+      break;
+    }
+    case "ratchetBossMult": out.stat = `+${c.ratchetBonus || 0}`; break;
+    case "punchCardX": {
+      const n = (state.handsPlayedRun || 0) % e.everyN;
+      out.bar = { value: n, max: e.everyN, label: `${n} / ${e.everyN} hands — X${e.value} on the ${e.everyN}th`, ready: n === e.everyN - 1 };
+      break;
+    }
+    case "fizzRetrigger": { const n = c.fizzLeft ?? e.hands; out.bar = { value: n, max: e.hands, label: `${n} hands of fizz left` }; break; }
+    case "sundaeChips": { const n = c.chipsLeft ?? e.value; out.stat = `+${n}`; out.chips = true; out.bar = { value: n, max: e.value, label: `Melts ${-e.drop} Chips every hand` }; break; }
+    case "popcornMult": { const n = c.multLeft ?? e.value; out.stat = `+${n}`; out.bar = { value: n, max: e.value, label: `Loses ${-e.drop} Mult every round` }; break; }
+    case "leechX": out.stat = `X${(1 + (c.leechBonus || 0)).toFixed(1)}`; break;
+    case "bonfireX": out.stat = `X${(1 + (c.bonfireBonus || 0)).toFixed(2)}`; break;
+    case "commuterMult": out.stat = `+${(c.busCount || 0) * e.value}`; break;
+    case "stargazerX": out.stat = `X${(1 + (c.stars || 0) * e.value).toFixed(1)}`; break;
+    case "jackknifeX": out.stat = `X${1 + (c.jackBonus || 0)}`; break;
+    case "deuceChips": out.stat = `+${c.deuceBonus || 0}`; out.chips = true; break;
+    case "almanacMultPerAnte": out.stat = `+${Math.max(0, state.ante - 1) * e.value}`; break;
+    case "streakMult": out.stat = `+${(state.streakCounter || 0) * e.value}`; break;
+    case "furnaceChipsPerDiscard": out.stat = `+${(state.totalDiscardedRun || 0) * e.value}`; out.chips = true; break;
+    case "pocketwatchChipsPerHand": out.stat = `+${(state.handsPlayedRun || 0) * e.value}`; out.chips = true; break;
+    case "vultureMultPerDestroyed": out.stat = `+${(state.cardsDestroyedRun || 0) * e.value}`; break;
+    case "mirrorsAddedX": out.stat = `X${(1 + (state.cardsAddedRun || 0) * e.value).toFixed(1)}`; break;
+    case "saintFaceDestroyedX": out.stat = `X${c.saintX || 1}`; break;
+    case "midnightSunX": out.stat = `X${1 + Object.keys(state.handTypeCounts || {}).length * e.value}`; break;
+  }
+  return out;
+}
+// The little bar + value badge drawn over a shelf piece.
+function progressOverlay(c) {
+  const p = charmProgress(c);
+  let html = "";
+  if (p.stat) html += `<span class="prog-stat${p.chips ? " chips" : ""}">${p.stat}</span>`;
+  if (p.bar) html += `<span class="prog-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></span>`;
+  return html;
+}
+// The bigger version for the detail popup.
+function progressBlock(c) {
+  const p = charmProgress(c);
+  if (!p.bar && !p.stat) return "";
+  return `<div class="prog-block">` +
+    (p.stat ? `<div class="prog-block-stat">Now <b class="${p.chips ? "c" : "m"}">${p.stat}</b> ${p.chips ? "Chips" : "Mult"}</div>` : "") +
+    (p.bar ? `<div class="prog-block-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></div><div class="prog-block-label">${p.bar.label}</div>` : "") +
+    `</div>`;
+}
+
+/* ============================== ARCANA ==============================
+   Arcana Packs hold items that act on your cards (or pay out), used the
+   moment you pick them on the hand the pack draws. Items that only boost
+   your next hand, or only make sense mid-round, are left out. */
+const ARCANA_EXCLUDE = new Set([
+  // next-hand / scoring buffs
+  "devil", "fortune", "empress", "star", "justice", "coinItem", "dice", "doubleDownToken", "encoreTicket", "loadedDice",
+  // only mean something during a round
+  "sun", "theGravedigger", "batteryPack", "freshDeal", "luckyBreak", "secondWind", "piggyBank", "pocketChange", "shufflePass",
+  // refer to other items or open packs
+  "joker", "copycat", "supplyCrate",
+]);
+function arcanaPool() {
+  return ITEM_DEFS.filter((d) => !d.secret && !d.chart && !ARCANA_EXCLUDE.has(d.id));
+}
+// Arcana that need cards picked in the hand: [min, max].
+function arcanaSelection(def) {
+  const e = def.effect || {};
+  switch (e.type) {
+    case "eraserRemoveCard": return [1, e.maxCards || 1];
+    case "duplicatorCopyCard": return [1, 1];
+    case "hangedManSellCards": return [1, e.maxCards || 2];
+    case "loversShareMods": return [2, 2];
+    case "deathCopyCard": return [2, 2];
+    case "strengthRankUp": return [1, e.maxCards || 3];
+    case "forgeAce": return [1, 1];
+    case "swapRanks": return [2, 2];
+  }
+  return null;
+}
+let ITEM_INSTANT = false; // items resolve at once, with no animation (arcana in a pack)
+
+// Uses an arcana item on the pack's hand. The pack's cards stand in as your
+// hand while the item runs, then every change is written back to wherever
+// those cards live in your deck. Returns false if it couldn't be used.
+function useArcana(def, selectedIds) {
+  const inPlay = state.overlay === "playing";
+  const real = { hand: state.hand, selected: state.selected, overlay: state.overlay, sortMode: state.sortMode, handOrder: state.handOrder };
+  const before = packHandCards();
+  const beforeIds = before.map((c) => c.id);
+  const token = { ...def, uid: "arcana_" + newUid() };
+  state.items = [...state.items, token];
+  if (!inPlay) {
+    state.hand = before;
+    state.overlay = "playing";
+    state.sortMode = "rank";
+    state.handOrder = beforeIds;
+  }
+  state.selected = selectedIds.slice();
+  ITEM_INSTANT = true;
+  try {
+    useItem(token.uid);
+  } finally {
+    ITEM_INSTANT = false;
+  }
+  const used = !state.items.includes(token);
+  state.items = state.items.filter((i) => i.uid !== token.uid);
+  if (!inPlay) {
+    const after = state.hand;
+    const afterById = new Map(after.map((c) => [c.id, c]));
+    const gone = new Set(beforeIds.filter((id) => !afterById.has(id)));
+    const fix = (arr) => arr.filter((c) => !gone.has(c.id)).map((c) => afterById.get(c.id) || c);
+    state.deck = fix(state.deck);
+    state.usedCards = fix(state.usedCards || []);
+    const realHand = fix(real.hand);
+    const known = new Set(allRunCards().map((c) => c.id).concat(realHand.map((c) => c.id)));
+    const fresh = after.filter((c) => !beforeIds.includes(c.id) && !known.has(c.id));
+    if (fresh.length) state.deck = shuffleArray([...state.deck, ...fresh]);
+    state.hand = realHand;
+    state.overlay = real.overlay;
+    state.sortMode = real.sortMode;
+    state.handOrder = real.handOrder;
+    state.selected = real.selected;
+    if (state.packOpen) state.packOpen.hand = after.map((c) => c.id).filter((id) => !gone.has(id));
+  } else {
+    state.selected = [];
+    if (state.packOpen) state.packOpen.hand = state.hand.map((c) => c.id);
+  }
+  return used;
+}
+
 /* ============================== SPECTRAL CARDS ==============================
    Found only in Spectral Packs and used the moment you pick them. A Spectral
    Pack shows a hand of your cards (your real hand mid-round, otherwise 8
@@ -3421,7 +4179,9 @@ const SPECTRAL_DEFS = [
   { id: "chorus", name: "Chorus", desc: "Destroys 1 random card in your hand, adds 4 stamped number cards to your deck", color: "#5fa8c9" },
   { id: "paupersPact", name: "Pauper's Pact", desc: "Gives you a random artifact (needs room), and your money drops to $0", color: "#8a96a3" },
   { id: "seance", name: "Séance", desc: "Every card in your hand becomes the same random rank. −1 hand size for good", color: "#7E57C2" },
-  { id: "phantomLimb", name: "Phantom Limb", desc: "+1 artifact slot. −1 hand size for good", color: "#6fb3a8" },
+  { id: "phantomLimb", name: "Phantom Limb", desc: "A random artifact gets a Negative sleeve (it stops taking a slot). −1 hand size for good", color: "#6fb3a8" },
+  { id: "halo", name: "Halo", desc: "A random unsleeved artifact gets a Sparkler, Gilded or Prismatic sleeve", color: "#FFE28A" },
+  { id: "prismHex", name: "Prism Hex", desc: "A random artifact gets a Prismatic sleeve. Every other artifact is destroyed", color: "#c38bff" },
   { id: "pyre", name: "Pyre", desc: "Destroys 5 random cards in your hand, gain $20", color: "#E8743B" },
   { id: "effigy", name: "Effigy", desc: "Copies a random artifact you own. Every other artifact is destroyed", color: "#b0805a" },
   { id: "shroud", name: "Shroud", desc: "3 random cards in your hand each get a random sleeve and stamp", color: "#9fb3c6" },
@@ -3495,7 +4255,7 @@ function useSpectral(def) {
   const hand = packHandCards();
   const ids = hand.map((c) => c.id);
   const pickIds = (n) => shuffleArray(ids).slice(0, n);
-  const charmRoom = state.charms.length < state.charmSlots;
+  const charmRoom = charmsUsed() < state.charmSlots;
   switch (def.id) {
     case "kinfolk":
       destroyRunCards(pickIds(1));
@@ -3510,7 +4270,7 @@ function useSpectral(def) {
       addRunCards(Array.from({ length: 4 }, () => makeCard(randomOf(RANKS.slice(1, 10)), randomOf(SUIT_KEYS), { stamp: randomOf(STAMP_KINDS) })));
       return "4 number cards joined your deck";
     case "paupersPact": {
-      const d = charmRoom && randomCharmDef(CHARM_DEFS);
+      const d = charmRoom && randomCharmDef(artifactPool());
       if (d) state.charms = [...state.charms, { ...d, uid: newUid() }];
       state.money = 0;
       return d ? `${d.name} is yours. Your purse is empty` : "No room for an artifact. Your purse is empty";
@@ -3521,10 +4281,28 @@ function useSpectral(def) {
       state.permHandSize = (state.permHandSize || 0) - 1;
       return `Every card became ${["A", "8"].includes(r) ? "an" : "a"} ${r}`;
     }
-    case "phantomLimb":
-      state.charmSlots += 1;
+    case "phantomLimb": {
+      const pool = state.charms.filter((c) => c.sleeve !== "negative");
+      if (!pool.length) return "No artifact to touch";
+      const t = randomOf(pool);
+      state.charms = state.charms.map((c) => (c.uid === t.uid ? withCharmSleeve(c, "negative") : c));
       state.permHandSize = (state.permHandSize || 0) - 1;
-      return "+1 artifact slot";
+      return `${t.name} turned Negative`;
+    }
+    case "halo": {
+      const pool = state.charms.filter((c) => !c.sleeve);
+      if (!pool.length) return "Every artifact is already sleeved";
+      const t = randomOf(pool);
+      const sl = randomOf(["sparkler", "gilded", "prismatic"]);
+      state.charms = state.charms.map((c) => (c.uid === t.uid ? withCharmSleeve(c, sl) : c));
+      return `${t.name} got a ${CHARM_SLEEVES[sl].name} sleeve`;
+    }
+    case "prismHex": {
+      if (!state.charms.length) return "You had no artifacts";
+      const t = randomOf(state.charms);
+      state.charms = [withCharmSleeve(t, "prismatic")];
+      return `${t.name} went Prismatic`;
+    }
     case "pyre":
       destroyRunCards(pickIds(5));
       state.money += 20;
@@ -3609,7 +4387,7 @@ function scoringPings(card) {
   let rounds = 1;
   if (hasCharm("engineRetrigger")) rounds++;
   if (hasCharm("lowTideRetrigger") && ["2", "3", "4", "5"].includes(card.rank)) rounds++;
-  if (hasCharm("maskFaceRetrigger") && ["J", "Q", "K"].includes(card.rank)) rounds++;
+  if (hasCharm("maskFaceRetrigger") && isFace(card)) rounds++;
   return (card.stamp === "crimson" ? 2 : 1) * rounds;
 }
 // Cards added to the deck this run (Hall of Mirrors).
@@ -3619,7 +4397,7 @@ function noteAdded(n) {
 // Cards destroyed this run (Vulture) and face cards destroyed (Ossuary Saint).
 function noteDestroyed(cards) {
   state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + cards.length;
-  const faces = cards.filter((c) => c && ["J", "Q", "K"].includes(c.rank)).length;
+  const faces = cards.filter((c) => c && isFace(c)).length;
   if (faces) {
     state.charms = state.charms.map((c) => (c.effect.type === "saintFaceDestroyedX" ? { ...c, saintX: (c.saintX || 1) + faces * c.effect.value } : c));
   }
@@ -3633,35 +4411,43 @@ function shopPriceFor(entry) {
 function generateShopStock(count) {
   // Check if Ringmaster is equipped (allows duplicates)
   const hasRingmaster = state.charms.some((c) => c.effect.type === "ringmasterDuplicates");
-  
+
   // Don't offer charms/items the player currently has equipped or holding -
   // they reappear in the shop pool once sold (charms) or used (items).
   // UNLESS Ringmaster is equipped, which allows duplicates.
   const ownedCharmIds = hasRingmaster ? new Set() : new Set(state.charms.map((c) => c.id));
   const ownedItemIds = hasRingmaster ? new Set() : new Set(state.items.map((i) => i.id));
-  const availableCharms = CHARM_DEFS.filter((c) => !ownedCharmIds.has(c.id));
+  const availableCharms = artifactPool().filter((c) => !ownedCharmIds.has(c.id));
   const availableItems = ITEM_DEFS.filter((i) => !ownedItemIds.has(i.id) && !i.secret);
 
-  // 50/50 split: half charms, half items (rounded), capped by what's actually available
-  const charmCount = Math.min(availableCharms.length, Math.ceil(count / 2));
-  const itemCount = Math.min(availableItems.length, Math.floor(count / 2));
+  // Sleight of Hand: some slots hold playing cards instead.
+  const cardSlots = voucherSum("shopPlayingCards") ? Array.from({ length: count }, () => Math.random() < 0.25).filter(Boolean).length : 0;
+  const n = count - cardSlots;
+  // Split between artifacts and items (Peddler / Bazaar tip it toward items)
+  const w = voucherBest("itemRate", Math.max);
+  const itemCount = Math.min(availableItems.length, Math.round((n * w) / (1 + w)));
+  const charmCount = Math.min(availableCharms.length, n - itemCount);
 
-  const charmPool = [...availableCharms].sort(() => Math.random() - 0.5);
-  const itemPool = [...availableItems].sort(() => Math.random() - 0.5);
+  // weighted shuffle: Star Vendor / Planetarium make charts likelier
+  const chartW = voucherBest("chartRate", Math.max);
+  const weighted = (arr, wf) => arr.map((d) => [Math.pow(Math.random(), 1 / wf(d)), d]).sort((x, y) => y[0] - x[0]).map((x) => x[1]);
+  const charmPool = weighted(availableCharms, () => 1);
+  const itemPool = weighted(availableItems, (d) => (d.chart ? chartW : 1));
 
   let selected = [
-    ...charmPool.slice(0, charmCount),
+    ...charmPool.slice(0, charmCount).map(rollCharmSleeve),
     ...itemPool.slice(0, itemCount)
   ];
 
   // If one side came up short (e.g. most charms are already owned), backfill
   // the remaining slots from whichever pool still has stock left over.
-  const remaining = count - selected.length;
+  const remaining = n - selected.length;
   if (remaining > 0) {
     const leftover = [...charmPool.slice(charmCount), ...itemPool.slice(itemCount)]
       .sort(() => Math.random() - 0.5);
-    selected = [...selected, ...leftover.slice(0, remaining)];
+    selected = [...selected, ...leftover.slice(0, remaining).map((d) => (d.type === "charm" ? rollCharmSleeve(d) : d))];
   }
+  for (let i = 0; i < cardSlots; i++) selected.push(shopPlayingCard());
 
   // Shuffle the combined pool
   for (let i = selected.length - 1; i > 0; i--) {
@@ -3671,7 +4457,21 @@ function generateShopStock(count) {
   return selected;
 }
 
-// Applies each owned item's scoring effect on top of a base evaluateSelection() result.
+// A playing card for sale (Sleight of Hand). Grand Illusion: often sleeved
+// and/or stamped, and now and then Negative.
+function shopPlayingCard() {
+  const fancy = voucherSum("shopPlayingCards") >= 2;
+  const extra = {};
+  if (fancy && Math.random() < 0.5) extra.sleeve = Math.random() < 0.06 ? "negative" : randomOf(SLEEVE_KINDS);
+  if (fancy && Math.random() < 0.4) extra.stamp = randomOf(STAMP_KINDS);
+  const card = makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), extra);
+  const suit = card.suit[0].toUpperCase() + card.suit.slice(1);
+  const lines = [];
+  if (card.sleeve) lines.push(`${AnteArt.sleeveLabel(card.sleeve)} sleeve: ${SLEEVE_INFO[card.sleeve]}`);
+  if (card.stamp) lines.push(`${STAMP_LABELS[card.stamp]} stamp: ${STAMP_INFO[card.stamp]}`);
+  return { type: "playing", id: card.id, card, name: `${card.rank} of ${suit}`, desc: `Goes into your deck.${lines.length ? "<br>" + lines.join("<br>") : ""}`, price: 3 + (card.sleeve ? 2 : 0) + (card.stamp ? 1 : 0), color: "#D9CFB5" };
+}
+
 function applyItemEffects(result, cards, items) {
   let { totalChips, totalMult } = result;
   const handName = result.name;
@@ -3761,7 +4561,7 @@ function applyCharmEffects(result, cards, charms) {
         totalMult += Math.max(0, state.ante - 1) * eff.value;
         break;
       case "crownFaceCardMult": {
-        const faceCardCount = cards.filter((c) => ["J", "Q", "K"].includes(c.rank)).length;
+        const faceCardCount = cards.filter((c) => isFace(c)).length;
         totalMult += faceCardCount * eff.value;
         break;
       }
@@ -3812,7 +4612,7 @@ function applyCharmEffects(result, cards, charms) {
         totalMult *= eff.value;
         break;
       case "locksmithNoFaceMult": {
-        const hasFaceCard = cards.some((c) => ["J", "Q", "K"].includes(c.rank));
+        const hasFaceCard = cards.some((c) => isFace(c));
         if (!hasFaceCard) totalMult += eff.value;
         break;
       }
@@ -3864,7 +4664,7 @@ function applyCharmEffects(result, cards, charms) {
         totalChips += cards.filter((c) => !isCardDebuffed(c) && ["A", "3", "5", "7", "9"].includes(c.rank)).reduce((n, c) => n + scoringPings(c), 0) * eff.value;
         break;
       case "portraitFirstFaceX": {
-        const face = cards.find((c) => !isCardDebuffed(c) && ["J", "Q", "K"].includes(c.rank));
+        const face = cards.find((c) => !isCardDebuffed(c) && isFace(c));
         if (face) totalMult *= Math.pow(eff.value, scoringPings(face));
         break;
       }
@@ -4124,7 +4924,7 @@ function loadGame() {
       if (!d) return d;
       for (const pool of pools) {
         const def = pool.find((x) => x.id === d.id);
-        if (def) return { ...d, name: def.name, desc: def.desc, price: def.price, color: def.color, effect: { ...def.effect, ...(d.effect && d.effect.blindCounter != null ? { blindCounter: d.effect.blindCounter } : {}) }, rarity: def.rarity };
+        if (def) return { ...d, name: def.name, desc: def.desc, price: def.price + (d.sleevePrice || 0), color: def.color, effect: { ...def.effect, ...(d.effect && d.effect.blindCounter != null ? { blindCounter: d.effect.blindCounter } : {}) }, rarity: def.rarity };
       }
       return d;
     };
@@ -4174,7 +4974,8 @@ function getHandSize() {
   const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraHandSize").reduce((s, v) => s + v.effect.value, 0);
   const chainsReduction = state.charms.filter((c) => c.effect.type === "chainsMoneyPerHand").reduce((s, c) => s + c.effect.handSizeReduction, 0);
   const bossDelta = (state.bossBlind && state.bossBlind.handSizeDelta) || 0;
-  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta + (state.roundHandSizeBonus || 0) + (state.permHandSize || 0));
+  const negInHand = (state.hand || []).filter((c) => c.sleeve === "negative").length;
+  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta + (state.roundHandSizeBonus || 0) + (state.permHandSize || 0)) + negInHand;
 }
 
 function computeFanLayout() {
@@ -4191,10 +4992,14 @@ function computeFanLayout() {
   return { overlap, scale };
 }
 
+const ANCHOR_CAP = 3;
 function dealInitialHand(freshDeckArg) {
-  // Anchor sleeve: anchored cards are always drawn first each round.
-  const d = [...freshDeckArg.filter((c) => c.sleeve === "anchor"), ...freshDeckArg.filter((c) => c.sleeve !== "anchor")];
-  const h = d.splice(0, getHandSize());
+  // Anchor sleeve: up to 3 anchored cards (picked at random if you have more)
+  // jump to the top for the opening hand of each round. After that they're
+  // drawn like any other card.
+  const anchors = shuffleArray(freshDeckArg.filter((c) => c.sleeve === "anchor")).slice(0, ANCHOR_CAP);
+  const d = [...anchors, ...freshDeckArg.filter((c) => !anchors.includes(c))];
+  const h = drawInto([], d);
   tagBossDebuffedCards(h);
   state.deck = d;
   state.hand = h;
@@ -4236,6 +5041,7 @@ function startGame() {
   state.voucherStock = [];
   state.voucherReady = false;
   state.permHandSize = 0;
+  state.plumGone = false;
   state.permDiscards = 0;
   state.lastSoldCharm = null;
   state.packOpen = null;
@@ -4272,17 +5078,17 @@ function startGame() {
   state.activeCharm = null;
   state.activeCharmStartedAt = null;
   state.activeCharmClosing = false;
-  state.sortMode = "rank";
+  state.sortMode = SETTINGS.sort === "suit" ? "suit" : "rank";
   state.handOrder = [];
   state.playsLeft = 4 + getExtraPlays(state.items);
   state.discardsLeft = 4 + getExtraDiscards(state.items);
   state.money = 4 + PPHub.take('cash') + (PPHub.has('purse') ? 2 : 0) + PPHub.charm('cash');   // Pocket Money and the Starter Purse from the Press Play shop
   { const sp = PPHub.take('spare'); if (sp) { state.playsLeft += sp; state.discardsLeft += sp; } state.discardsLeft += PPHub.charm('discard'); }   // Spare Hand: first round only
-  if (PPHub.take('encore') && state.charms.length < state.charmSlots && !state.charms.some((c) => c.id === "ppp_encore")) {
+  if (PPHub.take('encore') && charmsUsed() < state.charmSlots && !state.charms.some((c) => c.id === "ppp_encore")) {
     state.charms.push({ id: "ppp_encore", name: "Encore", desc: "Press Play exclusive: +4 Mult, then x1.2 Mult on every hand", price: 10,
       color: "#8b5cff", type: "charm", effect: { type: "pppEncore", add: 4, x: 1.2 }, uid: Math.random().toString(36).slice(2, 9) });
   }
-  if (PPHub.take('bass') && state.charms.length < state.charmSlots && !state.charms.some((c) => c.id === "ppp_bass")) {
+  if (PPHub.take('bass') && charmsUsed() < state.charmSlots && !state.charms.some((c) => c.id === "ppp_bass")) {
     state.charms.push({ id: "ppp_bass", name: "Bass Boost", desc: "Press Play exclusive: x1.5 Mult on every hand", price: 10,
       color: "#6ee7d0", type: "charm", effect: { type: "pppEncore", add: 0, x: 1.5 }, uid: Math.random().toString(36).slice(2, 9) });
   }
@@ -4370,6 +5176,11 @@ function startNextBlind(nextAnte, nextBlindIdx) {
     if (state.bossBlind.forcedPlays != null) state.playsLeft = state.bossBlind.forcedPlays;
     if (state.bossBlind.forcedDiscards != null) state.discardsLeft = state.bossBlind.forcedDiscards;
   }
+  // Cat Burglar: +3 hands, no discards. Jackknife starts each round at X1.
+  state.charms.forEach((c) => {
+    if (c.effect.type === "burglarHands") { state.playsLeft += c.effect.value; state.discardsLeft = 0; }
+    if (c.effect.type === "jackknifeX") c.jackBonus = 0;
+  });
   state.streakCounter = 0; // Reset Streak for new round
   state.handsThisRound = 0;
   state.luckyRound = false;
@@ -4427,11 +5238,7 @@ function refillHand(currentDeck, currentHand, removeIds) {
     state.usedCards = state.usedCards.filter((c) => !playedOrDiscarded.some((p) => p.id === c.id));
   }
   
-  // Anchor sleeve logic: Anchor-sleeved cards anywhere in the deck are drawn
-  // before any other card, then the rest of the draw comes off the top.
-  d = [...d.filter((c) => c.sleeve === "anchor"), ...d.filter((c) => c.sleeve !== "anchor")];
-  const drawn = d.slice(0, Math.max(0, need));
-  d = d.slice(drawn.length);
+  const drawn = drawInto(remaining, d);
   tagBossDebuffedCards(drawn);
 
   return { newDeck: d, newHand: [...remaining, ...drawn] };
@@ -4461,6 +5268,7 @@ function activationIcon(name) {
 }
 
 function activateCharmSlide(charm, callback) {
+  if (ITEM_INSTANT) { if (callback) callback(); return; }
   // The piece on the shelf lights up and its name pops under it; an item
   // being used then burns away when the callback consumes it.
   state.activeCharm = charm;
@@ -4575,13 +5383,27 @@ function scoreHand(selectedCards, { live = false } = {}) {
   // scoring cards in the order they sit in the hand
   const order = getSortedHand().map((c) => c.id);
   const cards = [...base.scoringCards].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  const charms = state.charms;
+  // Live-only growth that depends on this hand's cards, done before scoring.
+  if (live) {
+    const leeches = state.charms.filter((c) => c.effect.type === "leechX");
+    if (leeches.length) {
+      let eaten = 0;
+      cards.forEach((c) => { if (c.sleeve || c.stamp) { eaten++; c.sleeve = undefined; c.stamp = undefined; } });
+      if (eaten) leeches.forEach((l) => { l.leechBonus = (l.leechBonus || 0) + eaten * l.effect.value; });
+    }
+    const anyFace = cards.some((c) => isFace(c));
+    state.charms.forEach((c) => {
+      if (c.effect.type === "commuterMult") c.busCount = anyFace ? 0 : (c.busCount || 0) + 1;
+      if (c.effect.type === "deuceChips") c.deuceBonus = (c.deuceBonus || 0) + cards.filter((x) => x.rank === "2" && !isCardDebuffed(x)).length * c.effect.value;
+    });
+  }
+  const charms = effectiveCharms();
   const has = (type) => charms.find((c) => c.effect.type === type);
   const calc = has("calculatorReplay");
   const calculatorFires = live && calc && Math.random() < Math.min(1, calc.effect.chance * chanceMultiplier());
   const heart = has("heartstoneChance");
   let portraitCardId = null;
-  const firstFace = cards.find((c) => !isCardDebuffed(c) && FACE_RANKS.includes(c.rank));
+  const firstFace = cards.find((c) => !isCardDebuffed(c) && isFace(c));
   if (firstFace) portraitCardId = firstFace.id;
 
   cards.forEach((card) => {
@@ -4597,15 +5419,24 @@ function scoreHand(selectedCards, { live = false } = {}) {
     const tide = has("lowTideRetrigger");
     if (tide && ["2", "3", "4", "5"].includes(card.rank)) again.push({ label: tide.name, uid: tide.uid });
     const mask = has("maskFaceRetrigger");
-    if (mask && FACE_RANKS.includes(card.rank)) again.push({ label: mask.name, uid: mask.uid });
+    if (mask && isFace(card)) again.push({ label: mask.name, uid: mask.uid });
     if (calculatorFires) again.push({ label: calc.name, uid: calc.uid });
     if (state.nextHandRetrigger) again.push({ label: "The Empress" });
+    charms.forEach((c) => {
+      if (c.effect.type === "fizzRetrigger" && (c.fizzLeft ?? c.effect.hands) > 0) again.push({ label: c.name, uid: c.uid });
+      if (c.effect.type === "twilightRetrigger" && state.isLastPlayThisRound) again.push({ label: c.name, uid: c.uid });
+    });
 
     [{ label: null }, ...again].forEach((round, k) => {
       if (k > 0) push({ target: "card", id: card.id, kind: "again", text: "Again!", sub: round.label, from: round.uid });
-      const cardChips = rankChipValue(card.rank) + (card.sleeve === "sparkler" ? 20 : 0);
+      const cardChips = rankChipValue(card.rank) + (card.sleeve === "sparkler" ? 20 : 0) + (card.bonusChips || 0);
       chips += cardChips;
       push({ target: "card", id: card.id, kind: "chips", text: `+${cardChips}` });
+      // Trail Mark: the card keeps +5 Chips for good, every time it scores.
+      if (live) charms.filter((c) => c.effect.type === "trailMark").forEach((c) => {
+        card.bonusChips = (card.bonusChips || 0) + c.effect.value;
+        push({ target: "card", id: card.id, kind: "info", text: "Marked +5", from: c.uid });
+      });
       if (card.stamp === "gold") {
         money += 3;
         push({ target: "card", id: card.id, kind: "money", text: "+$3" });
@@ -4620,7 +5451,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
         const addM = (n) => { mult += n; push({ target: "card", id: card.id, kind: "mult", text: `+${fmtNum(n)} Mult`, from: c.uid }); };
         const xM = (n) => { mult *= n; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(n)} Mult`, from: c.uid }); };
         switch (e.type) {
-          case "crownFaceCardMult": if (FACE_RANKS.includes(card.rank)) addM(e.value); break;
+          case "crownFaceCardMult": if (isFace(card)) addM(e.value); break;
           case "prismChipsPerCard": addC(e.value); break;
           case "abacusCardChipsBoost": addC(Math.round(rankChipValue(card.rank) * e.value)); break;
           case "blueprintSleeveChips": if (card.sleeve) addC(e.value); break;
@@ -4644,13 +5475,22 @@ function scoreHand(selectedCards, { live = false } = {}) {
   const chipsAfterCards = chips;
 
   // cards held in hand
-  state.hand.filter((c) => !selectedCards.some((s) => s.id === c.id)).forEach((card) => {
+  // (Understudy plays every held-in-hand effect once more.)
+  const held = state.hand.filter((c) => !selectedCards.some((s) => s.id === c.id));
+  const heldRounds = 1 + charms.filter((c) => c.effect.type === "mimeHeld").length;
+  const fists = charms.filter((c) => c.effect.type === "fistMult");
+  const lowest = held.filter((c) => !isCardDebuffed(c)).reduce((lo, c) => (!lo || rankChipValue(c.rank) <= rankChipValue(lo.rank) ? c : lo), null);
+  held.forEach((card) => {
     if (isCardDebuffed(card)) return;
-    charms.forEach((c) => {
-      const e = c.effect;
-      if (e.type === "dukeKingMult" && card.rank === "K") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
-      if (e.type === "gildedHeldX" && card.stamp === "gold") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
-    });
+    for (let r = 0; r < heldRounds; r++) {
+      if (r > 0 && (card.rank === "K" || card.stamp === "gold" || (fists.length && card === lowest))) push({ target: "card", id: card.id, kind: "again", text: "Again!", sub: "Understudy", held: true });
+      charms.forEach((c) => {
+        const e = c.effect;
+        if (e.type === "dukeKingMult" && card.rank === "K") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
+        if (e.type === "gildedHeldX" && card.stamp === "gold") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
+        if (e.type === "fistMult" && card === lowest) { const n = rankChipValue(card.rank) * 2; mult += n; push({ target: "card", id: card.id, kind: "mult", text: `+${n} Mult`, from: c.uid, held: true }); }
+      });
+    }
   });
 
   // whole-hand artifacts, in shelf order
@@ -4658,6 +5498,36 @@ function scoreHand(selectedCards, { live = false } = {}) {
     const e = c.effect;
     if (PER_CARD_EFFECTS.has(e.type)) return;
     if (e.type === "gamblerMult") { mult += e.value; push({ target: "charm", uid: c.uid, kind: "mult", text: `+${e.value} Mult` }); return; }
+    // the artifacts added from the genre's classics
+    const addMH = (n) => { if (!n) return; mult += n; push({ target: "charm", uid: c.uid, kind: "mult", text: `+${fmtNum(n)} Mult` }); };
+    const addCH = (n) => { if (!n) return; chips += n; push({ target: "charm", uid: c.uid, kind: "chips", text: `+${fmtNum(n)} Chips` }); };
+    const xMH = (n) => { if (!n || n === 1) return; mult *= n; push({ target: "charm", uid: c.uid, kind: "xmult", text: `X${fmtNum(n)} Mult` }); };
+    switch (e.type) {
+      case "plumMult": return addMH(e.value);
+      case "ripePlumX": return xMH(e.value);
+      case "chalkboardX": return xMH(held.every((h) => h.suit === "spades" || h.suit === "clubs") ? e.value : 1);
+      case "leechX": return xMH(1 + (c.leechBonus || 0));
+      case "bonfireX": return xMH(1 + (c.bonfireBonus || 0));
+      case "commuterMult": return addMH((c.busCount || 0) * e.value);
+      case "stargazerX": return xMH(1 + (c.stars || 0) * e.value);
+      case "sundaeChips": return addCH(c.chipsLeft ?? e.value);
+      case "popcornMult": return addMH(c.multLeft ?? e.value);
+      case "bullionChips": return addCH(Math.max(0, state.money) * e.value);
+      case "dejaVuX": return xMH((state.handTypesPlayedThisRound || []).filter((h) => h === base.name).length >= 2 ? e.value : 1);
+      case "stencilX": return xMH(Math.max(1, state.charmSlots - charmsUsed() + state.charms.filter((x) => x.effect.type === "stencilX").length));
+      case "punchCardX": return xMH((state.handsPlayedRun || 0) % e.everyN === 0 ? e.value : 1);
+      case "jackknifeX": return xMH(1 + (c.jackBonus || 0));
+      case "deuceChips": return addCH(c.deuceBonus || 0);
+      case "cosmonautLevel":
+        if (live && Math.random() < Math.min(1, e.chance * chanceMultiplier())) {
+          state.handLevels = { ...(state.handLevels || {}), [base.name]: handLevel(base.name) + 1 };
+          push({ target: "charm", uid: c.uid, kind: "info", text: "Level up!" });
+        }
+        return;
+      case "mimeHeld": case "fistMult": case "fizzRetrigger": case "twilightRetrigger": case "trailMark": case "splashAllScore":
+      case "pareidoliaFaces": case "shortcutStraights": case "nestEgg": case "burglarHands": case "copyRight": case "copyLeftmost":
+        return;
+    }
     const r = applyCharmEffects({ name: base.name, totalChips: chips, totalMult: mult }, cards, [c]);
     const dc = r.totalChips - Math.round(chips);
     if (dc) { chips += dc; push({ target: "charm", uid: c.uid, kind: "chips", text: `+${fmtNum(dc)} Chips` }); }
@@ -4672,6 +5542,13 @@ function scoreHand(selectedCards, { live = false } = {}) {
         push({ target: "charm", uid: c.uid, kind: "mult", text: `${d >= 0 ? "+" : ""}${fmtNum(d)} Mult` });
       }
     }
+  });
+
+  // artifact sleeves, in shelf order
+  charms.forEach((c) => {
+    if (c.sleeve === "sparkler") { chips += 50; push({ target: "charm", uid: c.uid, kind: "chips", text: "+50 Chips" }); }
+    if (c.sleeve === "gilded") { mult += 10; push({ target: "charm", uid: c.uid, kind: "mult", text: "+10 Mult" }); }
+    if (c.sleeve === "prismatic") { mult *= 1.5; push({ target: "charm", uid: c.uid, kind: "xmult", text: "X1.5 Mult" }); }
   });
 
   // items held with a scoring effect (older item kinds)
@@ -4731,7 +5608,7 @@ function jiggleShelfPiece(uid) {
 // boxes and pops whatever fired, then the total lands.
 function animateScoring(result, onDone) {
   const evs = result.events;
-  const delay = Math.max(110, Math.min(360, 520 - evs.length * 14));
+  const delay = Math.max(110, Math.min(360, 520 - evs.length * 14)) / gameSpeed();
   let i = 0;
   const first = evs[0];
   state.popup = { name: result.name, chips: first.chips, mult: first.mult, phase: "counting", score: null };
@@ -4741,7 +5618,8 @@ function animateScoring(result, onDone) {
     if (i >= evs.length) {
       state.popup = { ...state.popup, chips: result.chips, mult: result.mult, score: result.score, phase: "total" };
       render();
-      setTimeout(onDone, 700);
+      buzz(result.score >= targetForAnte(state.ante, state.blindIdx) - state.roundScore ? [30, 40, 60] : 25);
+      setTimeout(onDone, 700 / gameSpeed());
       return;
     }
     const ev = evs[i++];
@@ -4762,7 +5640,7 @@ function animateScoring(result, onDone) {
     }
     setTimeout(step, ev.kind === "again" ? Math.round(delay * 1.2) : delay);
   };
-  setTimeout(step, 380);
+  setTimeout(step, 380 / gameSpeed());
 }
 
 function triggerCharmEffects(result, cards) {
@@ -4940,6 +5818,7 @@ function playHand() {
 }
 
 function finishPlay(finalScore, newPlaysLeft) {
+  afterHandCharms();
   // Encore Ticket: this hand also scores the previous hand's score again.
   const handScore = finalScore;
   if (state.nextHandBonusScore) {
@@ -5038,6 +5917,7 @@ function finishPlay(finalScore, newPlaysLeft) {
         }
       }
       if (cleared) {
+        roundEndCharms(state.blindIdx === 2);
         state.charms.forEach((c) => {
           if (c.effect.type === "deadlineFirstHandClear" && firstHandOfRound) state.money += c.effect.value;
           if (c.effect.type === "investorMoneyPerCharm") state.money += state.charms.length * c.effect.value;
@@ -5123,6 +6003,8 @@ function discard() {
     state.discardsLeft -= 1;
     state.totalDiscardedRun = (state.totalDiscardedRun || 0) + discardedCards.length;
     state.charms = state.charms.map((c) => (c.effect.type === "lanternDiscardX" ? { ...c, lanternDiscards: (c.lanternDiscards || 0) + discardedCards.length } : c));
+    const jacks = discardedCards.filter((c) => c.rank === "J").length;
+    if (jacks) state.charms = state.charms.map((c) => (c.effect.type === "jackknifeX" ? { ...c, jackBonus: (c.jackBonus || 0) + jacks * c.effect.value } : c));
     state.money += getMoneyOnDiscard(state.items) + titheBonus;
     state.streakCounter = 0; // Reset Streak when discarding
     saveGame();
@@ -5229,7 +6111,7 @@ function goToShop() {
     while (i < weights.length - 1 && r > weights[i]) r -= weights[i++];
     return commonBases[i].id;
   };
-  state.packStock = [0, 1].map(() => {
+  state.packStock = Array.from({ length: 2 + voucherSum("packSlots") }, () => {
     if (Math.random() < 0.12) return { ...PACK_DEFS.find((p) => p.rare) };
     const r = Math.random();
     const id = rollBase() + (r < 0.12 ? "_mega" : r < 0.4 ? "_major" : "");
@@ -5262,8 +6144,12 @@ function openPack(packId) {
   const pickDefs = (pool, n) => shuffleArray(pool).slice(0, n).map((d) => ({ ...d }));
   const n = pack.choices + state.vouchers.filter((v) => v.effect.type === "packExtraChoices" && v.effect.pack === kind).reduce((s, v) => s + v.effect.value, 0);
   let choices = [];
-  if (kind === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), n);
-  if (kind === "itemPack") choices = pickDefs(ITEM_DEFS.filter((d) => !d.secret), n);
+  if (kind === "artifactPack") choices = pickDefs(artifactPool().filter((c) => ringmaster || !owned.has(c.id)), n).map(rollCharmSleeve);
+  if (kind === "itemPack") {
+    // Tea Leaves: one more card. Omen Globe: any card can be a Spectral one.
+    const spectralChance = voucherSum("arcanaSpectral");
+    choices = pickDefs(arcanaPool(), n + voucherSum("arcanaExtra")).map((d) => (Math.random() < spectralChance ? pickSpectrals(1)[0] : { ...d, arcana: true }));
+  }
   if (kind === "celestialPack") {
     // secret hands' charts only once you've played that hand
     choices = pickDefs(ITEM_DEFS.filter((d) => d.chart && (!d.secret || (state.handTypeCounts || {})[d.effect.hand])), n);
@@ -5276,9 +6162,10 @@ function openPack(packId) {
   if (kind === "spectralPack") choices = pickSpectrals(n);
   if (kind === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), n);
   if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
-  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
-  state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: Date.now(), hand: kind === "spectralPack" ? packHandIds() : null, note: null };
+  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: Math.random() < 0.05 ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: SETTINGS.packAnim ? Date.now() : 0, hand: kind === "spectralPack" || kind === "itemPack" ? packHandIds() : null, note: null };
   state.packPick = null;
+  state.packSel = [];
   state.shopDetail = null;
   saveGame();
   render();
@@ -5290,13 +6177,26 @@ function takePackChoice(index) {
   const choice = po.choices[index];
   if (!choice) return;
   let note = null;
-  if (choice.spectral) {
+  if (choice.arcana) {
+    const need = arcanaSelection(choice);
+    const sel = (state.packSel || []).slice(0, need ? need[1] : 0);
+    if (need && sel.length < need[0]) return;
+    if (!useArcana(choice, sel)) {
+      po.note = `${choice.name} had nothing to work on`;
+      state.packPick = null;
+      render();
+      return;
+    }
+    note = `${choice.name} used`;
+    state.packSel = [];
+  } else if (choice.spectral) {
     note = useSpectral(choice);
   } else if (choice.type === "charm") {
-    if (state.charms.length >= state.charmSlots) return;
+    if (choice.sleeve !== "negative" && charmsUsed() >= state.charmSlots) return;
     state.charms = [...state.charms, { ...choice, uid: newUid() }];
   } else if (choice.type === "item" && choice.chart) {
     state.handLevels = { ...(state.handLevels || {}), [choice.effect.hand]: handLevel(choice.effect.hand) + 1 };
+    noteChartUsed();
   } else if (choice.type === "item") {
     if (state.items.length >= getEffectiveItemSlots()) return;
     state.items = [...state.items, { ...choice, uid: newUid() }];
@@ -5329,12 +6229,39 @@ function skipPack() {
 // you can sell to make room), then the choices dealt in a fan on a panel.
 // Tap a card to look at it; Take adds it, Skip leaves the rest.
 function packChoiceFull(choice) {
-  if (choice.type === "charm") return state.charms.length >= state.charmSlots;
+  if (choice.arcana || choice.spectral) return false;
+  if (choice.type === "charm" && choice.sleeve === "negative") return false;
+  if (choice.type === "charm") return charmsUsed() >= state.charmSlots;
   if (choice.type === "item" && !choice.chart) return state.items.length >= getEffectiveItemSlots();
   return false;
 }
+// The pack's hand in the order you see it: your own sort mid-round,
+// lowest to highest otherwise (so "leftmost" means the same everywhere).
+// A playing card drawn at a fixed zoom, for shop wares and popups.
+function playingCardEl(card, zoom) {
+  const el = renderCard(card, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => {} });
+  el.classList.add("pack-card");
+  el.style.transform = "none";
+  el.dataset.finalTransform = "none";
+  el.style.zoom = String(zoom);
+  return el;
+}
+function packHandOrdered() {
+  const cards = packHandCards();
+  if (state.overlay === "playing") {
+    const ids = new Set(cards.map((c) => c.id));
+    return getSortedHand().filter((c) => ids.has(c.id));
+  }
+  return [...cards].sort((a, b) => rankStraightValueHigh(a.rank) - rankStraightValueHigh(b.rank));
+}
+function togglePackSel(id, max) {
+  const sel = state.packSel || [];
+  state.packSel = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id].slice(-max);
+  render();
+}
 function pickPackChoice(i) {
   state.packPick = state.packPick === i ? null : i;
+  state.packSel = [];
   render();
 }
 function PackOverlay() {
@@ -5359,6 +6286,7 @@ function PackOverlay() {
   deckCorner.appendChild(renderDeckWidget());
   right.appendChild(deckCorner);
   right.insertAdjacentHTML("beforeend", `<div class="shop-money serif">$${state.money}</div>`);
+  right.appendChild(OptionsButton("compact"));
   header.appendChild(right);
   wrap.appendChild(header);
   wrap.appendChild(GearShelf());
@@ -5411,15 +6339,19 @@ function PackOverlay() {
       el.classList.add("kind-spectral");
     } else {
       const kind = choice.type === "charm" ? "kind-charm" : "kind-item";
-      el.innerHTML = `<div class="pchoice-face bcard-face ${kind}"><div class="bcard-art">${AnteArt.icon(choice)}</div></div>`;
+      el.innerHTML = `<div class="pchoice-face full-face">${AnteArt.card(choice)}</div>`;
       el.classList.add(kind);
     }
     el.onclick = () => pickPackChoice(i);
     fan.appendChild(el);
   });
   stage.appendChild(fan);
+  const pickedDef = pick != null ? po.choices[pick] : null;
+  const need = pickedDef && pickedDef.arcana ? arcanaSelection(pickedDef) : null;
   if (po.hand) {
-    const handCards = packHandCards();
+    const handCards = packHandOrdered();
+    const sel = state.packSel || [];
+    const leftmostOnly = pickedDef && pickedDef.arcana && !need && /leftmost/.test(pickedDef.desc);
     const row = document.createElement("div");
     row.className = "pack-hand";
     row.innerHTML = `<div class="bwell-label">Your hand</div>`;
@@ -5434,7 +6366,8 @@ function PackOverlay() {
       cardEl.dataset.finalTransform = "none";
       cardEl.style.zoom = "0.82";
       const slot = document.createElement("div");
-      slot.className = "pack-hand-card";
+      slot.className = "pack-hand-card" + (sel.includes(c.id) ? " sel" : "") + (need ? " can-pick" : "") + (leftmostOnly && c === handCards[0] ? " target" : "");
+      if (need) slot.onclick = () => togglePackSel(c.id, need[1]);
       slot.appendChild(cardEl);
       cards.appendChild(slot);
     });
@@ -5460,6 +6393,11 @@ function PackOverlay() {
       if (c.sleeve) lines.push(`<b>${AnteArt.sleeveLabel(c.sleeve)} sleeve</b> ${SLEEVE_INFO[c.sleeve]}`);
       if (c.stamp) lines.push(`<b>${STAMP_LABELS[c.stamp]} stamp</b> ${STAMP_INFO[c.stamp]}`);
       desc = (lines.join("<br>") || "A plain card") + "<br>Goes into your deck.";
+    } else if (c.arcana) {
+      kind = "Arcana";
+      name = c.name;
+      const sel = (state.packSel || []).length;
+      desc = c.desc.replace(/^Use: (.)/, (_, ch) => ch.toUpperCase()) + (need ? `<br><b>Tap ${need[0] === need[1] ? need[0] : `${need[0]}–${need[1]}`} card${need[1] > 1 ? "s" : ""} in your hand</b> (${sel} picked)` : /leftmost/.test(c.desc) ? "<br>Your leftmost card is marked below." : "");
     } else if (c.spectral) {
       kind = "Spectral";
       name = c.name;
@@ -5472,7 +6410,7 @@ function PackOverlay() {
     } else {
       kind = c.rarity === "legendary" ? "Legendary artifact" : c.type === "charm" ? "Artifact" : "Item";
       name = c.name;
-      desc = c.desc;
+      desc = c.desc + (c.sleeve && CHARM_SLEEVES[c.sleeve] ? `<br><b>${CHARM_SLEEVES[c.sleeve].name} sleeve</b> ${CHARM_SLEEVES[c.sleeve].desc}` : "");
     }
     info.innerHTML = `
       <div class="pack-info-kind">${kind}</div>
@@ -5492,8 +6430,8 @@ function PackOverlay() {
   const take = document.createElement("button");
   take.className = "bbtn bbtn-orange";
   const pc = pick != null ? po.choices[pick] : null;
-  take.disabled = pc == null || packChoiceFull(pc);
-  take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && pc.spectral ? "Use" : "Take"}</span>`;
+  take.disabled = pc == null || packChoiceFull(pc) || (need && (state.packSel || []).length < need[0]);
+  take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && (pc.spectral || pc.arcana) ? "Use" : "Take"}</span>`;
   take.onclick = () => { if (pick != null) takePackChoice(pick); };
   actions.appendChild(take);
   wrap.appendChild(actions);
@@ -5538,8 +6476,12 @@ function buyItem(shopIndex) {
   
   if (state.money < discountedPrice) return;
   
-  if (item.type === "charm") {
-    if (state.charms.length >= state.charmSlots) return;
+  if (item.type === "playing") {
+    state.money -= discountedPrice;
+    state.deck = shuffleArray([...state.deck, { ...item.card }]);
+    noteAdded(1);
+  } else if (item.type === "charm") {
+    if (item.sleeve !== "negative" && charmsUsed() >= state.charmSlots) return;
     state.money -= discountedPrice;
     state.charms = [...state.charms, { ...item, uid: Math.random().toString(36).slice(2, 9) }];
   } else {
@@ -5549,6 +6491,7 @@ function buyItem(shopIndex) {
   }
   
   if (state.freeBuy) state.freeBuy = false;
+  buzz(20);
   state.shopStock = state.shopStock.map((it, i) => (i === shopIndex ? null : it));
   saveGame();
   render();
@@ -5568,6 +6511,7 @@ function buyVoucher(voucherIndex) {
   if (eff.type === "rerollDiscount") state.rerollCost = Math.max(1, state.rerollCost - eff.value);
   if (eff.anteDown) state.ante = Math.max(1, state.ante - eff.anteDown);
   state.redeemedAt = Date.now();
+  buzz([20, 30, 40]);
   saveGame();
   render();
 }
@@ -5578,6 +6522,7 @@ function sellCharm(uid) {
   const charm = state.charms[idx];
   
   state.lastSoldCharm = { ...charm };
+  noteSold();
   // Check if this charm is Specter and if it has played 3+ blinds
   if (charm.effect.type === "specterDuplicate" && (charm.effect.blindCounter || 0) >= 3) {
     // Duplicate a random charm from current inventory (excluding the one being sold)
@@ -5623,6 +6568,7 @@ function tryConsumeItem(item, itemUid) {
       if (Math.random() < Math.min(1, c.effect.chance * chanceMult)) { preservedBy = c; break; }
     }
   }
+  buzz(20);
   if (preservedBy) {
     setTimeout(() => activateCharmSlide(preservedBy, () => {}), 950);
     state.items = state.items.map((i) => (i.uid === itemUid ? { ...i, cameraSaves: saveCount + 1 } : i));
@@ -5637,6 +6583,7 @@ function tryConsumeItem(item, itemUid) {
 // onComplete once finished so the caller can apply the actual state change,
 // which is what makes the persistent sleeve visual (glow + badge) appear.
 function playSleeveAnimation(cardId, sleeveType, onComplete) {
+  if (ITEM_INSTANT) { if (onComplete) onComplete(); return; }
   const el = document.querySelector(`.hand-fan .card[data-card-id="${cardId}"]`);
   if (!el) { onComplete(); return; }
   const base = el.dataset.finalTransform || "";
@@ -5659,6 +6606,7 @@ function playSleeveAnimation(cardId, sleeveType, onComplete) {
 // stamp color, then applies the stamp via onComplete. Stamps and sleeves are
 // independent properties, so this never touches card.sleeve.
 function playStampAnimation(cardId, stampType, onComplete) {
+  if (ITEM_INSTANT) { if (onComplete) onComplete(); return; }
   const el = document.querySelector(`.hand-fan .card[data-card-id="${cardId}"]`);
   if (!el) { onComplete(); return; }
   const base = el.dataset.finalTransform || "";
@@ -5769,6 +6717,7 @@ function useItem(itemUid) {
 
   if (eff.type === "levelHand") {
     return quick(() => {
+      noteChartUsed();
       state.handLevels = { ...(state.handLevels || {}), [eff.hand]: handLevel(eff.hand) + 1 };
       const b = handBase(eff.hand);
       state.bossBlindMessage = `${eff.hand} → Lv ${handLevel(eff.hand)} (${b.chips} × ${b.mult})`;
@@ -5934,7 +6883,7 @@ function useItem(itemUid) {
     const a = sel[0], b = sel[sel.length - 1];
     return quick(() => mapHand((c) => (c.id === a.id ? { ...c, rank: b.rank } : c.id === b.id ? { ...c, rank: a.rank } : c)));
   }
-  if (eff.type === "bountyFaces") return quick(() => { state.money += state.hand.filter((c) => ["J", "Q", "K"].includes(c.rank)).length * eff.value; });
+  if (eff.type === "bountyFaces") return quick(() => { state.money += state.hand.filter((c) => isFace(c)).length * eff.value; });
 
   if (eff.type === "piggyBankDiscardsToMoney") {
     activateCharmSlide(item, () => {
@@ -6048,7 +6997,7 @@ function useItem(itemUid) {
   }
 
   if (eff.type === "judgementCreateCharm") {
-    if (state.charms.length >= state.charmSlots) return;
+    if (charmsUsed() >= state.charmSlots) return;
     const hasRingmaster = state.charms.some((c) => c.effect.type === "ringmasterDuplicates");
     const ownedCharmIds = hasRingmaster ? new Set() : new Set(state.charms.map((c) => c.id));
     const pool = CHARM_DEFS.filter((c) => !ownedCharmIds.has(c.id));
@@ -6575,52 +7524,18 @@ function isLandscape() {
 }
 
 function render() {
+  if (ITEM_INSTANT) return;
   document.body.classList.toggle("landscape", isLandscape());
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
   const app = document.getElementById("app");
   app.innerHTML = "";
+  if (MENU.screen === "main") { app.appendChild(MainMenu()); return; }
 
   const fanLayout = computeFanLayout();
   const cardScale = fanLayout.scale;
   const fanOverlapPx = fanLayout.overlap * fanLayout.scale;
   const target = targetForAnte(state.ante, state.blindIdx);
-
-  // ===== MENU (top right) =====
-  const menuWrap = document.createElement("div");
-  menuWrap.className = "menu-wrap";
-  const menuBtn = document.createElement("button");
-  menuBtn.className = "menu-btn";
-  menuBtn.textContent = "☰";
-  menuBtn.onclick = (e) => {
-    e.stopPropagation();
-    state.menuOpen = !state.menuOpen;
-    state.confirmingReset = false;
-    render();
-  };
-  menuWrap.appendChild(menuBtn);
-  if (state.menuOpen) {
-    const dropdown = document.createElement("div");
-    dropdown.className = "menu-dropdown";
-    const resetBtn = document.createElement("button");
-    resetBtn.className = "menu-dropdown-item";
-    resetBtn.textContent = state.confirmingReset ? "Click again to confirm" : "Reset Run";
-    resetBtn.style.color = state.confirmingReset ? "#E8A8A8" : "";
-    resetBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (!state.confirmingReset) {
-        state.confirmingReset = true;
-        render();
-      } else {
-        state.confirmingReset = false;
-        state.menuOpen = false;
-        resetRun();
-      }
-    };
-    dropdown.appendChild(resetBtn);
-    menuWrap.appendChild(dropdown);
-  }
-  app.appendChild(menuWrap);
 
   // ===== HEADER =====
   const header = document.createElement("div");
@@ -6681,7 +7596,7 @@ function render() {
   // Same engine as a real play, minus luck rolls (Heartstone, Calculator).
   const preview = (() => {
     // Hidden while a played hand is being counted, so the total isn't given away.
-    const r = selectedCards.length && !state.popup ? previewScore(selectedCards) : null;
+    const r = selectedCards.length && !state.popup && SETTINGS.preview ? previewScore(selectedCards) : null;
     return r ? { name: r.name, totalChips: r.chips, totalMult: r.mult, score: r.score } : null;
   })();
   if (preview) {
@@ -6709,7 +7624,8 @@ function render() {
   } else {
     const placeholder = document.createElement("div");
     placeholder.className = "preview-placeholder";
-    placeholder.textContent = state.popup ? "" : "Select cards to preview your hand";
+    const handOnly = !SETTINGS.preview && selectedCards.length && !state.popup ? evaluateSelection(selectedCards) : null;
+    placeholder.textContent = state.popup ? "" : handOnly ? handOnly.name : SETTINGS.preview ? "Select cards to preview your hand" : "";
     previewBar.appendChild(placeholder);
   }
   app.appendChild(previewBar);
@@ -6789,6 +7705,7 @@ function render() {
   });
   sortWrap.appendChild(sortToggle);
   subRow.appendChild(sortWrap);
+  subRow.appendChild(OptionsButton());
 
   bottomBar.appendChild(subRow);
 
@@ -6873,6 +7790,7 @@ function render() {
       <div class="overlay-sub" style="margin:8px 0 24px">You beat the final boss at Ante ${FINAL_ANTE} with $${state.money.toLocaleString()}. Run complete.</div>
     `;
     overlay.appendChild(BigButton("Start New Run", startGame));
+    overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
     app.appendChild(overlay);
   } else if (state.overlay === "over") {
     const overlay = document.createElement("div");
@@ -6882,6 +7800,7 @@ function render() {
       <div class="overlay-sub" style="margin:8px 0 24px">Fell short at Ante ${state.ante}, ${BLIND_TYPES[state.blindIdx].label} — ${state.roundScore.toLocaleString()} / ${target.toLocaleString()}</div>
     `;
     overlay.appendChild(BigButton("Try Again", startGame));
+    overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
     app.appendChild(overlay);
   } else if (state.overlay === "shop") {
     app.appendChild(ShopOverlay());
@@ -6946,6 +7865,7 @@ function render() {
     app.appendChild(renderDeckModal());
   }
 
+  if (MENU.pause) app.appendChild(PauseMenu());
   applyCardFlip(oldCardRects, wasFullDeal);
 }
 
@@ -7111,6 +8031,7 @@ function sellItem(uid) {
   if (!item) return;
   state.money += sellValue(item);
   state.items = state.items.filter((i) => i.uid !== uid);
+  noteSold();
   saveGame();
   render();
 }
@@ -7136,7 +8057,7 @@ function GearShelf() {
   const shelf = document.createElement("div");
   shelf.className = "gear-shelf";
   shelf.style.gap = gap + "px";
-  shelf.appendChild(ShelfGroup("charm", state.charms, state.charmSlots, charmsW, "Artifacts"));
+  shelf.appendChild(ShelfGroup("charm", state.charms, state.charmSlots + state.charms.filter((c) => c.sleeve === "negative").length, charmsW, "Artifacts"));
   shelf.appendChild(ShelfGroup("item", state.items, getEffectiveItemSlots(), itemsW, "Items"));
   return shelf;
 }
@@ -7148,7 +8069,7 @@ function ShelfGroup(kind, list, slots, width, title) {
 
   const label = document.createElement("div");
   label.className = "shelf-label";
-  label.innerHTML = `<span>${title}</span><span class="shelf-count">${list.length}/${slots}</span>`;
+  label.innerHTML = `<span>${title}</span><span class="shelf-count">${kind === "charm" ? charmsUsed() : list.length}/${kind === "charm" ? state.charmSlots : slots}</span>`;
   if (kind === "item" && state.vouchers.length > 0) {
     const v = document.createElement("button");
     v.className = "shelf-vouchers";
@@ -7175,12 +8096,12 @@ function ShelfGroup(kind, list, slots, width, title) {
     const piece = document.createElement("div");
     const firing = state.activeCharm && state.activeCharm.uid === def.uid;
     const overflow = kind === "item" && i >= slots;
-    piece.className = "shelf-piece" + (firing ? " firing" : "") + (overflow ? " overflow" : "");
+    piece.className = "shelf-piece" + (firing ? " firing" : "") + (overflow ? " overflow" : "") + (def.sleeve && kind === "charm" ? " csl-" + def.sleeve : "");
     piece.dataset.uid = def.uid;
     piece.style.left = i * step + "px";
     piece.style.width = piece.style.height = SHELF_PIECE + "px";
     piece.style.zIndex = i + 1;
-    piece.innerHTML = AnteArt.icon(def);
+    piece.innerHTML = AnteArt.icon(def) + (kind === "charm" ? progressOverlay(def) : "");
     attachShelfDrag(piece, kind, def);
     row.appendChild(piece);
   });
@@ -7346,12 +8267,14 @@ function GearDetail() {
     if (def.effect.type === "oracleCompoundMult") extra = ` (currently X${(def.oracleMultBonus || 1).toFixed(2)})`;
     if (def.effect.type === "saintFaceDestroyedX") extra = ` (currently X${def.saintX || 1})`;
     if (def.effect.type === "lanternDiscardX") extra = ` (currently X${1 + Math.floor((def.lanternDiscards || 0) / def.effect.per)}, ${def.effect.per - ((def.lanternDiscards || 0) % def.effect.per)} discards to go)`;
+    if (def.effect.type === "copyRight" || def.effect.type === "copyLeftmost") { const t = copyTarget(def); extra = t ? ` (copying ${t.name})` : " (nothing to copy right now)"; }
     if (def.effect.type === "mirrorsAddedX") extra = ` (currently X${(1 + (state.cardsAddedRun || 0) * def.effect.value).toFixed(1)})`;
     card.innerHTML = `
       <div class="detail-art">${AnteArt.icon(def)}</div>
       <div class="shop-detail-type">${d.kind === "charm" ? "ARTIFACT" : "ITEM"}</div>
       <div class="shop-detail-name serif">${def.name}</div>
       <div class="shop-detail-desc">${def.desc}${extra}</div>
+      ${d.kind === "charm" ? charmSleeveLine(def) + progressBlock(def) : ""}
       <div class="detail-hint">Drag it ${d.kind === "item" ? "to <b>Use</b> or <b>Sell</b>" : "to <b>Sell</b>"}, or along the shelf to move it.</div>
     `;
   }
@@ -7398,6 +8321,7 @@ function ShopOverlay() {
   money.className = "shop-money serif";
   money.textContent = "$" + state.money;
   headerRight.appendChild(money);
+  headerRight.appendChild(OptionsButton("compact"));
   header.appendChild(headerRight);
 
   overlay.appendChild(header);
@@ -7439,15 +8363,16 @@ function ShopOverlay() {
       return;
     }
     const price = shopPriceFor(item);
-    const slotsFull = item.type === "charm" ? state.charms.length >= state.charmSlots : state.items.length >= getEffectiveItemSlots();
+    const slotsFull = item.type === "playing" ? false : item.type === "charm" ? item.sleeve !== "negative" && charmsUsed() >= state.charmSlots : state.items.length >= getEffectiveItemSlots();
     const legendary = item.rarity === "legendary";
     card.className = `bcard kind-${item.type}${legendary ? " legendary" : ""}${state.money < price ? " poor" : ""}`;
     card.style.setProperty("--glow", item.color || "#C9A227");
     card.innerHTML = `
       <span class="bprice">${price < item.price ? `<s>$${item.price}</s>` : ""}$${price}</span>
-      <div class="bcard-face"><div class="bcard-art">${AnteArt.icon(item)}</div><span class="bcard-kind">${legendary ? "Legendary" : item.type === "charm" ? "Artifact" : "Item"}</span></div>
-      <div class="bcard-name">${item.name}</div>
+      <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}</div></div>
+      <div class="bcard-name">${item.name}</div>${item.sleeve && CHARM_SLEEVES[item.sleeve] ? `<span class="bcard-sleeve" style="--sc:${CHARM_SLEEVES[item.sleeve].color}">${CHARM_SLEEVES[item.sleeve].name}</span>` : ""}
       <button class="bbuy" ${state.money < price || slotsFull ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>`;
+    if (item.type === "playing") card.querySelector(".bcard-art").appendChild(playingCardEl(item.card, 1.25));
     card.querySelector(".bbuy").onclick = (e) => { e.stopPropagation(); buyItem(i); };
     card.addEventListener("click", (e) => { if (!e.target.closest(".bbuy")) openShopDetail("stock", i); });
     wares.appendChild(card);
@@ -7531,13 +8456,13 @@ function ShopOverlay() {
       const discountedPrice = isVoucher ? entry.price : shopPriceFor(entry);
       const disabled = isVoucher
         ? state.money < entry.price
-        : kind === "pack" ? state.money < discountedPrice : (state.money < discountedPrice) || (entry.type === "charm"
-            ? state.charms.length >= state.charmSlots
+        : kind === "pack" ? state.money < discountedPrice : (state.money < discountedPrice) || (entry.type === "playing" ? false : entry.type === "charm"
+            ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
       const isPack = kind === "pack";
-      const typeLabel = isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
+      const typeLabel = entry.type === "playing" ? "PLAYING CARD" : isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
       const slotsFull = !isVoucher && !isPack && entry.type === "charm"
-        ? state.charms.length >= state.charmSlots
+        ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
         : (!isVoucher && !isPack && state.items.length >= getEffectiveItemSlots());
 
       // Set all static content in a single innerHTML assignment first — appending
@@ -7545,11 +8470,11 @@ function ShopOverlay() {
       // card being re-serialized and re-parsed, which would silently strip any
       // JS-assigned onclick handler already attached to a live child element.
       card.innerHTML = `
-        <div class="detail-art${isVoucher ? " is-voucher" : ""}">${AnteArt.icon(entry)}</div>
+        <div class="detail-art${isVoucher || entry.type === "charm" || entry.type === "item" ? " is-voucher" : ""}">${entry.type === "charm" || entry.type === "item" ? AnteArt.card(entry) : entry.type === "playing" ? "" : AnteArt.icon(entry)}</div>
         <div class="shop-detail-type">${typeLabel}</div>
         <div class="shop-detail-name serif">${entry.name}</div>
         <div class="shop-detail-desc">${entry.desc}</div>
-        ${isVoucher ? voucherHint(entry) : ""}
+        ${isVoucher ? voucherHint(entry) : charmSleeveLine(entry)}
         <div class="shop-detail-price">${!isVoucher && shopDiscount < 1 ? `<s>$${entry.price}</s> $${discountedPrice}` : `$${discountedPrice}`}</div>
         <button class="shop-detail-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : disabled ? "Can't Afford" : isVoucher ? "Redeem" : isPack ? "Open" : "Buy"}</button>
       `;
@@ -7558,6 +8483,7 @@ function ShopOverlay() {
         closeShopDetail();
       };
 
+      if (entry.type === "playing") card.querySelector(".detail-art").appendChild(playingCardEl(entry.card, 1.3));
       const closeBtn = document.createElement("button");
       closeBtn.className = "shop-detail-close";
       closeBtn.textContent = "✕";
@@ -7574,20 +8500,11 @@ function ShopOverlay() {
 
 window.addEventListener("resize", render);
 window.addEventListener("orientationchange", render);
-document.addEventListener("click", (e) => {
-  if (!state.menuOpen) return;
-  if (e.target.closest(".menu-wrap")) return;
-  state.menuOpen = false;
-  render();
-});
 
-// Resume an in-progress run if one was saved; otherwise start a new one.
-if (loadGame() && state.overlay !== "start") {
-  // a run in progress picks up Pocket Money straight away
-  const ppCash = PPHub.take('cash');
-  if (ppCash) { state.money += ppCash; saveGame(); }
-}
-if (state.overlay === "start") startGame(); else render();
+// Open on the main menu. A saved run is loaded behind it, ready to continue.
+applySkins();
+loadGame();
+render();
 </script>
 </body>
 </html>
