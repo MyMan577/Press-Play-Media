@@ -33396,6 +33396,102 @@ body.pp-lite .pp-adv, body.pp-lite .pp-sg[data-sg="fun"], body.pp-lite #pw-custo
     if (!current || !current.ownMusic || !frame) return;
     try { var w = frame.contentWindow; if (w && w.__ppHostMute) w.__ppHostMute(appPlaying()); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
   }
+  // ---- browser-made games inside the app ----
+  // The games were written for a normal browser. In the Android app's game frame three things they rely on don't work:
+  // <a download> on a blob (WebView ignores it, so "Export"/"Download" did nothing), navigator.clipboard (the frame may
+  // not read it, and WebView never allows reading), and file pickers limited to ".json" (Android's picker filters by
+  // file type, so a level that arrived as text or as an unknown type was greyed out). On each load of a game page these
+  // are patched in the frame: downloads go through the app's own save (ppSaveBlob), copy and paste go through the
+  // phone's clipboard (PPGameMode.clipWrite / clipRead, with a paste box if that fails), and such pickers show all files.
+  // In a browser nothing is patched; the frame is only allowed to use the clipboard.
+  function nativeApp(){ try { return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()); } catch(e){ return false; } }
+  function patchFrame(fr){
+    var w; try { w = fr.contentWindow; if (!w || !w.document || w.__ppPatched) return; } catch(e){ return; }   // not our origin
+    if (!nativeApp()) return;
+    w.__ppPatched = true;
+    var GM = Capacitor.Plugins && Capacitor.Plugins.PPGameMode, doc = w.document;
+    function note(msg){ try { if (window.PPNative && PPNative.hooks && PPNative.hooks.toast) PPNative.hooks.toast(msg); } catch(e){} }
+
+    // downloads: remember every blob the game turns into a URL, so a download still works after the game revokes it
+    var blobs = new Map();
+    try {
+      var U = w.URL, mk = U.createObjectURL.bind(U);
+      U.createObjectURL = function(o){ var u = mk(o); try { if (o instanceof w.Blob) { blobs.set(u, o); setTimeout(function(){ blobs.delete(u); }, 120000); } } catch(e){} return u; };
+    } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    function save(a){
+      var href = a.getAttribute('href') || '', name = a.getAttribute('download') || href.split('/').pop() || 'download';
+      var b = blobs.get(a.href) || blobs.get(href);
+      var get = b ? Promise.resolve(b) : fetch(a.href).then(function(r){ return r.blob(); });
+      get.then(function(bl){ return window.ppSaveBlob(new Blob([bl], { type: bl.type || 'application/octet-stream' }), name); })
+         .catch(function(e){ note('Could not save ' + name); if (typeof ppCaught === "function") ppCaught(e); });
+    }
+    function isDl(a){ return a && a.hasAttribute && a.hasAttribute('download') && /^(blob:|data:)/.test(a.href || ''); }
+    try {
+      var AP = w.HTMLAnchorElement.prototype, click = AP.click;
+      AP.click = function(){ if (isDl(this)) { save(this); return; } return click.apply(this, arguments); };
+      doc.addEventListener('click', function(e){
+        var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
+        if (isDl(a)) { e.preventDefault(); e.stopPropagation(); save(a); }
+      }, true);
+    } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+
+    // file pickers: an accept list of extensions only (".json", ".txt") would grey out the right file; show everything
+    doc.addEventListener('click', function(e){
+      var i = e.target;
+      if (!i || i.tagName !== 'INPUT' || i.type !== 'file') return;
+      var acc = (i.getAttribute('accept') || '').toLowerCase();
+      if (acc && !/(image|audio|video)\//.test(acc)) i.removeAttribute('accept');
+    }, true);
+
+    // clipboard
+    function pasteBox(){
+      return new Promise(function(res, rej){
+        var bg = doc.createElement('div');
+        bg.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;font:15px system-ui,sans-serif');
+        bg.innerHTML = '<div style="background:#16181d;color:#eee;border-radius:14px;padding:16px;width:min(420px,100%);box-sizing:border-box">' +
+          '<div style="font-weight:600;margin-bottom:8px">Paste here</div>' +
+          '<textarea style="width:100%;height:140px;box-sizing:border-box;border-radius:8px;border:1px solid #444;background:#0c0d10;color:#eee;padding:8px;font:13px monospace"></textarea>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">' +
+          '<button data-k="0" style="padding:8px 14px;border-radius:8px;border:1px solid #444;background:transparent;color:#eee">Cancel</button>' +
+          '<button data-k="1" style="padding:8px 14px;border-radius:8px;border:0;background:#3ecf8e;color:#000;font-weight:600">OK</button></div></div>';
+        doc.body.appendChild(bg);
+        var ta = bg.querySelector('textarea'); setTimeout(function(){ ta.focus(); }, 50);
+        bg.addEventListener('click', function(e){
+          var k = e.target.getAttribute && e.target.getAttribute('data-k'); if (k == null) return;
+          bg.remove(); k === '1' ? res(ta.value) : rej(new w.DOMException('Paste cancelled', 'NotAllowedError'));
+        });
+      });
+    }
+    try {
+      var nc = w.navigator.clipboard || {};
+      var origWrite = nc.writeText && nc.writeText.bind(nc);
+      var cb = {
+        writeText: function(t){
+          t = String(t == null ? '' : t);
+          if (GM && GM.clipWrite) return GM.clipWrite({ text: t }).then(function(){}, function(){ return origWrite ? origWrite(t) : Promise.reject(new Error('copy failed')); });
+          return origWrite ? origWrite(t) : Promise.reject(new Error('copy failed'));
+        },
+        readText: function(){
+          if (GM && GM.clipRead) return GM.clipRead().then(function(r){ return (r && r.text) || pasteBox(); }, pasteBox);
+          return pasteBox();
+        },
+        write: nc.write ? nc.write.bind(nc) : undefined,
+        read: nc.read ? nc.read.bind(nc) : undefined
+      };
+      Object.defineProperty(w.navigator, 'clipboard', { value: cb, configurable: true });
+      // old-style copy (document.execCommand('copy')) of a selected text field: also put it on the phone's clipboard
+      var ex = doc.execCommand.bind(doc);
+      doc.execCommand = function(cmd){
+        var r = ex.apply(null, arguments);
+        if (String(cmd).toLowerCase() === 'copy' && GM && GM.clipWrite) {
+          var el = doc.activeElement, t = el && typeof el.value === 'string' && el.selectionStart != null ? el.value.slice(el.selectionStart, el.selectionEnd) : String(w.getSelection ? w.getSelection() : '');
+          if (t) { GM.clipWrite({ text: t }).catch(function(){}); r = true; }
+        }
+        return r;
+      };
+    } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+  }
+
   function gameMode(on){
     try { var P = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.PPGameMode; if (P) (on ? P.enter() : P.exit()).catch(function(){}); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
   }
@@ -33646,9 +33742,10 @@ body.pp-lite .pp-adv, body.pp-lite .pp-sg[data-sg="fun"], body.pp-lite #pw-custo
     // src is set before the frame joins the page, so loading it adds no Back step
     frame = document.createElement('iframe');
     frame.src = g.src;
-    frame.setAttribute('allow', 'fullscreen; autoplay; camera');
+    frame.setAttribute('allow', 'fullscreen; autoplay; camera; clipboard-read; clipboard-write');
     var started = Date.now();
     frame.addEventListener('load', function(){
+      patchFrame(this);
       syncGameMusic();
       setTimeout(function(){ load.classList.add('done'); }, Math.max(0, 700 - (Date.now() - started)));
     });
