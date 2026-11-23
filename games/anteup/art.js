@@ -183,6 +183,7 @@
     itemPack: packet("#5f9a7a", `<path d="M29 24 H35 V27 Q40 30 40 35 Q40 41 32 41 Q24 41 24 35 Q24 30 29 27Z" fill="#7fb6e0" ${T}/>`),
     cardPack: packet("#8a3a32", spade(32, 31, 7)),
     ornatePack: packet("#6e3a68", seal(32, 32, 8, "#C0392B", "")),
+    celestialPack: packet("#2f4a8a", `<circle cx="32" cy="32" r="8" fill="#22305a" ${T}/>` + sparkle(32, 32, 5, "#fff")),
     legendPack: packet("#E8743B", star5(32, 32, 9, "#F6D35B")),
   };
 
@@ -253,6 +254,16 @@
     jackpot: `<rect x="8" y="12" width="48" height="40" rx="6" fill="#C0392B" ${O}/>` + [16, 32, 48].map((x) => `<rect x="${x - 6}" y="20" width="12" height="18" rx="2" fill="#F5EEDC" ${T}/>` + txt(x, 34, 12, "J", "#C0392B")).join("") + `<rect x="18" y="42" width="28" height="6" rx="2" fill="${INK}"/><path d="M56 22 H60 V36" ${N} ${O}/><circle cx="60" cy="18" r="3.4" fill="#E8C04A" ${O}/>`,
     heartsBanner: banner("#8a3a32") + star5(32, 25, 7, "#F6D35B"),
     twinMolds: `<rect x="6" y="18" width="24" height="34" rx="3" fill="#8a96a3" ${O}/><rect x="34" y="18" width="24" height="34" rx="3" fill="#8a96a3" ${O}/><rect x="11" y="23" width="14" height="24" rx="2" fill="#5c6670" ${T}/><rect x="39" y="23" width="14" height="24" rx="2" fill="#E8C04A" ${T}/>` + heart(18, 35, 4, "#E8C04A") + heart(46, 35, 4, "#C9A227"),
+    // Star Charts: a round sky chart with that hand's constellation.
+    ...Object.fromEntries(Array.from({ length: 13 }, (_, n) => {
+      let seed = 7 + n * 31;
+      const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+      const pts = Array.from({ length: 4 + (n % 4) }, () => [16 + rnd() * 32, 16 + rnd() * 32]);
+      return [`chart${n}`, `<circle cx="32" cy="32" r="25" fill="#22305a" ${O}/><circle cx="32" cy="32" r="21" ${N} stroke="#E8C04A" stroke-width="1" opacity=".7"/>` +
+        [0, 45, 90, 135].map((r) => `<path d="M32 7 V11 M32 53 V57" stroke="#E8C04A" stroke-width="1.2" transform="rotate(${r} 32 32)"/>`).join("") +
+        `<path d="${pts.map(([x, y], k) => `${k ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")}" ${N} stroke="#cfe0ff" stroke-width="1" opacity=".8"/>` +
+        pts.map(([x, y], k) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${k === 0 ? 2.4 : 1.6}" fill="#fff"/>`).join("")];
+    })),
     bountyContract: scroll("#EAD9B0", false) + txt(34, 32, 8, "WANTED", INK) + `<path d="M24 38 L42 38" ${N} ${T}/>` + seal(44, 44, 6, "#C0392B", ""),
   };
 

@@ -798,6 +798,24 @@ html, body {
 .ware-buy:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
 .ware.sold { cursor: default; }
 .ware.sold .ware-art { border: 1.5px dashed #ffffff18; border-radius: 12px; width: 56px; height: 56px; margin: 5px; filter: none; }
+/* ============================== HAND LEVELS ============================== */
+.lv-tag {
+  font-family: 'Manrope', sans-serif; font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .5px;
+  margin-left: 6px; padding: 1px 6px; border-radius: 8px; vertical-align: middle; color: #dfe9ff; background: #4a6fb3;
+}
+.preview-name { cursor: pointer; }
+.hand-levels { width: 100%; display: flex; flex-direction: column; gap: 3px; }
+.hl-row { display: grid; grid-template-columns: 40px 1fr 34px auto; gap: 8px; align-items: center; font-size: 12px; color: #9A917A; padding: 2px 4px; border-radius: 6px; text-align: left; }
+.hl-row.up { color: #F3ECD9; background: #4a6fb322; }
+.hl-lv { font-weight: 800; font-size: 10px; color: #9fb6e8; }
+.hl-played { text-align: right; font-weight: 700; font-size: 11px; color: #5A5544; }
+.hl-played.has { color: #E9C568; }
+.hl-head { font-size: 8.5px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #6E6754; }
+.hl-head span:nth-child(3) { text-align: right; }
+.hl-val b { font-weight: 800; }
+.hl-val .c { color: #6fa8e8; }
+.hl-val .m { color: #e0544a; }
+
 /* ============================== SCORING: CHIPS x MULT ============================== */
 .score-popup { padding: 14px 18px 16px; min-width: 230px; }
 .sp-boxes { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; }
@@ -1408,6 +1426,33 @@ const HAND_TABLE = {
   "Royal Flush": { chips: 200, mult: 16 },
 };
 
+// Hand levels: each Star Chart raises one hand type by these amounts.
+const HAND_LEVEL_UP = {
+  "High Card": { chips: 10, mult: 1 },
+  "Pair": { chips: 15, mult: 1 },
+  "Two Pair": { chips: 20, mult: 1 },
+  "Three of a Kind": { chips: 20, mult: 2 },
+  "Straight": { chips: 30, mult: 3 },
+  "Flush": { chips: 15, mult: 2 },
+  "Full House": { chips: 25, mult: 2 },
+  "Four of a Kind": { chips: 30, mult: 3 },
+  "Straight Flush": { chips: 40, mult: 4 },
+  "Royal Flush": { chips: 50, mult: 5 },
+  "Five of a Kind": { chips: 35, mult: 3 },
+  "Flush House": { chips: 40, mult: 4 },
+  "Flush Five": { chips: 50, mult: 3 },
+};
+function handLevel(name) {
+  return (state.handLevels && state.handLevels[name]) || 1;
+}
+// Base Chips/Mult of a hand type at its current level.
+function handBase(name) {
+  const t = HAND_TABLE[name];
+  const up = HAND_LEVEL_UP[name] || { chips: 0, mult: 0 };
+  const n = handLevel(name) - 1;
+  return { chips: t.chips + n * up.chips, mult: t.mult + n * up.mult };
+}
+
 function evaluateSelection(cards) {
   if (cards.length === 0) return null;
   const byRank = {};
@@ -1490,7 +1535,7 @@ function evaluateSelection(cards) {
   // (not just from this chip sum) so the per-card pings, retriggers and charm
   // effects that all read scoringCards skip them too.
   scoringCards = scoringCards.filter((c) => c.sleeve !== "tithe");
-  const base = HAND_TABLE[name];
+  const base = handBase(name);
   const scoreableCards = scoringCards;
   const chipSum = scoreableCards.reduce((s, c) => {
     if (isCardDebuffed(c)) return s; // Boss Blind debuff: card scores 0 chips
@@ -2463,6 +2508,7 @@ const PACK_DEFS = [
   { id: "itemPack", name: "Item Pack", desc: "Choose 1 of 3 items", price: 4, color: "#7FBA9A", type: "pack", choices: 3 },
   { id: "cardPack", name: "Card Pack", desc: "Choose 1 of 4 playing cards to add to your deck", price: 4, color: "#D9CFB5", type: "pack", choices: 4 },
   { id: "ornatePack", name: "Ornate Pack", desc: "Choose 1 of 3 playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", type: "pack", choices: 3 },
+  { id: "celestialPack", name: "Celestial Pack", desc: "Choose 1 of 3 Star Charts", price: 4, color: "#4a6fb3", type: "pack", choices: 3 },
   { id: "legendPack", name: "Legend Pack", desc: "Choose 1 of 2 legendary artifacts", price: 12, color: "#E8743B", type: "pack", choices: 2, rare: true },
 ];
 
@@ -3075,6 +3121,136 @@ const ITEM_DEFS = [
     color: "#665B50",
     type: "item",
     effect: { type: "bountyFaces", value: 2 }
+  },
+  {
+    id: "chart0",
+    name: "Polaris Chart",
+    desc: "Use: levels up High Card (+10 Chips, +1 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "High Card" }
+  },
+  {
+    id: "chart1",
+    name: "Gemini Chart",
+    desc: "Use: levels up Pair (+15 Chips, +1 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Pair" }
+  },
+  {
+    id: "chart2",
+    name: "Pisces Chart",
+    desc: "Use: levels up Two Pair (+20 Chips, +1 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Two Pair" }
+  },
+  {
+    id: "chart3",
+    name: "Orion Chart",
+    desc: "Use: levels up Three of a Kind (+20 Chips, +2 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Three of a Kind" }
+  },
+  {
+    id: "chart4",
+    name: "Draco Chart",
+    desc: "Use: levels up Straight (+30 Chips, +3 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Straight" }
+  },
+  {
+    id: "chart5",
+    name: "Aquarius Chart",
+    desc: "Use: levels up Flush (+15 Chips, +2 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Flush" }
+  },
+  {
+    id: "chart6",
+    name: "Ursa Major Chart",
+    desc: "Use: levels up Full House (+25 Chips, +2 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Full House" }
+  },
+  {
+    id: "chart7",
+    name: "Crux Chart",
+    desc: "Use: levels up Four of a Kind (+30 Chips, +3 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Four of a Kind" }
+  },
+  {
+    id: "chart8",
+    name: "Andromeda Chart",
+    desc: "Use: levels up Straight Flush (+40 Chips, +4 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true,
+    effect: { type: "levelHand", hand: "Straight Flush" }
+  },
+  {
+    id: "chart9",
+    name: "Corona Chart",
+    desc: "Use: levels up Royal Flush (+50 Chips, +5 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true, secret: true,
+    effect: { type: "levelHand", hand: "Royal Flush" }
+  },
+  {
+    id: "chart10",
+    name: "Pleiades Chart",
+    desc: "Use: levels up Five of a Kind (+35 Chips, +3 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true, secret: true,
+    effect: { type: "levelHand", hand: "Five of a Kind" }
+  },
+  {
+    id: "chart11",
+    name: "Cassiopeia Chart",
+    desc: "Use: levels up Flush House (+40 Chips, +4 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true, secret: true,
+    effect: { type: "levelHand", hand: "Flush House" }
+  },
+  {
+    id: "chart12",
+    name: "Lyra Chart",
+    desc: "Use: levels up Flush Five (+50 Chips, +3 Mult)",
+    price: 3,
+    color: "#4a6fb3",
+    type: "item",
+    chart: true, secret: true,
+    effect: { type: "levelHand", hand: "Flush Five" }
   }
 ];
 
@@ -3235,7 +3411,7 @@ function generateShopStock(count) {
   const ownedCharmIds = hasRingmaster ? new Set() : new Set(state.charms.map((c) => c.id));
   const ownedItemIds = hasRingmaster ? new Set() : new Set(state.items.map((i) => i.id));
   const availableCharms = CHARM_DEFS.filter((c) => !ownedCharmIds.has(c.id));
-  const availableItems = ITEM_DEFS.filter((i) => !ownedItemIds.has(i.id));
+  const availableItems = ITEM_DEFS.filter((i) => !ownedItemIds.has(i.id) && !i.secret);
 
   // 50/50 split: half charms, half items (rounded), capped by what's actually available
   const charmCount = Math.min(availableCharms.length, Math.ceil(count / 2));
@@ -3563,7 +3739,7 @@ function applyCharmEffects(result, cards, charms) {
 // Double Down Token: adds the hand type's base Chips/Mult a second time.
 function withNextHandBase(result) {
   if (!state.nextHandDoubleBase || !result || !HAND_TABLE[result.name]) return result;
-  const base = HAND_TABLE[result.name];
+  const base = handBase(result.name);
   return { ...result, totalChips: result.totalChips + base.chips, totalMult: result.totalMult + base.mult };
 }
 
@@ -3799,6 +3975,7 @@ function startGame() {
   state.collectorUsedThisRound = false;
   state.cardsDestroyedRun = 0;
   state.cardsAddedRun = 0;
+  state.handLevels = {};
   state.heartstoneHits = 0;
   state.nextHandDoubleBase = false;
   state.nextHandChipsX = 1;
@@ -4146,7 +4323,7 @@ function previewScore(selectedCards) {
 function scoreHand(selectedCards, { live = false } = {}) {
   const base = evaluateSelection(selectedCards);
   if (!base) return null;
-  const hb = HAND_TABLE[base.name];
+  const hb = handBase(base.name);
   let chips = hb.chips, mult = hb.mult, money = 0;
   const events = [];
   const push = (ev) => events.push({ ...ev, chips, mult });
@@ -4835,7 +5012,9 @@ function openPack(packId) {
   const pickDefs = (pool, n) => shuffleArray(pool).slice(0, n).map((d) => ({ ...d }));
   let choices = [];
   if (packId === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), pack.choices);
-  if (packId === "itemPack") choices = pickDefs(ITEM_DEFS, pack.choices);
+  if (packId === "itemPack") choices = pickDefs(ITEM_DEFS.filter((d) => !d.secret), pack.choices);
+  // secret hands' charts only once you've played that hand
+  if (packId === "celestialPack") choices = pickDefs(ITEM_DEFS.filter((d) => d.chart && (!d.secret || (state.handTypeCounts || {})[d.effect.hand])), pack.choices);
   if (packId === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), pack.choices);
   if (packId === "cardPack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
   if (packId === "ornatePack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
@@ -4853,6 +5032,8 @@ function takePackChoice(index) {
   if (choice.type === "charm") {
     if (state.charms.length >= state.charmSlots) return;
     state.charms = [...state.charms, { ...choice, uid: newUid() }];
+  } else if (choice.type === "item" && choice.chart) {
+    state.handLevels = { ...(state.handLevels || {}), [choice.effect.hand]: handLevel(choice.effect.hand) + 1 };
   } else if (choice.type === "item") {
     if (state.items.length >= getEffectiveItemSlots()) return;
     state.items = [...state.items, { ...choice, uid: newUid() }];
@@ -4893,7 +5074,7 @@ function PackOverlay() {
     const isCard = !choice.type;
     let full = false;
     if (choice.type === "charm") full = state.charms.length >= state.charmSlots;
-    if (choice.type === "item") full = state.items.length >= getEffectiveItemSlots();
+    if (choice.type === "item" && !choice.chart) full = state.items.length >= getEffectiveItemSlots();
     if (isCard) {
       const cardEl = renderCard(choice, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => takePackChoice(i) });
       cardEl.classList.add("pack-card");
@@ -5188,6 +5369,14 @@ function useItem(itemUid) {
   const selectedInOrder = () => getSortedHand().filter((c) => state.selected.includes(c.id));
   const mapHand = (fn) => { state.hand = state.hand.map(fn); };
 
+  if (eff.type === "levelHand") {
+    return quick(() => {
+      state.handLevels = { ...(state.handLevels || {}), [eff.hand]: handLevel(eff.hand) + 1 };
+      const b = handBase(eff.hand);
+      state.bossBlindMessage = `${eff.hand} → Lv ${handLevel(eff.hand)} (${b.chips} × ${b.mult})`;
+      setTimeout(() => { state.bossBlindMessage = null; render(); }, 1800);
+    });
+  }
   if (eff.type === "loversShareMods") {
     const sel = selectedInOrder();
     if (!inPlay || sel.length < 2) return;
@@ -6100,7 +6289,8 @@ function render() {
   if (preview) {
     const nameEl = document.createElement("div");
     nameEl.className = "preview-name serif";
-    nameEl.textContent = preview.name;
+    nameEl.innerHTML = `${preview.name}<span class="lv-tag">Lv ${handLevel(preview.name)}</span>`;
+    nameEl.onclick = () => { state.gearDetail = { kind: "hands", at: Date.now() }; render(); };
     previewBar.appendChild(nameEl);
     previewBar.appendChild(ChipPill("chips", preview.totalChips, "#3FA9A0"));
     const x = document.createElement("span");
@@ -6219,7 +6409,7 @@ function render() {
     const bumpMult = p.phase === "counting" && (p.bump === "mult" || p.bump === "xmult");
     const totalLine = p.phase === "total" ? `<div class="score-popup-total serif">${Number(p.score).toLocaleString()}</div>` : "";
     popup.innerHTML = `
-      <div class="score-popup-name serif">${p.name}</div>
+      <div class="score-popup-name serif">${p.name}<span class="lv-tag">Lv ${handLevel(p.name)}</span></div>
       <div class="sp-boxes">
         <div class="sp-box sp-chips${bumpChips ? " bump" : ""}">${Math.round(p.chips).toLocaleString()}</div>
         <div class="sp-x">×</div>
@@ -6731,7 +6921,14 @@ function GearDetail() {
   const card = document.createElement("div");
   card.className = "shop-detail-card";
 
-  if (d.kind === "vouchers") {
+  if (d.kind === "hands") {
+    card.innerHTML = `<div class="shop-detail-type">HAND LEVELS</div><div class="hand-levels"><div class="hl-row hl-head"><span>Level</span><span>Hand</span><span>Played</span><span>Chips × Mult</span></div>` +
+      Object.keys(HAND_TABLE).map((h) => {
+        const b = handBase(h), lv = handLevel(h);
+        const played = (state.handTypeCounts || {})[h] || 0;
+        return `<div class="hl-row${lv > 1 ? " up" : ""}"><span class="hl-lv">Lv ${lv}</span><span class="hl-name">${h}</span><span class="hl-played${played ? " has" : ""}">${played}×</span><span class="hl-val"><b class="c">${b.chips}</b> × <b class="m">${b.mult}</b></span></div>`;
+      }).join("") + `</div><div class="detail-hint">Star Charts level a hand up. "Played" counts this run. Tap a hand's name above your cards to see this.</div>`;
+  } else if (d.kind === "vouchers") {
     card.innerHTML = `<div class="shop-detail-type">PERMANENT UPGRADES</div>` +
       state.vouchers.map((v) => `<div class="voucher-line"><div class="voucher-line-art">${AnteArt.icon(v)}</div><div><div class="voucher-line-name serif">${v.name}</div><div class="voucher-line-desc">${v.desc}</div></div></div>`).join("");
   } else {
