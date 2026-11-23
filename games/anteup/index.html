@@ -1013,6 +1013,38 @@ body.landscape .pack-hand { margin-top: 8px; }
 body.landscape .pack-hand-card { height: 58px; }
 body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 
+/* ----- artifact progress: value badge + bar on the shelf, bigger in the popup ----- */
+.prog-stat {
+  position: absolute; top: -6px; right: -6px; z-index: 2; pointer-events: none;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 9.5px; line-height: 1; white-space: nowrap;
+  color: #fff; background: #C23A30; border: 1.5px solid #0a0f0c; border-radius: 7px; padding: 2px 4px 3px;
+}
+.prog-stat.chips { background: #3866B8; }
+.prog-bar {
+  position: absolute; left: 5px; right: 5px; bottom: 2px; height: 5px; z-index: 2; pointer-events: none;
+  background: #0a0f0c; border-radius: 3px; border: 1px solid #0a0f0c; overflow: hidden;
+}
+.prog-bar i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); border-radius: 2px; transition: width .4s ease; }
+.prog-bar.ready i { background: linear-gradient(90deg, #4DB873, #9CF0B4); animation: progReady 1s ease-in-out infinite alternate; }
+@keyframes progReady { to { filter: brightness(1.35); } }
+.prog-block { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 10px; border-radius: 10px; background: #0a0f0c80; }
+.prog-block-stat { font-size: 12px; color: #C9BFA4; }
+.prog-block-stat b { font-family: 'Fraunces', Georgia, serif; font-size: 15px; padding: 0 5px; border-radius: 5px; color: #fff; }
+.prog-block-stat b.m { background: #C23A30; }
+.prog-block-stat b.c { background: #3866B8; }
+.prog-block-bar { width: 100%; height: 10px; border-radius: 6px; background: #0a0f0c; border: 1px solid #C9A22755; overflow: hidden; }
+.prog-block-bar i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); }
+.prog-block-bar.ready i { background: linear-gradient(90deg, #4DB873, #9CF0B4); }
+.prog-block-label { font-size: 11px; color: #E9C568; font-weight: 700; }
+
+/* ----- picking cards in a pack's hand (Arcana) ----- */
+.pack-hand-card { transition: transform .15s ease; }
+.pack-hand-card.can-pick { cursor: pointer; }
+.pack-hand-card.can-pick .pack-card { pointer-events: none; }
+.pack-hand-card.sel { transform: translateY(-14px); }
+.pack-hand-card.sel .pack-card, .pack-hand-card.target .pack-card { box-shadow: 0 0 0 2px #FFD45E, 0 0 14px #FFD45E; }
+.pack-hand-card.target { transform: translateY(-8px); }
+
 /* ============================== CARD NOTE (double tap) ============================== */
 .card-note {
   position: fixed; z-index: 120; max-width: 260px; padding: 9px 11px; border-radius: 12px;
@@ -2582,7 +2614,7 @@ const PACK_SIZES = {
 };
 const PACK_BASES = [
   { id: "artifactPack", name: "Artifact Pack", what: "artifacts", price: 6, color: "#C9A227", choices: 3 },
-  { id: "itemPack", name: "Item Pack", what: "items", price: 4, color: "#7FBA9A", choices: 3 },
+  { id: "itemPack", name: "Arcana Pack", what: "Arcana cards, used on your hand right away", price: 4, color: "#7FBA9A", choices: 3 },
   { id: "cardPack", name: "Card Pack", what: "playing cards for your deck", price: 4, color: "#D9CFB5", choices: 4 },
   { id: "ornatePack", name: "Ornate Pack", what: "playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", choices: 3 },
   { id: "celestialPack", name: "Celestial Pack", what: "Star Charts", price: 4, color: "#4a6fb3", choices: 3 },
@@ -3087,7 +3119,7 @@ const ITEM_DEFS = [
   {
     id: "supplyCrate",
     name: "Supply Crate",
-    desc: "Use: open a free Item Pack",
+    desc: "Use: open a free Arcana Pack",
     price: 6,
     color: "#A67750",
     type: "item",
@@ -3408,6 +3440,142 @@ function rollVoucher() {
   const owned = new Set(state.vouchers.map((v) => v.id));
   const pool = VOUCHERS.filter((v) => !owned.has(v.id) && (!v.upgrades || owned.has(v.upgrades)));
   return pool.length ? { ...randomOf(pool) } : null;
+}
+
+/* ============================== ARTIFACT PROGRESS ==============================
+   What an artifact has built up, for the shelf and its detail popup:
+   bar   — progress toward its next trigger (Specter, Oracle, Tally Lantern)
+   stat  — its current value, for artifacts that grow over the run */
+function charmProgress(c) {
+  const e = c.effect || {};
+  const out = {};
+  switch (e.type) {
+    case "specterDuplicate": {
+      const n = Math.min(3, e.blindCounter || 0);
+      out.bar = { value: n, max: 3, label: n >= 3 ? "Ready: sell to copy an artifact" : `${n} / 3 blinds`, ready: n >= 3 };
+      break;
+    }
+    case "oracleCompoundMult": {
+      const n = (state.handsPlayedRun || 0) % e.everyN;
+      out.bar = { value: n, max: e.everyN, label: `${n} / ${e.everyN} hands to the next X${e.value}` };
+      out.stat = `X${(c.oracleMultBonus || 1).toFixed(2)}`;
+      break;
+    }
+    case "lanternDiscardX": {
+      const d = c.lanternDiscards || 0;
+      out.bar = { value: d % e.per, max: e.per, label: `${d % e.per} / ${e.per} discards to the next X1` };
+      out.stat = `X${1 + Math.floor(d / e.per) * e.value}`;
+      break;
+    }
+    case "ratchetBossMult": out.stat = `+${c.ratchetBonus || 0}`; break;
+    case "almanacMultPerAnte": out.stat = `+${Math.max(0, state.ante - 1) * e.value}`; break;
+    case "streakMult": out.stat = `+${(state.streakCounter || 0) * e.value}`; break;
+    case "furnaceChipsPerDiscard": out.stat = `+${(state.totalDiscardedRun || 0) * e.value}`; out.chips = true; break;
+    case "pocketwatchChipsPerHand": out.stat = `+${(state.handsPlayedRun || 0) * e.value}`; out.chips = true; break;
+    case "vultureMultPerDestroyed": out.stat = `+${(state.cardsDestroyedRun || 0) * e.value}`; break;
+    case "mirrorsAddedX": out.stat = `X${(1 + (state.cardsAddedRun || 0) * e.value).toFixed(1)}`; break;
+    case "saintFaceDestroyedX": out.stat = `X${c.saintX || 1}`; break;
+    case "midnightSunX": out.stat = `X${1 + Object.keys(state.handTypeCounts || {}).length * e.value}`; break;
+  }
+  return out;
+}
+// The little bar + value badge drawn over a shelf piece.
+function progressOverlay(c) {
+  const p = charmProgress(c);
+  let html = "";
+  if (p.stat) html += `<span class="prog-stat${p.chips ? " chips" : ""}">${p.stat}</span>`;
+  if (p.bar) html += `<span class="prog-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></span>`;
+  return html;
+}
+// The bigger version for the detail popup.
+function progressBlock(c) {
+  const p = charmProgress(c);
+  if (!p.bar && !p.stat) return "";
+  return `<div class="prog-block">` +
+    (p.stat ? `<div class="prog-block-stat">Now <b class="${p.chips ? "c" : "m"}">${p.stat}</b> ${p.chips ? "Chips" : "Mult"}</div>` : "") +
+    (p.bar ? `<div class="prog-block-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></div><div class="prog-block-label">${p.bar.label}</div>` : "") +
+    `</div>`;
+}
+
+/* ============================== ARCANA ==============================
+   Arcana Packs hold items that act on your cards (or pay out), used the
+   moment you pick them on the hand the pack draws. Items that only boost
+   your next hand, or only make sense mid-round, are left out. */
+const ARCANA_EXCLUDE = new Set([
+  // next-hand / scoring buffs
+  "devil", "fortune", "empress", "star", "justice", "coinItem", "dice", "doubleDownToken", "encoreTicket", "loadedDice",
+  // only mean something during a round
+  "sun", "theGravedigger", "batteryPack", "freshDeal", "luckyBreak", "secondWind", "piggyBank", "pocketChange", "shufflePass",
+  // refer to other items or open packs
+  "joker", "copycat", "supplyCrate",
+]);
+function arcanaPool() {
+  return ITEM_DEFS.filter((d) => !d.secret && !d.chart && !ARCANA_EXCLUDE.has(d.id));
+}
+// Arcana that need cards picked in the hand: [min, max].
+function arcanaSelection(def) {
+  const e = def.effect || {};
+  switch (e.type) {
+    case "eraserRemoveCard": return [1, e.maxCards || 1];
+    case "duplicatorCopyCard": return [1, 1];
+    case "hangedManSellCards": return [1, e.maxCards || 2];
+    case "loversShareMods": return [2, 2];
+    case "deathCopyCard": return [2, 2];
+    case "strengthRankUp": return [1, e.maxCards || 3];
+    case "forgeAce": return [1, 1];
+    case "swapRanks": return [2, 2];
+  }
+  return null;
+}
+let ITEM_INSTANT = false; // items resolve at once, with no animation (arcana in a pack)
+
+// Uses an arcana item on the pack's hand. The pack's cards stand in as your
+// hand while the item runs, then every change is written back to wherever
+// those cards live in your deck. Returns false if it couldn't be used.
+function useArcana(def, selectedIds) {
+  const inPlay = state.overlay === "playing";
+  const real = { hand: state.hand, selected: state.selected, overlay: state.overlay, sortMode: state.sortMode, handOrder: state.handOrder };
+  const before = packHandCards();
+  const beforeIds = before.map((c) => c.id);
+  const token = { ...def, uid: "arcana_" + newUid() };
+  state.items = [...state.items, token];
+  if (!inPlay) {
+    state.hand = before;
+    state.overlay = "playing";
+    state.sortMode = "rank";
+    state.handOrder = beforeIds;
+  }
+  state.selected = selectedIds.slice();
+  ITEM_INSTANT = true;
+  try {
+    useItem(token.uid);
+  } finally {
+    ITEM_INSTANT = false;
+  }
+  const used = !state.items.includes(token);
+  state.items = state.items.filter((i) => i.uid !== token.uid);
+  if (!inPlay) {
+    const after = state.hand;
+    const afterById = new Map(after.map((c) => [c.id, c]));
+    const gone = new Set(beforeIds.filter((id) => !afterById.has(id)));
+    const fix = (arr) => arr.filter((c) => !gone.has(c.id)).map((c) => afterById.get(c.id) || c);
+    state.deck = fix(state.deck);
+    state.usedCards = fix(state.usedCards || []);
+    const realHand = fix(real.hand);
+    const known = new Set(allRunCards().map((c) => c.id).concat(realHand.map((c) => c.id)));
+    const fresh = after.filter((c) => !beforeIds.includes(c.id) && !known.has(c.id));
+    if (fresh.length) state.deck = shuffleArray([...state.deck, ...fresh]);
+    state.hand = realHand;
+    state.overlay = real.overlay;
+    state.sortMode = real.sortMode;
+    state.handOrder = real.handOrder;
+    state.selected = real.selected;
+    if (state.packOpen) state.packOpen.hand = after.map((c) => c.id).filter((id) => !gone.has(id));
+  } else {
+    state.selected = [];
+    if (state.packOpen) state.packOpen.hand = state.hand.map((c) => c.id);
+  }
+  return used;
 }
 
 /* ============================== SPECTRAL CARDS ==============================
@@ -4461,6 +4629,7 @@ function activationIcon(name) {
 }
 
 function activateCharmSlide(charm, callback) {
+  if (ITEM_INSTANT) { if (callback) callback(); return; }
   // The piece on the shelf lights up and its name pops under it; an item
   // being used then burns away when the callback consumes it.
   state.activeCharm = charm;
@@ -5263,7 +5432,7 @@ function openPack(packId) {
   const n = pack.choices + state.vouchers.filter((v) => v.effect.type === "packExtraChoices" && v.effect.pack === kind).reduce((s, v) => s + v.effect.value, 0);
   let choices = [];
   if (kind === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), n);
-  if (kind === "itemPack") choices = pickDefs(ITEM_DEFS.filter((d) => !d.secret), n);
+  if (kind === "itemPack") choices = pickDefs(arcanaPool(), n).map((d) => ({ ...d, arcana: true }));
   if (kind === "celestialPack") {
     // secret hands' charts only once you've played that hand
     choices = pickDefs(ITEM_DEFS.filter((d) => d.chart && (!d.secret || (state.handTypeCounts || {})[d.effect.hand])), n);
@@ -5277,8 +5446,9 @@ function openPack(packId) {
   if (kind === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), n);
   if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
   if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
-  state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: Date.now(), hand: kind === "spectralPack" ? packHandIds() : null, note: null };
+  state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: Date.now(), hand: kind === "spectralPack" || kind === "itemPack" ? packHandIds() : null, note: null };
   state.packPick = null;
+  state.packSel = [];
   state.shopDetail = null;
   saveGame();
   render();
@@ -5290,7 +5460,19 @@ function takePackChoice(index) {
   const choice = po.choices[index];
   if (!choice) return;
   let note = null;
-  if (choice.spectral) {
+  if (choice.arcana) {
+    const need = arcanaSelection(choice);
+    const sel = (state.packSel || []).slice(0, need ? need[1] : 0);
+    if (need && sel.length < need[0]) return;
+    if (!useArcana(choice, sel)) {
+      po.note = `${choice.name} had nothing to work on`;
+      state.packPick = null;
+      render();
+      return;
+    }
+    note = `${choice.name} used`;
+    state.packSel = [];
+  } else if (choice.spectral) {
     note = useSpectral(choice);
   } else if (choice.type === "charm") {
     if (state.charms.length >= state.charmSlots) return;
@@ -5329,12 +5511,29 @@ function skipPack() {
 // you can sell to make room), then the choices dealt in a fan on a panel.
 // Tap a card to look at it; Take adds it, Skip leaves the rest.
 function packChoiceFull(choice) {
+  if (choice.arcana || choice.spectral) return false;
   if (choice.type === "charm") return state.charms.length >= state.charmSlots;
   if (choice.type === "item" && !choice.chart) return state.items.length >= getEffectiveItemSlots();
   return false;
 }
+// The pack's hand in the order you see it: your own sort mid-round,
+// lowest to highest otherwise (so "leftmost" means the same everywhere).
+function packHandOrdered() {
+  const cards = packHandCards();
+  if (state.overlay === "playing") {
+    const ids = new Set(cards.map((c) => c.id));
+    return getSortedHand().filter((c) => ids.has(c.id));
+  }
+  return [...cards].sort((a, b) => rankStraightValueHigh(a.rank) - rankStraightValueHigh(b.rank));
+}
+function togglePackSel(id, max) {
+  const sel = state.packSel || [];
+  state.packSel = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id].slice(-max);
+  render();
+}
 function pickPackChoice(i) {
   state.packPick = state.packPick === i ? null : i;
+  state.packSel = [];
   render();
 }
 function PackOverlay() {
@@ -5418,8 +5617,12 @@ function PackOverlay() {
     fan.appendChild(el);
   });
   stage.appendChild(fan);
+  const pickedDef = pick != null ? po.choices[pick] : null;
+  const need = pickedDef && pickedDef.arcana ? arcanaSelection(pickedDef) : null;
   if (po.hand) {
-    const handCards = packHandCards();
+    const handCards = packHandOrdered();
+    const sel = state.packSel || [];
+    const leftmostOnly = pickedDef && pickedDef.arcana && !need && /leftmost/.test(pickedDef.desc);
     const row = document.createElement("div");
     row.className = "pack-hand";
     row.innerHTML = `<div class="bwell-label">Your hand</div>`;
@@ -5434,7 +5637,8 @@ function PackOverlay() {
       cardEl.dataset.finalTransform = "none";
       cardEl.style.zoom = "0.82";
       const slot = document.createElement("div");
-      slot.className = "pack-hand-card";
+      slot.className = "pack-hand-card" + (sel.includes(c.id) ? " sel" : "") + (need ? " can-pick" : "") + (leftmostOnly && c === handCards[0] ? " target" : "");
+      if (need) slot.onclick = () => togglePackSel(c.id, need[1]);
       slot.appendChild(cardEl);
       cards.appendChild(slot);
     });
@@ -5460,6 +5664,11 @@ function PackOverlay() {
       if (c.sleeve) lines.push(`<b>${AnteArt.sleeveLabel(c.sleeve)} sleeve</b> ${SLEEVE_INFO[c.sleeve]}`);
       if (c.stamp) lines.push(`<b>${STAMP_LABELS[c.stamp]} stamp</b> ${STAMP_INFO[c.stamp]}`);
       desc = (lines.join("<br>") || "A plain card") + "<br>Goes into your deck.";
+    } else if (c.arcana) {
+      kind = "Arcana";
+      name = c.name;
+      const sel = (state.packSel || []).length;
+      desc = c.desc.replace(/^Use: (.)/, (_, ch) => ch.toUpperCase()) + (need ? `<br><b>Tap ${need[0] === need[1] ? need[0] : `${need[0]}–${need[1]}`} card${need[1] > 1 ? "s" : ""} in your hand</b> (${sel} picked)` : /leftmost/.test(c.desc) ? "<br>Your leftmost card is marked below." : "");
     } else if (c.spectral) {
       kind = "Spectral";
       name = c.name;
@@ -5492,8 +5701,8 @@ function PackOverlay() {
   const take = document.createElement("button");
   take.className = "bbtn bbtn-orange";
   const pc = pick != null ? po.choices[pick] : null;
-  take.disabled = pc == null || packChoiceFull(pc);
-  take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && pc.spectral ? "Use" : "Take"}</span>`;
+  take.disabled = pc == null || packChoiceFull(pc) || (need && (state.packSel || []).length < need[0]);
+  take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && (pc.spectral || pc.arcana) ? "Use" : "Take"}</span>`;
   take.onclick = () => { if (pick != null) takePackChoice(pick); };
   actions.appendChild(take);
   wrap.appendChild(actions);
@@ -5637,6 +5846,7 @@ function tryConsumeItem(item, itemUid) {
 // onComplete once finished so the caller can apply the actual state change,
 // which is what makes the persistent sleeve visual (glow + badge) appear.
 function playSleeveAnimation(cardId, sleeveType, onComplete) {
+  if (ITEM_INSTANT) { if (onComplete) onComplete(); return; }
   const el = document.querySelector(`.hand-fan .card[data-card-id="${cardId}"]`);
   if (!el) { onComplete(); return; }
   const base = el.dataset.finalTransform || "";
@@ -5659,6 +5869,7 @@ function playSleeveAnimation(cardId, sleeveType, onComplete) {
 // stamp color, then applies the stamp via onComplete. Stamps and sleeves are
 // independent properties, so this never touches card.sleeve.
 function playStampAnimation(cardId, stampType, onComplete) {
+  if (ITEM_INSTANT) { if (onComplete) onComplete(); return; }
   const el = document.querySelector(`.hand-fan .card[data-card-id="${cardId}"]`);
   if (!el) { onComplete(); return; }
   const base = el.dataset.finalTransform || "";
@@ -6575,6 +6786,7 @@ function isLandscape() {
 }
 
 function render() {
+  if (ITEM_INSTANT) return;
   document.body.classList.toggle("landscape", isLandscape());
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
@@ -7180,7 +7392,7 @@ function ShelfGroup(kind, list, slots, width, title) {
     piece.style.left = i * step + "px";
     piece.style.width = piece.style.height = SHELF_PIECE + "px";
     piece.style.zIndex = i + 1;
-    piece.innerHTML = AnteArt.icon(def);
+    piece.innerHTML = AnteArt.icon(def) + (kind === "charm" ? progressOverlay(def) : "");
     attachShelfDrag(piece, kind, def);
     row.appendChild(piece);
   });
@@ -7352,6 +7564,7 @@ function GearDetail() {
       <div class="shop-detail-type">${d.kind === "charm" ? "ARTIFACT" : "ITEM"}</div>
       <div class="shop-detail-name serif">${def.name}</div>
       <div class="shop-detail-desc">${def.desc}${extra}</div>
+      ${d.kind === "charm" ? progressBlock(def) : ""}
       <div class="detail-hint">Drag it ${d.kind === "item" ? "to <b>Use</b> or <b>Sell</b>" : "to <b>Sell</b>"}, or along the shelf to move it.</div>
     `;
   }
