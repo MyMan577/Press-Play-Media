@@ -157,6 +157,35 @@
       [[36, 18], [45, 18], [36, 32]].map(([x, y]) => `<rect x="${x}" y="${y}" width="8" height="11" rx="1" fill="#F1E6C8" ${T}/>`).join("") +
       `<rect x="45" y="32" width="8" height="11" rx="1" ${N} stroke="${INK}" stroke-width="1.2" stroke-dasharray="2 1.5"/>` + spade(40, 23, 2.4) + heart(15, 23, 2.2),
     keymaster: `<circle cx="32" cy="32" r="10" ${N} stroke="${INK}" stroke-width="5"/><circle cx="32" cy="32" r="10" ${N} stroke="#C9A227" stroke-width="2.6"/>` + [[-40, "#E8C04A"], [10, "#a9b2bb"], [60, "#b07c44"]].map(([r, c]) => `<g transform="rotate(${r} 32 32)"><circle cx="32" cy="14" r="5" fill="${c}" ${O}/><path d="M32 19 V24" ${N} ${O}/></g><g transform="rotate(${r + 180} 32 32)"><path d="M32 42 V58 M32 52 H37 M32 56 H36" ${N} stroke="${INK}" stroke-width="4.4" stroke-linecap="round"/><path d="M32 42 V58 M32 52 H37 M32 56 H36" ${N} stroke="${c}" stroke-width="2.2" stroke-linecap="round"/></g>`).join(""),
+    // ----- newer artifacts -----
+    carbonCopy: `<rect x="18" y="10" width="30" height="40" rx="3" fill="#bcd3f0" ${O}/><rect x="12" y="16" width="30" height="40" rx="3" fill="#4A90D9" ${O}/><path d="M18 26 H36 M18 32 H36 M18 38 H30" ${N} stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><path d="M44 30 L54 30 M50 26 L54 30 L50 34" ${N} ${O}/>`,
+    echoChamber: `<circle cx="32" cy="32" r="8" fill="#E35D5B" ${O}/>` + [14, 20, 26].map((r, i) => `<circle cx="32" cy="32" r="${r}" ${N} stroke="#E35D5B" stroke-width="${3 - i * 0.7}" opacity="${0.8 - i * 0.22}"/>`).join("") + `<path d="M10 32 H2 M6 28 L2 32 L6 36" ${N} ${T}/>`,
+    understudy: `<path d="M8 18 Q20 10 30 18 V34 Q30 46 19 48 Q8 46 8 34Z" fill="#f5eedc" ${O}/><path d="M34 18 Q44 10 56 18 V34 Q56 46 45 48 Q34 46 34 34Z" fill="#2b3a33" ${O}/><circle cx="15" cy="27" r="2" fill="${INK}"/><circle cx="23" cy="27" r="2" fill="${INK}"/><path d="M14 37 Q19 41 24 37" ${N} ${T}/><circle cx="41" cy="27" r="2" fill="#f5eedc"/><circle cx="49" cy="27" r="2" fill="#f5eedc"/><path d="M40 40 Q45 36 50 40" ${N} stroke="#f5eedc" stroke-width="1.5"/>`,
+    wildPlum: `<path d="M32 16 Q36 8 44 8" ${N} ${O}/><path d="M36 12 Q46 4 52 12 Q44 16 36 12Z" fill="#7FD08A" ${O}/><circle cx="32" cy="36" r="18" fill="#7A55B0" ${O}/><path d="M32 20 Q28 36 32 54" ${N} stroke="#4a2f78" stroke-width="1.6"/>` + shine(24, 30, 3, 6, 20),
+    ripePlum: `<path d="M32 14 Q36 6 44 6" ${N} ${O}/><path d="M36 10 Q46 2 52 10 Q44 14 36 10Z" fill="#7FD08A" ${O}/><circle cx="32" cy="35" r="20" fill="#9b5fc0" ${O}/><path d="M32 16 Q28 35 32 55" ${N} stroke="#5d3590" stroke-width="1.6"/>` + shine(23, 28, 3.4, 7, 20) + sparkle(52, 48, 5),
+    chalkboard: `<rect x="6" y="12" width="52" height="36" rx="2" fill="#2b3a33" stroke="#8a5a2b" stroke-width="4"/><rect x="6" y="12" width="52" height="36" rx="2" ${N} ${O}/><text x="32" y="36" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#e8eee8">♠♣</text><rect x="20" y="48" width="10" height="3" fill="#f5eedc" ${T}/>`,
+    leech: `<path d="M12 40 Q10 24 24 22 Q34 20 40 28 Q46 34 54 30 Q56 40 46 44 Q36 48 28 44 Q16 50 12 40Z" fill="#A8352D" ${O}/><path d="M20 30 Q28 34 36 32 M18 38 Q28 40 40 38" ${N} stroke="#6e1d18" stroke-width="1.4"/><circle cx="50" cy="35" r="2.5" fill="${INK}"/>`,
+    bonfire: `<path d="M10 54 L54 44 M10 44 L54 54" ${N} stroke="${INK}" stroke-width="7" stroke-linecap="round"/><path d="M10 54 L54 44 M10 44 L54 54" ${N} stroke="#8a5a2b" stroke-width="4.5" stroke-linecap="round"/>` + flame(32, 30, 18) + sparkle(48, 14, 3, "#FFE07A") + sparkle(16, 18, 2.5, "#FFE07A"),
+    commuter: `<rect x="8" y="16" width="48" height="30" rx="6" fill="#E8C04A" ${O}/><rect x="13" y="21" width="10" height="9" rx="1.5" fill="#cfe9f5" ${T}/><rect x="27" y="21" width="10" height="9" rx="1.5" fill="#cfe9f5" ${T}/><rect x="41" y="21" width="10" height="9" rx="1.5" fill="#cfe9f5" ${T}/><path d="M8 36 H56" ${N} ${T}/><circle cx="18" cy="47" r="5" fill="#2b3a33" ${O}/><circle cx="46" cy="47" r="5" fill="#2b3a33" ${O}/>`,
+    stargazer: `<path d="M12 54 L22 30 L32 54" ${N} ${O}/><g transform="rotate(-30 30 26)"><rect x="18" y="20" width="30" height="10" rx="2" fill="#4a6fb3" ${O}/><rect x="46" y="18" width="5" height="14" rx="1.5" fill="#C9A227" ${O}/></g>` + star5(50, 10, 4) + sparkle(40, 6, 2.5, "#fff") + sparkle(58, 22, 2.5, "#fff"),
+    downpour: `<path d="M14 26 Q8 26 8 20 Q8 13 16 14 Q18 6 28 8 Q34 2 42 8 Q52 6 54 14 Q60 16 58 22 Q57 26 52 26Z" fill="#9fb3c6" ${O}/>` + [[16, 34], [26, 40], [36, 34], [46, 40], [22, 50], [42, 52]].map(([x, y]) => `<path d="M${x} ${y - 4} Q${x + 3} ${y} ${x} ${y + 3} Q${x - 3} ${y} ${x} ${y - 4}Z" fill="#4FA3C7" ${T}/>`).join(""),
+    maskMaker: `<path d="M8 22 Q32 10 56 22 Q56 44 32 52 Q8 44 8 22Z" fill="#C9A227" ${O}/><path d="M16 28 Q22 24 28 29 Q22 33 16 28Z M36 29 Q42 24 48 28 Q42 33 36 29Z" fill="${INK}"/><path d="M24 42 Q32 46 40 42" ${N} ${O}/><path d="M8 22 L2 16 M56 22 L62 16" ${N} ${T}/>`,
+    gapJump: `<rect x="4" y="40" width="16" height="14" fill="#8a96a3" ${O}/><rect x="44" y="40" width="16" height="14" fill="#8a96a3" ${O}/><path d="M12 38 Q32 4 52 36" ${N} stroke="${INK}" stroke-width="5" stroke-dasharray="4 4" stroke-linecap="round"/><path d="M12 38 Q32 4 52 36" ${N} stroke="#7FD08A" stroke-width="2.6" stroke-dasharray="4 4" stroke-linecap="round"/><path d="M46 30 L53 38 L56 28Z" fill="#7FD08A" ${O}/>`,
+    fizz: `<path d="M22 14 H42 L40 56 H24Z" fill="#dff6fa" ${O}/><path d="M23 26 H41 L40 54 H24Z" fill="#7fd0e0"/><path d="M28 10 L36 4" ${N} stroke="#D2453B" stroke-width="3" stroke-linecap="round"/>` + [[28, 46, 2], [35, 38, 1.6], [30, 32, 1.3], [36, 48, 1.4]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity=".9"/>`).join(""),
+    sundae: `<path d="M14 34 H50 L44 46 H20Z" fill="#dfeef0" ${O}/><path d="M26 46 H38 L36 56 H28Z" fill="#dfeef0" ${O}/><circle cx="24" cy="28" r="9" fill="#F2A7BD" ${O}/><circle cx="40" cy="28" r="9" fill="#f5eedc" ${O}/><circle cx="32" cy="20" r="9" fill="#8a5a2b" ${O}/><circle cx="32" cy="9" r="3.5" fill="#D2453B" ${O}/>`,
+    popcornBucket: [[20, 16], [30, 12], [40, 15], [25, 22], [36, 21], [46, 22], [16, 24]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6" fill="#fff6dc" ${T}/>`).join("") + `<path d="M12 26 H52 L46 58 H18Z" fill="#fff" ${O}/>` + [18, 28, 38].map((x) => `<path d="M${x} 26 H${x + 6} L${x + 4.5} 58 H${x + 1.5}Z" fill="#E35D5B"/>`).join("") + `<path d="M12 26 H52 L46 58 H18Z" ${N} ${O}/>`,
+    bullion: `<path d="M8 46 L14 34 H34 L40 46Z" fill="#E8C04A" ${O}/><path d="M24 34 L30 22 H50 L56 34Z" fill="#F2C94C" ${O}/><path d="M14 34 L18 26 M34 34 L30 22" ${N} ${T} opacity=".4"/>` + shine(30, 40, 2, 6, 70) + `<path d="M4 46 H60 V52 H4Z" fill="#8a5a2b" ${O}/>`,
+    trailMark: `<path d="M10 56 Q20 40 30 44 Q42 48 50 30" ${N} stroke="#b07c44" stroke-width="3" stroke-dasharray="4 3" stroke-linecap="round"/><path d="M40 8 V30" ${N} ${O}/><path d="M40 8 H56 L52 13 L56 18 H40Z" fill="#D2453B" ${O}/>` + playingCard(8, 22, 14, 20, -12, txt(15, 36, 8, "+5", "#3866B8")),
+    dejaVu: playingCard(10, 14, 22, 32, -10, txt(21, 34, 12, "?")) + playingCard(28, 18, 22, 32, 10, txt(39, 38, 12, "?")) + `<path d="M8 54 A26 26 0 0 0 56 50" ${N} stroke="${INK}" stroke-width="4.4" stroke-linecap="round"/><path d="M8 54 A26 26 0 0 0 56 50" ${N} stroke="#8e7cc3" stroke-width="2.2" stroke-linecap="round"/>`,
+    emptyFrame: `<rect x="10" y="8" width="44" height="48" rx="2" fill="#d8c290" ${O}/><rect x="18" y="16" width="28" height="32" fill="#2b3a33" opacity=".85" ${T}/><path d="M18 16 L46 48 M46 16 L18 48" ${N} stroke="#d8c290" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>` + [[10, 8], [54, 8], [10, 56], [54, 56]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3" fill="#C9A227" ${T}/>`).join(""),
+    punchCard: `<rect x="8" y="14" width="48" height="36" rx="4" fill="#f5eedc" ${O}/><path d="M8 22 H56" ${N} stroke="#D2453B" stroke-width="3"/>` + [0, 1, 2, 3, 4, 5].map((i) => `<circle cx="${16 + (i % 3) * 16}" cy="${32 + Math.floor(i / 3) * 10}" r="4" fill="${i < 5 ? INK : "#fff"}" ${T}/>`).join(""),
+    clenchedFist: `<path d="M18 52 V30 Q18 22 26 22 H44 Q50 22 50 28 V44 Q50 52 42 52Z" fill="#E8A65F" ${O}/><path d="M26 22 V32 M34 22 V32 M42 22 V32 M18 34 Q26 30 30 38" ${N} ${T}/><path d="M18 52 H42 V58 H18Z" fill="#b07c44" ${O}/>`,
+    cosmonaut: `<circle cx="32" cy="28" r="16" fill="#e6eef2" ${O}/><path d="M20 26 Q32 18 44 26 V32 Q32 38 20 32Z" fill="#3866B8" ${O}/>` + shine(26, 26, 2, 3, 20) + `<path d="M18 42 Q32 50 46 42 L50 58 H14Z" fill="#e6eef2" ${O}/><path d="M28 50 H36" ${N} stroke="#D2453B" stroke-width="3"/>` + star5(52, 10, 4),
+    nestEgg: `<path d="M8 40 Q32 60 56 40 Q52 52 32 54 Q12 52 8 40Z" fill="#8a5a2b" ${O}/><path d="M10 42 L20 38 M54 42 L44 37 M16 48 L26 44 M48 48 L38 45" ${N} ${T}/><ellipse cx="32" cy="32" rx="12" ry="15" fill="#F5EEDC" ${O}/>` + shine(27, 26, 2.4, 5, 20) + coin(46, 18, 7),
+    jackknife: `<g transform="rotate(-35 32 32)"><rect x="10" y="30" width="30" height="10" rx="5" fill="#8a5a2b" ${O}/><path d="M38 31 H60 L54 39 H38Z" fill="#c9ccd0" ${O}/></g>` + playingCard(34, 34, 16, 22, 12, txt(42, 50, 11, "J")),
+    twilight: `<rect x="4" y="38" width="56" height="18" fill="#3949AB" ${O}/><path d="M12 38 A20 20 0 0 1 52 38Z" fill="#F29A2E" ${O}/><path d="M4 44 H60 M10 50 H54" ${N} stroke="#7a86d9" stroke-width="1.4"/>` + star5(14, 12, 3.4, "#e8eeff") + star5(48, 8, 2.6, "#e8eeff"),
+    catBurglar: `<path d="M14 54 Q12 30 32 28 Q52 30 50 54Z" fill="#2b3a33" ${O}/><path d="M18 30 L14 14 L26 24Z M46 30 L50 14 L38 24Z" fill="#2b3a33" ${O}/><rect x="16" y="32" width="32" height="8" rx="4" fill="${INK}"/><circle cx="24" cy="36" r="2.2" fill="#FFE07A"/><circle cx="40" cy="36" r="2.2" fill="#FFE07A"/>` + bag(50, 48, 9, "#b07c44", "$"),
+    littleDeuce: playingCard(18, 12, 28, 40, -6, txt(32, 40, 22, "2", "#D2453B")) + plus(50, 14, 6),
   };
 
   // ---------- legendary artifacts ----------
@@ -349,6 +378,20 @@
     rewind: `<circle cx="32" cy="34" r="20" fill="#F5EEDC" ${O}/><circle cx="32" cy="34" r="16" ${N} ${T} opacity=".4"/><path d="M32 34 V22 M32 34 L24 39" ${N} stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/><circle cx="32" cy="34" r="2" fill="${INK}"/>` +
       `<path d="M20 10 A26 26 0 0 0 7 26" ${N} stroke="${INK}" stroke-width="4.6" stroke-linecap="round"/><path d="M20 10 A26 26 0 0 0 7 26" ${N} stroke="#E8C04A" stroke-width="2.2" stroke-linecap="round"/><path d="M2 22 L7 31 L13 23Z" fill="#E8C04A" ${O}/>`,
   };
+  Object.assign(VOUCHER_ART, {
+    polish: `<path d="M14 50 L40 18 L48 26 L22 56Z" fill="#c9a06a" ${O}/><rect x="38" y="8" width="18" height="16" rx="3" fill="#f5eedc" transform="rotate(40 47 16)" ${O}/>` + sparkle(18, 20, 6, "#fff") + sparkle(50, 46, 4, "#fff"),
+    lacquer: `<rect x="20" y="22" width="24" height="32" rx="4" fill="#C0392B" ${O}/><rect x="24" y="12" width="16" height="12" rx="2" fill="#2b3a33" ${O}/>` + shine(28, 34, 3, 9, 10) + sparkle(50, 16, 6, "#fff") + sparkle(12, 44, 4, "#fff"),
+    peddler: bag(32, 30, 20, "#b07c44", "", "#7a5836") + `<rect x="22" y="34" width="20" height="14" rx="2" fill="#f5eedc" ${T}/>` + txt(32, 45, 9, "✦", "#7E57C2"),
+    bazaar: awning(10, "#7E57C2", "#F5EEDC") + `<path d="M14 24 V52 M50 24 V52" ${N} ${O}/><rect x="10" y="40" width="44" height="12" rx="2" fill="#b07c44" ${O}/>` + [18, 28, 38].map((x) => `<rect x="${x}" y="30" width="8" height="11" rx="1" fill="#f5eedc" ${T}/>`).join(""),
+    starVendor: `<rect x="12" y="30" width="40" height="22" rx="3" fill="#b07c44" ${O}/>` + star5(22, 22, 7) + star5(40, 18, 9) + `<path d="M12 38 H52" ${N} ${T}/>`,
+    planetarium: `<path d="M8 50 Q8 16 32 16 Q56 16 56 50Z" fill="#24325c" ${O}/><rect x="4" y="50" width="56" height="6" fill="#d8c290" ${O}/>` + star5(22, 32, 3.5) + star5(36, 26, 4) + star5(46, 38, 3) + `<circle cx="28" cy="42" r="4" fill="#E8743B" ${T}/>`,
+    sleightOfHand: `<path d="M8 50 Q10 34 22 32 H40 Q48 32 48 40 Q48 46 40 46 H30" fill="#E8A65F" ${O}/>` + playingCard(28, 8, 18, 26, 14, txt(37, 25, 10, "A", "#D2453B")) + sparkle(14, 16, 5),
+    grandIllusion: `<path d="M18 30 H46 L42 54 H22Z" fill="#2b3a33" ${O}/><rect x="14" y="26" width="36" height="6" rx="2" fill="#2b3a33" ${O}/><path d="M18 30 H46 V34 H18Z" fill="#D2453B"/>` + playingCard(20, 6, 14, 20, -16) + playingCard(32, 4, 14, 20, 12) + sparkle(54, 14, 5) + sparkle(8, 18, 4),
+    teaLeaves: `<path d="M12 28 H48 Q48 50 30 52 Q12 50 12 28Z" fill="#f5eedc" ${O}/><path d="M48 32 Q58 32 56 40 Q54 46 46 44" ${N} ${O}/><path d="M18 34 Q24 30 28 36 M32 38 Q36 32 40 38 M24 44 Q28 40 34 44" ${N} stroke="#4E9A6E" stroke-width="2.4" stroke-linecap="round"/><path d="M24 22 Q22 16 26 12 M34 22 Q32 14 36 10" ${N} stroke="#cfd8dc" stroke-width="2" stroke-linecap="round"/>`,
+    omenGlobe: `<circle cx="32" cy="28" r="20" fill="#5a6fd8" opacity=".85" ${O}/><path d="M25 37 V26 Q25 19 32 19 Q39 19 39 26 V37 L36.5 34.5 L34 37 L32 34.5 L30 37 L27.5 34.5Z" fill="#e8eeff" ${O}/><circle cx="29.5" cy="27" r="1.4" fill="${INK}"/><circle cx="34.5" cy="27" r="1.4" fill="${INK}"/>` + shine(24, 20, 3, 6, 20) + `<path d="M16 46 H48 L52 56 H12Z" fill="#7a5836" ${O}/>`,
+    packRat: `<path d="M12 46 Q12 32 28 30 Q40 30 46 38 L56 40 L46 44 Q42 52 28 52 Q14 52 12 46Z" fill="#8a96a3" ${O}/><circle cx="26" cy="30" r="5" fill="#cfd8dc" ${O}/><circle cx="48" cy="40" r="1.4" fill="${INK}"/><path d="M12 46 Q4 44 6 36" ${N} ${O}/><g transform="translate(30 2) scale(.34)">${packet("#C9A227", gem(32, 32, 8, "#9b5fc0"))}</g>`,
+    hoarder: [[6, 22, -14], [22, 14, 0], [38, 22, 14]].map(([x, y, r]) => `<g transform="translate(${x} ${y}) scale(.36) rotate(${r} 32 32)">${packet(["#C9A227", "#2f4a8a", "#3b3f8f"][(x / 16) | 0], "")}</g>`).join("") + `<rect x="8" y="46" width="48" height="8" rx="2" fill="#7a5836" ${O}/>`,
+  });
   let voucherSeq = 0;
   // A voucher coupon on a 64x86 canvas.
   function voucher(def, cls = "") {
@@ -403,6 +446,8 @@
     hollowCrown: `<path d="M12 44 L16 18 L25 30 L32 14 L39 30 L48 18 L52 44Z" fill="none" stroke="${INK}" stroke-width="6" stroke-linejoin="round"/><path d="M12 44 L16 18 L25 30 L32 14 L39 30 L48 18 L52 44Z" fill="none" stroke="#E8C04A" stroke-width="3" stroke-linejoin="round"/><rect x="12" y="44" width="40" height="7" rx="2" fill="#E8C04A" ${O}/>`,
     wispLantern: `<path d="M26 10 H38 L36 16 H28Z" fill="#7a5836" ${O}/><path d="M22 18 H42 L40 48 H24Z" fill="#dff6fa" opacity=".75" ${O}/><rect x="20" y="48" width="24" height="6" rx="2" fill="#7a5836" ${O}/>` + flame(32, 34, 8).replace(/#F29A2E/g, "#7fd0e0").replace(/#FFE07A/g, "#e8fbff"),
     soulShard: `<path d="M32 6 L46 30 L32 58 L18 30Z" fill="#F2A65A" ${O}/><path d="M32 6 L32 58 M18 30 H46" ${N} ${T} opacity=".5"/>` + shine(27, 24, 2.4, 7, 20) + sparkle(50, 12, 5) + sparkle(12, 48, 4),
+    halo: `<ellipse cx="32" cy="16" rx="16" ry="5" fill="none" stroke="${INK}" stroke-width="5"/><ellipse cx="32" cy="16" rx="16" ry="5" fill="none" stroke="#FFE28A" stroke-width="2.6"/>` + playingCard(20, 26, 24, 32, 0, star5(32, 42, 7, "#F6D35B")) + sparkle(52, 34, 4) + sparkle(12, 44, 3),
+    prismHex: `<path d="M32 8 L54 48 H10Z" fill="#dfeef0" opacity=".85" ${O}/><path d="M32 8 L34 48 M32 8 L20 48" ${N} ${T} opacity=".4"/><path d="M38 30 L62 22 M40 34 L62 32 M40 38 L62 42" ${N} stroke-width="3" stroke="#ff6b6b"/><path d="M40 34 L62 32" ${N} stroke-width="3" stroke="#7FD08A"/><path d="M40 38 L62 42" ${N} stroke-width="3" stroke="#6bb8ff"/><path d="M2 30 L24 30" ${N} stroke="#fff" stroke-width="3"/>`,
     eventHorizon: `<circle cx="32" cy="32" r="22" fill="#f6c445" opacity=".35"/><ellipse cx="32" cy="32" rx="26" ry="8" fill="none" stroke="#F6C445" stroke-width="3" transform="rotate(-18 32 32)"/><circle cx="32" cy="32" r="13" fill="#05060c" ${O}/><ellipse cx="32" cy="32" rx="26" ry="8" fill="none" stroke="#FFE28A" stroke-width="1.2" stroke-dasharray="20 60" transform="rotate(-18 32 32)"/>`,
   };
   let spectralSeq = 0;
@@ -411,7 +456,7 @@
     const rare = !!def.rare;
     const col = def.color || "#8f9bff";
     const art = SPECTRALS[def.id] || ghost(32, 34, 16);
-    const runes = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(32 + Math.cos(a) * 23).toFixed(1)} ${(34 + Math.sin(a) * 23).toFixed(1)} l2 -3 l2 3" fill="none" stroke="#b9c6ff" stroke-width=".9" opacity=".55"/>`; }).join("");
+    const runes = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(32 + Math.cos(a) * 22).toFixed(1)} ${(37 + Math.sin(a) * 22).toFixed(1)} l2 -3 l2 3" fill="none" stroke="#b9c6ff" stroke-width=".9" opacity=".55"/>`; }).join("");
     return `<svg class="aart spectral-art ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
       `<defs><linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2f66"/><stop offset="1" stop-color="#0f1130"/></linearGradient>` +
       `<radialGradient id="${id}g" cx=".5" cy=".42" r=".5"><stop offset="0" stop-color="${col}" stop-opacity=".9"/><stop offset=".6" stop-color="${col}" stop-opacity=".18"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></radialGradient>` +
@@ -420,11 +465,12 @@
       `<g clip-path="url(#${id}c)"><circle cx="32" cy="34" r="34" fill="url(#${id}g)"/>` +
       `<path d="M-4 70 Q14 58 30 66 T66 60 V90 H-4Z" fill="#b9c6ff" opacity=".12"/><path d="M-4 78 Q20 66 36 74 T66 70 V90 H-4Z" fill="#b9c6ff" opacity=".1"/></g>` +
       `<rect x="4.5" y="4.5" width="55" height="77" rx="4" fill="none" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".8" opacity=".7"/>` +
-      `<circle cx="32" cy="34" r="25" fill="none" stroke="#b9c6ff" stroke-width=".7" opacity=".5"/>` + runes +
-      `<g transform="translate(32 34) scale(.66) translate(-32 -32)" style="filter:drop-shadow(0 0 3px ${col})">${art}</g>` +
-      `<path d="M8 66 H56 L52 74 H12Z" fill="#0a0c22" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".9"/>` +
-      `<text x="32" y="72.3" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="5.6" letter-spacing="1.6" fill="${rare ? "#F2C94C" : "#cfd8ff"}">SPECTRAL</text>` +
-      [[32, 4.5], [32, 81.5]].map(([x, y]) => `<path d="M${x} ${y - 2.4} L${x + 2.4} ${y} L${x} ${y + 2.4} L${x - 2.4} ${y}Z" fill="${rare ? "#F2C94C" : "#b9c6ff"}" stroke="${INK}" stroke-width=".7"/>`).join("") +
+      `<circle cx="32" cy="37" r="24" fill="none" stroke="#b9c6ff" stroke-width=".7" opacity=".5"/>` + runes +
+      `<g transform="translate(32 37) scale(.64) translate(-32 -32)" style="filter:drop-shadow(0 0 3px ${col})">${art}</g>` +
+      `<path d="M5 70 H59 L57 81 H7Z" fill="#0a0c22" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".9"/>` +
+      nameText(def.name || "", 77.6, rare ? "#F6E3A8" : "#e3e9ff") +
+      `<path d="M11 3.5 H53 L50 10.5 H14Z" fill="#0a0c22" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".8"/>` +
+      `<text x="32" y="8.9" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="4.3" letter-spacing=".8" textLength="34" lengthAdjust="spacingAndGlyphs" fill="${rare ? "#F2C94C" : "#cfd8ff"}">SPECTRAL</text>` +
       `</svg>`;
   }
 
@@ -436,6 +482,118 @@
     return `<path d="M6 44 H58 L54 50 L58 56 H6 L10 50Z" fill="${fill}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>` +
       `<text x="32" y="53.2" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="7.4" letter-spacing="1.4" fill="${INK}">${mega ? "MEGA" : "MAJOR"}</text>` +
       (mega ? sparkle(54, 40, 4.5, "#FFE28A") + sparkle(10, 40, 3.5, "#FFE28A") : "");
+  }
+
+  /* ---------- full cards: artifacts, items (arcana) and star charts ----------
+     The same 64x86 card as vouchers and spectrals: a type plate at the top,
+     the picture in a framed window, and the name on a band at the bottom.
+     Each kind has its own look:
+       artifact  — green baize, double gold border, filigree corners
+       legendary — ember black with a burning orange border and sparks
+       arcana    — tarot: cream card, sunburst window in the item's colour,
+                   a Roman numeral
+       star chart— night sky with scattered stars and a gold ring */
+  const hashStr = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; };
+  const rng = (seed) => () => ((seed = Math.imul(seed ^ (seed >>> 15), 2246822519) ^ Math.imul(seed ^ (seed >>> 13), 3266489917)) >>> 0) / 4294967296;
+  const ROMAN = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX", "XXI", "XXII"];
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  let cardSeq = 0;
+  // Name band text, squeezed to fit when it's long.
+  const nameText = (name, y, fill, maxW = 50) => {
+    const n = esc(name);
+    const fit = name.length > 12 ? ` textLength="${maxW}" lengthAdjust="spacingAndGlyphs"` : "";
+    return `<text x="32" y="${y}" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="${name.length > 16 ? 5.6 : 6.4}" fill="${fill}"${fit}>${n}</text>`;
+  };
+  const cornerFiligree = (stroke) => [[8, 15, 1, 1], [56, 15, -1, 1], [8, 63, 1, -1], [56, 63, -1, -1]].map(([x, y, sx, sy]) =>
+    `<path d="M${x} ${y + sy * 7} Q${x} ${y} ${x + sx * 7} ${y} M${x + sx * 2.5} ${y + sy * 2.5} m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0" fill="none" stroke="${stroke}" stroke-width=".9"/>`).join("");
+
+  // Artifact sleeves: a sheen over the whole card, a coloured rim and a tab
+  // naming the sleeve. Negative also inverts the card's colours.
+  const CHARM_SLEEVE_ART = {
+    sparkler: { rim: "#FFB84D", label: "SPARKLER" },
+    tithe: { rim: "#B8956A", label: "TITHE" },
+    gilded: { rim: "#F2C94C", label: "GILDED" },
+    prismatic: { rim: "url(#RAINBOW)", label: "PRISMATIC" },
+    negative: { rim: "#b9a0ff", label: "NEGATIVE" },
+  };
+  function charmSleeveLayer(sleeve, id) {
+    const st = CHARM_SLEEVE_ART[sleeve];
+    if (!st) return "";
+    const rainbow = `<linearGradient id="${id}rb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6b6b"/><stop offset=".25" stop-color="#ffd36b"/><stop offset=".5" stop-color="#7FD08A"/><stop offset=".75" stop-color="#6bb8ff"/><stop offset="1" stop-color="#c38bff"/></linearGradient>`;
+    const rim = st.rim === "url(#RAINBOW)" ? `url(#${id}rb)` : st.rim;
+    let sheen = "";
+    if (sleeve === "sparkler") sheen = [[12, 20, 2.6], [52, 26, 2], [14, 60, 2], [50, 58, 2.8], [44, 16, 1.6]].map(([x, y, r]) => sparkle(x, y, r * 1.4, "#FFD36B").replace(/stroke-width="1.5"/g, 'stroke-width=".5"')).join("");
+    if (sleeve === "tithe") sheen = `<circle cx="52" cy="62" r="5" fill="#E8C04A" stroke="#6b4a2a" stroke-width=".9"/><text x="52" y="64.6" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="6.5" fill="#6b4a2a">$</text>`;
+    if (sleeve === "gilded") sheen = `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="#F2C94C" opacity=".16"/><path d="M-6 34 L30 -6 H40 L-6 46Z" fill="#fff6c8" opacity=".35"/>`;
+    if (sleeve === "prismatic") sheen = `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="url(#${id}rb)" opacity=".28"/><path d="M-6 50 L44 -6 H54 L-6 62Z" fill="#fff" opacity=".25"/>`;
+    if (sleeve === "negative") sheen = `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="#5a3d8a" opacity=".18"/>`;
+    return `<defs>${rainbow}</defs>${sheen}` +
+      `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="none" stroke="${rim}" stroke-width="2.4"/>` +
+      `<path d="M62.8 22 V48 H58 Q56 48 56 46 V24 Q56 22 58 22Z" fill="${rim}" stroke="${INK}" stroke-width=".7"/>` +
+      `<text x="59.6" y="35" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="3.6" letter-spacing=".4" fill="${INK}" transform="rotate(90 59.6 35)" textLength="22" lengthAdjust="spacingAndGlyphs">${st.label}</text>`;
+  }
+
+  function card(def, cls = "") {
+    const id = "crd" + ++cardSeq;
+    const isChart = def.type === "item" && /^chart\d+$/.test(def.id);
+    const legendary = def.type === "charm" && def.rarity === "legendary";
+    const kind = def.type === "charm" ? (legendary ? "legend" : "artifact") : isChart ? "chart" : "arcana";
+    const col = def.color || "#9b5fc0";
+    const inner = def.type === "charm" ? (legendary ? LEGENDS[def.id] : CHARMS[def.id]) || gem(32, 34, 18, col) : ITEMS[def.id] || gem(32, 34, 18, col);
+    const S = {
+      artifact: { bg: ["#2f4a37", "#14211a"], edge: "#D9BC6A", plate: "#0e1711", plateText: "#E9C568", band: "#0e1711", bandText: "#F3ECD9", label: "ARTIFACT", win: null },
+      legend: { bg: ["#4a2616", "#140805"], edge: "#F2A65A", plate: "#1b0c06", plateText: "#F6C445", band: "#1b0c06", bandText: "#FFE3B8", label: "LEGENDARY", win: null },
+      arcana: { bg: ["#FAF1D8", "#E3CC98"], edge: INK, plate: "#5a4526", plateText: "#FFF3D2", band: "#FFF7E2", bandText: "#3a2a14", label: def.arcana ? "ARCANA" : "ITEM", win: col },
+      chart: { bg: ["#22305a", "#0b1024"], edge: "#E8C04A", plate: "#0b1024", plateText: "#cfe0ff", band: "#0b1024", bandText: "#F6E3A8", label: "STAR CHART", win: null },
+    }[kind];
+    let back = "";
+    if (kind === "artifact") {
+      back = `<pattern id="${id}h" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 4 H8" stroke="#ffffff" stroke-width=".5" opacity=".07"/></pattern>` +
+        `<rect x="2" y="2" width="60" height="82" rx="5" fill="url(#${id}h)"/>`;
+    } else if (kind === "legend") {
+      const r = rng(hashStr(def.id));
+      back = Array.from({ length: 14 }, () => `<circle cx="${(4 + r() * 56).toFixed(1)}" cy="${(14 + r() * 56).toFixed(1)}" r="${(0.5 + r() * 1.1).toFixed(1)}" fill="#F6C445" opacity="${(0.3 + r() * 0.6).toFixed(2)}"/>`).join("") +
+        `<path d="M2 84 Q10 70 16 78 Q22 64 30 76 Q36 62 44 76 Q50 66 56 78 Q60 72 62 84Z" fill="#E8743B" opacity=".35"/>`;
+    } else if (kind === "chart") {
+      const r = rng(hashStr(def.id));
+      back = Array.from({ length: 26 }, () => `<circle cx="${(3 + r() * 58).toFixed(1)}" cy="${(3 + r() * 80).toFixed(1)}" r="${(0.3 + r() * 0.8).toFixed(1)}" fill="#fff" opacity="${(0.25 + r() * 0.7).toFixed(2)}"/>`).join("") +
+        `<path d="M-4 30 Q30 18 68 40" fill="none" stroke="#9fb8ff" stroke-width="7" opacity=".08"/>`;
+    }
+    // the picture window
+    let win, winDefs = "";
+    if (kind === "arcana") {
+      const rays = Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2, b = a + Math.PI / 14; return `<path d="M32 38 L${(32 + Math.cos(a) * 50).toFixed(1)} ${(38 + Math.sin(a) * 50).toFixed(1)} L${(32 + Math.cos(b) * 50).toFixed(1)} ${(38 + Math.sin(b) * 50).toFixed(1)}Z" fill="#fff" opacity=".16"/>`; }).join("");
+      winDefs = `<radialGradient id="${id}w" cx=".5" cy=".45" r=".7"><stop offset="0" stop-color="${col}"/><stop offset="1" stop-color="${enamel(col, 0.6)}"/></radialGradient>` +
+        `<clipPath id="${id}c"><path d="M8 20 Q8 13 15 13 H49 Q56 13 56 20 V64 H8Z"/></clipPath>`;
+      win = `<g clip-path="url(#${id}c)"><rect x="8" y="13" width="48" height="51" fill="url(#${id}w)"/>${rays}<circle cx="32" cy="38" r="16" fill="#fff" opacity=".2"/></g>` +
+        `<path d="M8 20 Q8 13 15 13 H49 Q56 13 56 20 V64 H8Z" fill="none" stroke="${INK}" stroke-width="1.5"/>`;
+    } else if (kind === "chart") {
+      win = `<circle cx="32" cy="38" r="24" fill="none" stroke="#E8C04A" stroke-width="1.1" opacity=".8"/><circle cx="32" cy="38" r="26.5" fill="none" stroke="#E8C04A" stroke-width=".5" stroke-dasharray="1.5 2.5" opacity=".7"/>`;
+    } else {
+      win = `<rect x="7.5" y="13" width="49" height="51" rx="4" fill="#000" opacity=".28"/><rect x="7.5" y="13" width="49" height="51" rx="4" fill="none" stroke="${S.edge}" stroke-width=".9" opacity=".8"/>`;
+    }
+    const numeral = kind === "arcana" ? (hashStr(def.id) % 22) + 1 : 0;
+    return `<svg class="aart full-card card-${kind}${def.sleeve === "negative" ? " is-negative" : ""} ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<defs><linearGradient id="${id}b" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="${S.bg[0]}"/><stop offset="1" stop-color="${S.bg[1]}"/></linearGradient>` +
+      `<clipPath id="${id}k"><rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6"/></clipPath></defs>` +
+      `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="url(#${id}b)"/>` +
+      `<g clip-path="url(#${id}k)">${back}</g>` +
+      `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="none" stroke="${legendary ? "#E8743B" : INK}" stroke-width="${legendary ? 2.6 : 2.2}"/>` +
+      `<rect x="4" y="4" width="56" height="78" rx="4" fill="none" stroke="${S.edge}" stroke-width="${kind === "arcana" ? 0.7 : 1}" opacity="${kind === "arcana" ? 0.5 : 0.9}"/>` +
+      (kind === "artifact" || kind === "legend" ? `<rect x="5.6" y="5.6" width="52.8" height="74.8" rx="3" fill="none" stroke="${S.edge}" stroke-width=".5" opacity=".6"/>` + cornerFiligree(S.edge) : "") +
+      (winDefs ? `<defs>${winDefs}</defs>` : "") + win +
+      `<g transform="translate(32 38.5) scale(${kind === "chart" ? 0.84 : 0.72}) translate(-32 -32)">${inner}</g>` +
+      // type plate
+      `<path d="M11 3.5 H53 L50 10.5 H14Z" fill="${S.plate}" stroke="${kind === "arcana" ? INK : S.edge}" stroke-width=".8"/>` +
+      `<text x="32" y="8.9" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="4.3" letter-spacing=".8" textLength="34" lengthAdjust="spacingAndGlyphs" fill="${S.plateText}">${S.label}</text>` +
+      (numeral ? `<circle cx="32" cy="64" r="5" fill="#FFF7E2" stroke="${INK}" stroke-width="1"/><text x="32" y="66" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="${ROMAN[numeral].length > 3 ? 3.6 : 4.6}" fill="#5a4526">${ROMAN[numeral]}</text>` : "") +
+      // name band
+      `<path d="M5 70 H59 L57 81 H7Z" fill="${S.band}" stroke="${kind === "arcana" ? INK : S.edge}" stroke-width=".9"/>` +
+      nameText(def.name || "", 77.6, S.bandText) +
+      (legendary ? sparkle(54, 18, 3.4, "#F6C445") + sparkle(10, 60, 2.6, "#F6C445") : "") +
+      `<path d="M9 16 Q11 40 9 62" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity="${kind === "arcana" ? 0.35 : 0.12}"/>` +
+      (def.sleeve ? `<g clip-path="url(#${id}k)">${charmSleeveLayer(def.sleeve, id)}</g>` : "") +
+      `</svg>`;
   }
 
   function wrap(inner, cls = "") {
@@ -464,6 +622,7 @@
     larva: { tint: "#cdb98e", label: "LARVA" },
     anchor: { tint: "#7d93a8", label: "ANCHOR" },
     mirror: { tint: "#d9e3ea", label: "MIRROR" },
+    negative: { tint: "#7a55b0", label: "NEGATIVE" },
   };
   let sleeveSeq = 0;
   function sleevePattern(type, id) {
@@ -482,6 +641,8 @@
           `<g transform="translate(31 74) scale(.3) translate(-32 -32)" opacity=".9">${anchorShape(32, 32, 24, "#9fb3c6")}</g>`;
       case "mirror":
         return `<path d="M-4 40 L30 -4 H42 L0 52Z" fill="#fff" opacity=".55"/><path d="M14 92 L64 30 V44 L26 92Z" fill="#fff" opacity=".4"/>`;
+      case "negative":
+        return `<text x="54" y="80" text-anchor="end" font-family="Georgia,serif" font-weight="700" font-size="7" fill="#d9c8ff" opacity=".9">+1</text>`;
       default:
         return "";
     }
@@ -512,5 +673,5 @@
     return `<svg class="card-stamp-art" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${seal(32, 32, 26, st.fill, st.glyph)}${shine(24, 22, 3, 7, -40)}</svg>`;
   }
 
-  window.AnteArt = { icon, voucher, spectral, sleeve, stamp, sleeveLabel: (t) => (SLEEVE_STYLE[t] ? SLEEVE_STYLE[t].label : "") };
+  window.AnteArt = { icon, card, voucher, spectral, sleeve, stamp, sleeveLabel: (t) => (SLEEVE_STYLE[t] ? SLEEVE_STYLE[t].label : "") };
 })();
