@@ -5475,6 +5475,27 @@ window.ppSaveBlob = async function(blob, filename, onProgress){
         </div>
         <div class="settings-row" style="margin-top:12px;">
           <div class="settings-row-text">
+            <div class="settings-row-title">Upconvert 16-bit audio</div>
+            <div class="settings-row-sub">Plays 16-bit music and video soundtracks (most MP3, AAC and CD rips) at 32-bit float while they play, so the equalizer, bass, boost and effects work with headroom and full precision instead of being squeezed back into 16 bits, which is what makes heavy settings crackle. Your files are not changed. Turns on Hi-res output for 24-bit files too.</div>
+          </div>
+          <label class="settings-switch">
+            <input type="checkbox" id="up16-toggle">
+            <span class="settings-switch-track"><span class="settings-switch-thumb"></span></span>
+          </label>
+        </div>
+        <div class="settings-row" style="margin-top:12px;">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Save a high bit depth copy</div>
+            <div class="settings-row-sub">Makes a permanent WAV copy of the playing song at 24-bit or 32-bit float and adds it to your library. It sounds the same as the original (the extra bits start out empty) and is much bigger: about 15 MB a minute at 24-bit, 20 MB at 32-bit. For smoother effects, Upconvert 16-bit audio above does the same job without the big file.</div>
+            <div id="hd-copy-msg" class="settings-row-sub" hidden></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
+            <select id="hd-copy-bits"><option value="24">24-bit</option><option value="32">32-bit float</option></select>
+            <button type="button" id="hd-copy-btn" class="lt-btn" style="padding:8px 12px;">Save</button>
+          </div>
+        </div>
+        <div class="settings-row" style="margin-top:12px;">
+          <div class="settings-row-text">
             <div class="settings-row-title">Audio decoder</div>
             <div class="settings-row-sub">Auto uses the best decoder for each file. Software only and Hardware only force that kind and nothing else, so nothing switches behind your back. Most phones decode music in software, so with Hardware only many files stay silent; Software only includes the built-in Dolby / DTS decoders.</div>
           </div>
@@ -17155,6 +17176,16 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (typeof audioLeadActive !== 'undefined' && audioLeadActive) audioLeadApplyGain();
   }
   function sleepUnfade(){ if (sleepFaded){ sleepFaded = false; sleepSetGain(1); } }
+  // A timed stop is also handed to the native playback service: with the screen off Android stops running this page's
+  // timers while the music plays on, so the timer below never fired. The service stops (and fades) the native player;
+  // this page's timer still updates the label, and stops a web-played video, whenever it runs.
+  let sleepNative = false;
+  function sleepSyncNative(){
+    try {
+      if (window.PPNative && PPNative.sleep)
+        sleepNative = PPNative.sleep(sleepTimer.mode === 'duration' ? Math.max(1, sleepTimer.endAt - Date.now()) : 0, sleepFade * 1000) && sleepTimer.mode === 'duration';
+    } catch(e){ sleepNative = false; if (typeof ppCaught === "function") ppCaught(e); }
+  }
   function sleepStop(){
     cancelResumeOnReturn();   // stopped on purpose: must not restart when the app comes back to the foreground
     audioEl.pause();
@@ -17168,6 +17199,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   function clearSleepTimer(){
     if (sleepTimer.intervalId) clearInterval(sleepTimer.intervalId);
     sleepTimer = { mode: 'off', endAt: null, intervalId: null };
+    sleepSyncNative();
     sleepLabel.textContent = 'Sleep';
     sleepBtn.classList.remove('toggled');
     sleepUnfade();
@@ -17194,8 +17226,9 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       const mins = Math.floor(remaining/60000), secs = Math.floor((remaining%60000)/1000).toString().padStart(2,'0');
       sleepLabel.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + String(mins % 60).padStart(2, '0') : `${mins}:${secs}`;
     }
-    // fade out over the last part
-    if (sleepFade > 0 && isPlaying && remaining <= sleepFade * 1000){ sleepFaded = true; sleepSetGain(Math.max(0, remaining / (sleepFade * 1000))); }
+    // fade out over the last part (the native service fades its own player; doing it here too would fade twice)
+    const fadeHere = !(sleepNative && window.PPNative && PPNative.active());
+    if (fadeHere && sleepFade > 0 && isPlaying && remaining <= sleepFade * 1000){ sleepFaded = true; sleepSetGain(Math.max(0, remaining / (sleepFade * 1000))); }
     else if (sleepFaded && remaining > sleepFade * 1000) sleepUnfade();
     if (sleepTimer.mode === 'duration' && remaining <= 0) sleepStop();
     paintSleepPanel();
@@ -17207,6 +17240,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (mode === 'duration') sleepTimer.endAt = extra;
     if (mode === 'tracks'){ sleepTimer.left = extra; sleepTimer.lastId = currentIndex !== -1 && tracks[currentIndex] ? tracks[currentIndex].dbId : null; }
     sleepBtn.classList.add('toggled');
+    sleepSyncNative();
     tickSleepLabel();
     sleepTimer.intervalId = setInterval(tickSleepLabel, 250);
     syncAudioLoop();   // "end of track" needs the song to really end, so it may not loop
@@ -17243,7 +17277,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       if (val !== 'off') sleepDropdown.classList.remove('open');
       return;
     }
-    if (b.dataset.ext && sleepTimer.mode === 'duration'){ sleepTimer.endAt += +b.dataset.ext * 60000; sleepUnfade(); tickSleepLabel(); return; }
+    if (b.dataset.ext && sleepTimer.mode === 'duration'){ sleepTimer.endAt += +b.dataset.ext * 60000; sleepUnfade(); sleepSyncNative(); tickSleepLabel(); return; }
   });
   document.getElementById('sleep-custom-go').addEventListener('click', () => {
     const n = parseInt(document.getElementById('sleep-custom').value, 10);
@@ -17261,6 +17295,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     sleepFade = isFinite(v) && v > 0 ? Math.min(900, Math.round(v)) : 0;
     try { localStorage.setItem(SLEEP_FADE_KEY, String(sleepFade)); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); }
     if (!sleepFade) sleepUnfade();
+    if (sleepTimer.mode === 'duration') sleepSyncNative();
     e.target.blur(); paintSleepPanel();
   });
   document.getElementById('sleep-tracks-go').addEventListener('click', () => {
@@ -25984,7 +26019,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     if (!(P && P.enabled && P.audioInfo && P.audioOptions)) return;
     const npFmt = document.getElementById('np-format'), nowEl = document.getElementById('audio-quality-now');
     const note = document.getElementById('audio-quality-note');
-    const hiTg = document.getElementById('hires-toggle'), aSel = document.getElementById('adec-select'), vSel = document.getElementById('vdec-select');
+    const hiTg = document.getElementById('hires-toggle'), upTg = document.getElementById('up16-toggle'), aSel = document.getElementById('adec-select'), vSel = document.getElementById('vdec-select');
     const CODEC = { 'audio/flac': 'FLAC', 'audio/mpeg': 'MP3', 'audio/mp4a-latm': 'AAC', 'audio/opus': 'Opus', 'audio/vorbis': 'Vorbis', 'audio/raw': 'PCM',
       'audio/alac': 'ALAC', 'audio/ac3': 'Dolby Digital', 'audio/eac3': 'Dolby Digital Plus', 'audio/amr-wb': 'AMR-WB', 'audio/3gpp': 'AMR', 'audio/x-ms-wma': 'WMA',
       'audio/mpeg-L2': 'MP2', 'audio/vnd.dts': 'DTS', 'audio/true-hd': 'TrueHD' };
@@ -26007,7 +26042,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         if (i.ch) full.push(chans(i.ch));
         if (i.bitrate) full.push(Math.round(i.bitrate / 1000).toLocaleString() + ' kbps');
         let out = '';
-        if (i.outBits) out = ' Played at ' + (i.outFloat ? '32-bit float' : i.outBits + '-bit') + (i.rate ? ', ' + khz(i.rate) : '') + '.';
+        if (i.outBits) out = ' Played at ' + (i.outFloat ? '32-bit float' : i.outBits + '-bit') + (i.upconverted ? ' (upconverted from 16-bit)' : '') + (i.rate ? ', ' + khz(i.rate) : '') + '.';
         if (i.bits > 16 && !i.outFloat) out += i.hiRes ? '' : ' Turn on Hi-res output to play it at full depth.';
         nowEl.textContent = 'Now playing: ' + full.join(' · ') + '.' + (i.decoder ? ' Decoder: ' + i.decoder + '.' : '') + out;
       }
@@ -26024,17 +26059,55 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
 
     // Settings
     let saved = null;
-    const changed = () => { if (note && saved) note.hidden = !(hiTg.checked !== saved.hiRes || aSel.value !== saved.adec || vSel.value !== saved.vdec); };
-    const save = () => { P.audioOptions.set({ hiRes: hiTg.checked, adec: aSel.value, vdec: vSel.value }).catch(() => {}); changed(); };
+    const changed = () => { if (note && saved) note.hidden = !(hiTg.checked !== saved.hiRes || (upTg && upTg.checked !== saved.up16) || aSel.value !== saved.adec || vSel.value !== saved.vdec); };
+    const save = () => { P.audioOptions.set({ hiRes: hiTg.checked, up16: !!(upTg && upTg.checked), adec: aSel.value, vdec: vSel.value }).catch(() => {}); changed(); };
     if (hiTg && aSel && vSel){
       P.audioOptions.get().then(o => {
         // "saved" is what the running player was started with, so the restart note shows until the two agree
-        saved = { hiRes: !!o.activeHiRes, adec: o.adec || 'auto', vdec: o.vdec || 'auto' };
-        hiTg.checked = !!o.hiRes; aSel.value = o.adec || 'auto'; vSel.value = o.vdec || 'auto';
+        saved = { hiRes: !!o.activeHiRes, up16: !!o.activeUp16, adec: o.adec || 'auto', vdec: o.vdec || 'auto' };
+        hiTg.checked = !!o.hiRes; if (upTg) upTg.checked = !!o.up16; aSel.value = o.adec || 'auto'; vSel.value = o.vdec || 'auto';
         changed();
       }).catch(() => {});
-      hiTg.addEventListener('change', save); aSel.addEventListener('change', save); vSel.addEventListener('change', save);
+      hiTg.addEventListener('change', save); if (upTg) upTg.addEventListener('change', save); aSel.addEventListener('change', save); vSel.addEventListener('change', save);
     }
+  })();
+
+  // ================= Save a high bit depth copy: a permanent 24-bit or 32-bit float WAV of the playing song =================
+  // Decoded and written in the page with mediabunny (WebCodecs), so it works with or without the native engine. The original
+  // file is left as it is; the copy is a new library track. For a video, the copy is its sound only.
+  (function(){
+    const btn = document.getElementById('hd-copy-btn'), sel = document.getElementById('hd-copy-bits'), msg = document.getElementById('hd-copy-msg');
+    if (!btn || !sel) return;
+    const MB = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.0/dist/bundles/mediabunny.min.mjs';
+    const say = s => { if (msg){ msg.hidden = !s; msg.textContent = s || ''; } };
+    let busy = false;
+    btn.addEventListener('click', async () => {
+      if (busy) return;
+      const t = currentIndex !== -1 ? tracks[currentIndex] : null;
+      if (!t || !t.url){ say('Play a song first, then save its copy.'); return; }
+      if (t.remoteUrl){ say('A stream can’t be copied. Save the file to your phone first.'); return; }
+      const bits = sel.value === '32' ? 32 : 24;
+      busy = true; btn.disabled = true; say('Reading “' + (t.title || 'song') + '”…');
+      try {
+        const mb = await import(MB);
+        const src = await (await fetch(t.url)).blob();
+        const input = new mb.Input({ source: new mb.BlobSource(src), formats: mb.ALL_FORMATS });
+        const output = new mb.Output({ format: new mb.WavOutputFormat(), target: new mb.BufferTarget() });
+        const conv = await mb.Conversion.init({ input, output, video: { discard: true },
+          audio: { codec: bits === 32 ? 'pcm-f32' : 'pcm-s24', forceTranscode: true } });
+        if (!conv.isValid) throw new Error('this file’s sound can’t be decoded here');
+        conv.onProgress = p => say('Converting… ' + Math.round(p * 100) + '%');
+        await conv.execute();
+        const name = String(t.title || 'Song').replace(/[\\/:*?"<>|]+/g, '_') + ' (' + (bits === 32 ? '32-bit float' : '24-bit') + ').wav';
+        const file = new File([output.target.buffer], name, { type: 'audio/wav' });
+        window.__ppApi.addLibraryFiles([file]);
+        say('Added “' + name + '” to your library, ' + (file.size / 1048576).toFixed(1) + ' MB' + (t.kind === 'video' ? ' (the sound only)' : '') + '.');
+      } catch(e){
+        say('Could not make the copy: ' + ((e && e.message) || e) + '.');
+        if (typeof ppCaught === 'function') ppCaught(e);
+      }
+      busy = false; btn.disabled = false;
+    });
   })();
   // =====================================================================
   // Extras: M3U export/import, bookmarks, LRC lyrics, ReplayGain, Open URL,

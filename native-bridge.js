@@ -38,6 +38,7 @@
     N.expectAdvance = function () {};
     N.crossfade = function () { return Promise.resolve(false); };
     N.cancelCrossfade = function () {};
+    N.sleep = function () { return false; };
     N.jobs = { run: function (title, fn) { return fn(function () {}); } };
     N.lib = null;
     return;
@@ -359,6 +360,13 @@
     return Player.crossfade({ ms: Math.round(ms) }).then(function (r) { return !!(r && r.ok); }, function () { return false; });
   };
   N.cancelCrossfade = function () { if (cur && cur.active && Player.cancelCrossfade) call(function () { return Player.cancelCrossfade(); }); };
+  // Sleep timer: the deadline is kept by the playback service, which keeps counting while the screen is off and the page's
+  // own timers don't run. ms 0 clears it. True when the native engine is on, so the service stops (and fades) the music.
+  N.sleep = function (ms, fadeMs) {
+    if (!N.enabled || !Player.setSleep) return false;
+    call(function () { return Player.setSleep({ ms: Math.max(0, Math.round(ms || 0)), fadeMs: Math.max(0, Math.round(fadeMs || 0)) }); });
+    return true;
+  };
 
   N.queueNext = function (t) {
     var tok = ++nextToken;

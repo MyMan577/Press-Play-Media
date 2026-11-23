@@ -493,6 +493,37 @@
     };
   }
   function encode(ch) { const e = makeEncoder(); e.push(ch[0], ch[1]); return e.finish(); }
+  // The Android engines hand back 16-bit WAV (about 10 MB a minute). This turns it into a 192 kbps MP3 like the in-page
+  // engines make (about 1.4 MB a minute), in slices so the page stays responsive. null: not a 16-bit PCM WAV, or no encoder.
+  async function wavToMp3(blob, onFrac) {
+    if (!window.lamejs || !blob) return null;
+    const buf = await blob.arrayBuffer(), dv = new DataView(buf), len = buf.byteLength;
+    const str = o => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+    if (len < 44 || str(0) !== 'RIFF' || str(8) !== 'WAVE') return null;
+    let p = 12, fmt = null, data = null;
+    while (p + 8 <= len) {
+      const id = str(p), sz = dv.getUint32(p + 4, true);
+      if (id === 'fmt ') fmt = { tag: dv.getUint16(p + 8, true), ch: dv.getUint16(p + 10, true), sr: dv.getUint32(p + 12, true), bits: dv.getUint16(p + 22, true) };
+      else if (id === 'data') { data = { off: p + 8, len: Math.min(sz, len - p - 8) }; break; }
+      p += 8 + sz + (sz & 1);
+    }
+    if (!fmt || !data || fmt.tag !== 1 || fmt.bits !== 16 || fmt.ch < 1 || fmt.ch > 2) return null;
+    const ch = fmt.ch, frames = Math.floor(data.len / (2 * ch));
+    const pcm = data.off % 2 ? new Int16Array(buf.slice(data.off, data.off + frames * ch * 2)) : new Int16Array(buf, data.off, frames * ch);
+    const enc = new lamejs.Mp3Encoder(ch, fmt.sr, 192), out = [], B = 1152 * 64;
+    const L = new Int16Array(B), R = ch === 2 ? new Int16Array(B) : null;
+    for (let i = 0, k = 0; i < frames; i += B, k++) {
+      const n = Math.min(B, frames - i);
+      if (R) for (let j = 0, s = i * 2; j < n; j++, s += 2) { L[j] = pcm[s]; R[j] = pcm[s + 1]; }
+      else L.set(pcm.subarray(i, i + n));
+      const b = enc.encodeBuffer(L.subarray(0, n), R ? R.subarray(0, n) : undefined);
+      if (b.length) out.push(new Uint8Array(b));
+      if (k % 4 === 3) { onFrac && onFrac(i / frames); await tick(); }
+    }
+    const f = enc.flush(); if (f.length) out.push(new Uint8Array(f));
+    onFrac && onFrac(1);
+    return new Blob(out, { type: 'audio/mpeg' });
+  }
   function addSplit(files, info) {        // split tracks: kept out of "All tracks", grouped under "Split tracks"
     const A = window.__ppApi;
     if (A && A.addStemFiles) A.addStemFiles(files, info); else addToLibrary(files);
@@ -502,6 +533,8 @@
   const MB = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.0/dist/bundles/mediabunny.min.mjs';
   let mbLib = null, videoBlobFor = null, videoBlobCache = null;
   async function muxVideo(videoUrl, audioBlob, onFrac) {
+    // A WAV stem would be copied into the MP4 as raw PCM, which Android's player can't decode: the video played silent.
+    if (/wav/i.test(audioBlob.type || '')) { try { audioBlob = (await wavToMp3(audioBlob)) || audioBlob; } catch (e) { console.warn('WAV to MP3 failed:', e); } }
     try { return await muxVideoFast(videoUrl, audioBlob, onFrac); }
     catch (e) { console.warn('Fast video mux failed, using real-time re-record:', e); return muxVideoSlow(videoUrl, audioBlob, onFrac); }
   }
@@ -518,7 +551,9 @@
     const out = new mb.Output({ format: fmt, target: new mb.BufferTarget() });
     const vsrc = new mb.EncodedVideoPacketSource(vcodec); out.addVideoTrack(vsrc);
     const dur = await vtrack.computeDuration();
-    let asrc, copyAudio = fmt.getSupportedCodecs().includes(atrack.codec);          // mp3 stems go straight into mp4 untouched; wav gets encoded
+    // mp3 stems go straight into the mp4 untouched. Only codecs phones play inside a video are copied: the container also
+    // takes raw PCM, FLAC and Vorbis, but Android plays a video with those as its sound silent. Anything else is encoded.
+    let asrc, copyAudio = ['aac', 'mp3', 'opus'].includes(atrack.codec) && fmt.getSupportedCodecs().includes(atrack.codec);
     let encAudio = null;
     if (copyAudio) { asrc = new mb.EncodedAudioPacketSource(atrack.codec); }
     else {
@@ -2358,6 +2393,7 @@
       // Keep the vocals as a split track, exactly like a normal split, so the next transcription (or a split) reuses them.
       if (eb && !t.stem) {
         try {
+          if (eext === 'wav') { try { const mp = await wavToMp3(eb, f => status('Saving the vocals… ' + Math.round(f * 100) + '%')); if (mp) { eb = mp; eext = 'mp3'; } } catch (e) { console.warn('WAV to MP3 failed, keeping the WAV', e); } }
           const mk = ls0('ppvMkPl') === '1';
           addSplit([new File([eb], t.title + ' (Vocals).' + eext, { type: eb.type || 'audio/wav' })], { srcId: t.dbId, srcTitle: t.title, makePlaylist: mk, showInTab: mk && ls0('ppvPlTab') === '1' });
           window.__ppvSaved = true; status('Saved the vocals to Split tracks.');
@@ -9339,7 +9375,11 @@
         const files = []; let vidFail = 0;
         for (const n of want) {                                          // encode one at a time, free each stem after
           status('Encoding ' + n + '…'); await tick();
-          const e = res[n].blob ? res[n] : encode(res[n]); delete res[n];
+          let e = res[n].blob ? res[n] : encode(res[n]); delete res[n];
+          if (e.ext === 'wav') {                                          // the Android engines' WAV: about 7x smaller as MP3
+            try { const mp = await wavToMp3(e.blob, f => status('Encoding ' + n + '… ' + Math.round(f * 100) + '%')); if (mp) e = { blob: mp, ext: 'mp3' }; }
+            catch (err) { console.warn('WAV to MP3 failed, keeping the WAV:', err); }
+          }
           let blob = e.blob, ext = e.ext;
           if (vid.checked && t.kind === 'video') {
             try { blob = await muxVideo(t.url, e.blob, f => status('Adding video to ' + n + '… ' + Math.round(f * 100) + '%')); ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; }
@@ -9360,7 +9400,7 @@
     try { smartUI(p, { mas, status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
     refresh();
   }
-  window.PPVocals = { muxVideo, subtitleSpans, makeMask, alignLines, separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
+  window.PPVocals = { muxVideo, wavToMp3, subtitleSpans, makeMask, alignLines, separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
   const boot = () => { try { ui(); } catch (e) { console.error(e); } };
   if (typeof document !== 'undefined' && document.body) boot();
   else if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', boot);
