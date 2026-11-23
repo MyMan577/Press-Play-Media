@@ -1356,14 +1356,26 @@ function evaluateSelection(cards) {
     byRank[c.rank].push(c);
   });
   const groups = Object.values(byRank).sort((a, b) => b.length - a.length);
-  const isFlush = cards.length === 5 && cards.every((c) => c.suit === cards[0].suit);
+  // Short Hand: Flushes and Straights need only 4 cards. Smudged Ink: red
+  // suits count as one suit, black suits as another.
+  const need = hasCharm("shortHandFour") ? 4 : 5;
+  const smudged = hasCharm("smudgedSuits");
+  const suitKey = (c) => (smudged ? (c.suit === "hearts" || c.suit === "diamonds" ? "red" : "black") : c.suit);
+  const suitCounts = {};
+  cards.forEach((c) => { suitCounts[suitKey(c)] = (suitCounts[suitKey(c)] || 0) + 1; });
+  const isFlush = cards.length >= need && Math.max(...Object.values(suitCounts)) >= need;
 
   let isStraight = false;
-  if (cards.length === 5 && Object.keys(byRank).length === 5) {
-    const highVals = cards.map((c) => rankStraightValueHigh(c.rank)).sort((a, b) => a - b);
-    const lowVals = cards.map((c) => rankStraightValueLow(c.rank)).sort((a, b) => a - b);
-    const consec = (arr) => arr.every((v, i) => i === 0 || v === arr[i - 1] + 1);
-    if (consec(highVals) || consec(lowVals)) isStraight = true;
+  if (cards.length >= need) {
+    const longestRun = (vals) => {
+      const u = [...new Set(vals)].sort((a, b) => a - b);
+      let best = 1, run = 1;
+      for (let i = 1; i < u.length; i++) { run = u[i] === u[i - 1] + 1 ? run + 1 : 1; best = Math.max(best, run); }
+      return best;
+    };
+    const highVals = cards.map((c) => rankStraightValueHigh(c.rank));
+    const lowVals = cards.map((c) => rankStraightValueLow(c.rank));
+    if (longestRun(highVals) >= need || longestRun(lowVals) >= need) isStraight = true;
   }
 
   let name, scoringCards;
@@ -2260,6 +2272,114 @@ const CHARM_DEFS = [
     color: "#B98A4E",
     type: "charm",
     effect: { type: "collectorFirstDiscard", value: 4 }
+  },
+  {
+    id: "spiralShell",
+    name: "Spiral Shell",
+    desc: "Each scoring A, 2, 3, 5 or 8 gives +8 Mult",
+    price: 8,
+    color: "#E3B27A",
+    type: "charm",
+    effect: { type: "spiralRanksMult", value: 8 }
+  },
+  {
+    id: "metronome",
+    name: "Metronome",
+    desc: "Each scoring 10, 8, 6, 4 or 2 gives +4 Mult",
+    price: 7,
+    color: "#8b5a2b",
+    type: "charm",
+    effect: { type: "evenRanksMult", value: 4 }
+  },
+  {
+    id: "oddity",
+    name: "Oddity",
+    desc: "Each scoring A, 9, 7, 5 or 3 gives +30 Chips",
+    price: 7,
+    color: "#3FA9A0",
+    type: "charm",
+    effect: { type: "oddRanksChips", value: 30 }
+  },
+  {
+    id: "lowTide",
+    name: "Low Tide",
+    desc: "Scoring 2s, 3s, 4s and 5s score twice",
+    price: 9,
+    color: "#4a90d9",
+    type: "charm",
+    effect: { type: "lowTideRetrigger" }
+  },
+  {
+    id: "encoreMask",
+    name: "Encore Mask",
+    desc: "Scoring face cards score twice",
+    price: 9,
+    color: "#B05FA0",
+    type: "charm",
+    effect: { type: "maskFaceRetrigger" }
+  },
+  {
+    id: "portrait",
+    name: "Portrait",
+    desc: "The first face card that scores gives X2 Mult",
+    price: 8,
+    color: "#C9A227",
+    type: "charm",
+    effect: { type: "portraitFirstFaceX", value: 2 }
+  },
+  {
+    id: "smudgedInk",
+    name: "Smudged Ink",
+    desc: "Hearts and Diamonds count as the same suit, and so do Spades and Clubs",
+    price: 7,
+    color: "#2f4a7a",
+    type: "charm",
+    effect: { type: "smudgedSuits" }
+  },
+  {
+    id: "shortHand",
+    name: "Short Hand",
+    desc: "Flushes and Straights can be made with 4 cards",
+    price: 8,
+    color: "#c9a27a",
+    type: "charm",
+    effect: { type: "shortHandFour" }
+  },
+  {
+    id: "tidepool",
+    name: "Tidepool",
+    desc: "X2.5 Mult if your hand is any kind of Flush",
+    price: 9,
+    color: "#3FA97A",
+    type: "charm",
+    effect: { type: "tidepoolFlushX", value: 2.5 }
+  },
+  {
+    id: "heartstone",
+    name: "Heartstone",
+    desc: "Each scoring Heart has a 1 in 2 chance to give X1.5 Mult",
+    price: 8,
+    color: "#D2453B",
+    type: "charm",
+    effect: { type: "heartstoneChance", chance: 0.5, value: 1.5 }
+  },
+  {
+    id: "hallOfMirrors",
+    name: "Hall of Mirrors",
+    desc: "X0.2 Mult for every card added to your deck this run",
+    price: 9,
+    color: "#cfe4ee",
+    type: "charm",
+    effect: { type: "mirrorsAddedX", value: 0.2 }
+  },
+  {
+    id: "gildedHand",
+    name: "Gilded Hand",
+    desc: "Each Gold-stamped card left in your hand gives X1.3 Mult",
+    price: 8,
+    color: "#F2C94C",
+    type: "charm",
+    effect: { type: "gildedHeldX", value: 1.3 }
   }
 ];
 
@@ -2270,6 +2390,11 @@ const LEGENDARY_DEFS = [
   { id: "midnightSun", name: "Midnight Sun", desc: "X0.5 Mult more for every different hand type you've played this run", price: 20, color: "#6E7BD9", type: "charm", rarity: "legendary", effect: { type: "midnightSunX", value: 0.5 } },
   { id: "eternalEngine", name: "Eternal Engine", desc: "Every scoring card scores twice", price: 20, color: "#B0B8C0", type: "charm", rarity: "legendary", effect: { type: "engineRetrigger" } },
   { id: "grandLedger", name: "Grand Ledger", desc: "X0.1 Mult for every $5 you hold", price: 20, color: "#C9A227", type: "charm", rarity: "legendary", effect: { type: "grandLedgerX", value: 0.1 } },
+  { id: "ossuarySaint", name: "Ossuary Saint", desc: "Gains X1 Mult each time a face card is destroyed (starts at X1)", price: 20, color: "#D9CFB5", type: "charm", rarity: "legendary", effect: { type: "saintFaceDestroyedX", value: 1 } },
+  { id: "twinThrones", name: "Twin Thrones", desc: "Each King or Queen that scores gives X2 Mult", price: 20, color: "#8B1E1E", type: "charm", rarity: "legendary", effect: { type: "thronesKingQueenX", value: 2 } },
+  { id: "tallyLantern", name: "Tally Lantern", desc: "Gains X1 Mult for every 23 cards you discard after getting it (starts at X1)", price: 20, color: "#E8C04A", type: "charm", rarity: "legendary", effect: { type: "lanternDiscardX", value: 1, per: 23 } },
+  { id: "ironCrown", name: "Iron Crown", desc: "Boss Blinds have no special effects", price: 20, color: "#6c757d", type: "charm", rarity: "legendary", effect: { type: "crownDisableBoss" } },
+  { id: "echoVault", name: "Echo Vault", desc: "When you leave the shop, adds a copy of a random item you hold (even past your slots)", price: 20, color: "#7E57C2", type: "charm", rarity: "legendary", effect: { type: "vaultCopyItem" } },
 ];
 
 // Booster packs: bought in the shop, opened on the spot, pick one.
@@ -3012,8 +3137,26 @@ function withSleeve(card, sleeve) {
 function makeCard(rank, suit, extra) {
   return { rank, suit, id: `${rank}-${suit}-${Math.random().toString(36).slice(2, 8)}`, ...(extra || {}) };
 }
+// How many times a scoring card fires. Crimson doubles the card; each
+// retrigger artifact that applies adds another full round of firing.
 function scoringPings(card) {
-  return (card.stamp === "crimson" ? 2 : 1) * (hasCharm("engineRetrigger") ? 2 : 1);
+  let rounds = 1;
+  if (hasCharm("engineRetrigger")) rounds++;
+  if (hasCharm("lowTideRetrigger") && ["2", "3", "4", "5"].includes(card.rank)) rounds++;
+  if (hasCharm("maskFaceRetrigger") && ["J", "Q", "K"].includes(card.rank)) rounds++;
+  return (card.stamp === "crimson" ? 2 : 1) * rounds;
+}
+// Cards added to the deck this run (Hall of Mirrors).
+function noteAdded(n) {
+  state.cardsAddedRun = (state.cardsAddedRun || 0) + n;
+}
+// Cards destroyed this run (Vulture) and face cards destroyed (Ossuary Saint).
+function noteDestroyed(cards) {
+  state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + cards.length;
+  const faces = cards.filter((c) => c && ["J", "Q", "K"].includes(c.rank)).length;
+  if (faces) {
+    state.charms = state.charms.map((c) => (c.effect.type === "saintFaceDestroyedX" ? { ...c, saintX: (c.saintX || 1) + faces * c.effect.value } : c));
+  }
 }
 // Price in the shop after Clearance Sale, or $0 while The Merchant's free buy is waiting.
 function shopPriceFor(entry) {
@@ -3246,6 +3389,43 @@ function applyCharmEffects(result, cards, charms) {
       case "redThreadCrimsonMult":
         totalMult += cards.filter((c) => c.stamp === "crimson").length * eff.value;
         break;
+      case "spiralRanksMult":
+        totalMult += cards.filter((c) => !isCardDebuffed(c) && ["A", "2", "3", "5", "8"].includes(c.rank)).reduce((n, c) => n + scoringPings(c), 0) * eff.value;
+        break;
+      case "evenRanksMult":
+        totalMult += cards.filter((c) => !isCardDebuffed(c) && ["2", "4", "6", "8", "10"].includes(c.rank)).reduce((n, c) => n + scoringPings(c), 0) * eff.value;
+        break;
+      case "oddRanksChips":
+        totalChips += cards.filter((c) => !isCardDebuffed(c) && ["A", "3", "5", "7", "9"].includes(c.rank)).reduce((n, c) => n + scoringPings(c), 0) * eff.value;
+        break;
+      case "portraitFirstFaceX": {
+        const face = cards.find((c) => !isCardDebuffed(c) && ["J", "Q", "K"].includes(c.rank));
+        if (face) totalMult *= Math.pow(eff.value, scoringPings(face));
+        break;
+      }
+      case "tidepoolFlushX":
+        if (handName.includes("Flush")) totalMult *= eff.value;
+        break;
+      case "heartstoneChance":
+        // Rolled once when the hand is played (state.heartstoneHits); the
+        // preview leaves it out rather than guess.
+        if (state.heartstoneHits) totalMult *= Math.pow(eff.value, state.heartstoneHits);
+        break;
+      case "mirrorsAddedX":
+        totalMult *= 1 + (state.cardsAddedRun || 0) * eff.value;
+        break;
+      case "gildedHeldX":
+        totalMult *= Math.pow(eff.value, state.hand.filter((c) => c.stamp === "gold" && !state.selected.includes(c.id)).length);
+        break;
+      case "saintFaceDestroyedX":
+        totalMult *= charm.saintX || 1;
+        break;
+      case "thronesKingQueenX":
+        totalMult *= Math.pow(eff.value, cards.filter((c) => !isCardDebuffed(c) && (c.rank === "K" || c.rank === "Q")).reduce((n, c) => n + scoringPings(c), 0));
+        break;
+      case "lanternDiscardX":
+        totalMult *= 1 + Math.floor((charm.lanternDiscards || 0) / eff.per) * eff.value;
+        break;
       case "hydraSleeveX":
         totalMult *= Math.pow(eff.value, cards.filter((c) => c.sleeve).length);
         break;
@@ -3306,7 +3486,7 @@ function applyCharmEffects(result, cards, charms) {
         totalMult += (state.handTypesPlayedThisRound || []).length * eff.value;
         break;
       case "keymasterLuckCharmMult": {
-        const luckTypes = new Set(["calculatorReplay", "cameraPreserve", "horseshoeDoubleChance", "rouletteRandomBonus", "coinFlip"]);
+        const luckTypes = new Set(["calculatorReplay", "cameraPreserve", "horseshoeDoubleChance", "rouletteRandomBonus", "coinFlip", "heartstoneChance"]);
         totalMult += charms.filter((c) => luckTypes.has(c.effect.type)).length * eff.value;
         break;
       }
@@ -3561,6 +3741,8 @@ function startGame() {
   state.roundHandSizeBonus = 0;
   state.collectorUsedThisRound = false;
   state.cardsDestroyedRun = 0;
+  state.cardsAddedRun = 0;
+  state.heartstoneHits = 0;
   state.nextHandDoubleBase = false;
   state.nextHandChipsX = 1;
   state.nextHandBonusScore = 0;
@@ -3662,6 +3844,7 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.hand.filter((c) => c.sleeve === "larva").forEach((card) => {
     const clone = { ...card, id: card.id + "_larva_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined };
     state.deck.push(clone);
+    noteAdded(1);
   });
   state.larvaTracking = {};
 
@@ -3670,6 +3853,7 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.hand.filter((c) => c.stamp === "azure").forEach((card) => {
     const clone = { ...card, id: card.id + "_azure_" + Date.now() + "_" + Math.random().toString(36).slice(2) };
     state.deck.push(clone);
+    noteAdded(1);
   });
   state.azureTracking = {};
 
@@ -3699,6 +3883,10 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.blindIdx = nextBlindIdx;
   state.roundScore = 0;
   state.bossBlind = nextBlindIdx === 2 ? (nextAnte === FINAL_ANTE ? pickFinalBoss() : pickBossBlind()) : null;
+  if (state.bossBlind && hasCharm("crownDisableBoss")) {
+    const b = state.bossBlind;
+    state.bossBlind = { id: b.id, name: b.name, isFinal: b.isFinal, disabled: true, desc: "Disabled by the Iron Crown" };
+  }
   state.handTypesPlayedThisRound = [];
   state.firstHandTypeThisRound = null;
   state.bossBlindMessage = null;
@@ -3895,6 +4083,14 @@ function playHand() {
   state.nextHandDoubleBase = false;
   const scoringCards = baseResult.scoringCards;
   const scoringIds = scoringCards.map((c) => c.id);
+  state.heartstoneHits = 0;
+  const heartstone = state.charms.find((c) => c.effect.type === "heartstoneChance");
+  if (heartstone) {
+    const p = Math.min(1, heartstone.effect.chance * chanceMultiplier());
+    scoringCards.filter((c) => c.suit === "hearts" && !isCardDebuffed(c)).forEach((c) => {
+      for (let k = 0; k < scoringPings(c); k++) if (Math.random() < p) state.heartstoneHits++;
+    });
+  }
   const newPlaysLeft = state.playsLeft - 1;
   const PING_DELAY = 300;
 
@@ -3921,6 +4117,7 @@ function playHand() {
         if (card) {
           const cardCopy = { ...card, id: card.id + "_mirror_" + Date.now() + "_" + Math.random().toString(36).slice(2) };
           state.deck.push(cardCopy);
+          noteAdded(1);
         }
       }
     }
@@ -4124,6 +4321,7 @@ function finishPlay(finalScore, newPlaysLeft) {
     state.nextHandBonusScore = 0;
   }
   state.lastHandScore = handScore;
+  state.heartstoneHits = 0;
   setTimeout(() => {
     // fly the scoring cards up and fade the popup before the hand refills
     const popupEl = document.querySelector(".score-popup");
@@ -4155,6 +4353,7 @@ function finishPlay(finalScore, newPlaysLeft) {
       const playedCards = state.hand.filter((c) => state.selected.includes(c.id));
       const { newDeck, newHand } = refillHand(state.deck, state.hand, state.selected);
       state.deck = [...newDeck, ...mirrorClones];
+      noteAdded(mirrorClones.length);
       state.hand = newHand;
       state.usedCards = [...state.usedCards, ...playedCards];
 
@@ -4286,7 +4485,7 @@ function discard() {
       if (collector && discardedCards.length === 1) {
         collected = discardedCards;
         state.money += collector.effect.value;
-        state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + 1;
+        noteDestroyed(discardedCards);
       }
     }
     
@@ -4297,6 +4496,7 @@ function discard() {
     state.selected = [];
     state.discardsLeft -= 1;
     state.totalDiscardedRun = (state.totalDiscardedRun || 0) + discardedCards.length;
+    state.charms = state.charms.map((c) => (c.effect.type === "lanternDiscardX" ? { ...c, lanternDiscards: (c.lanternDiscards || 0) + discardedCards.length } : c));
     state.money += getMoneyOnDiscard(state.items) + titheBonus;
     state.streakCounter = 0; // Reset Streak when discarding
     saveGame();
@@ -4449,6 +4649,7 @@ function takePackChoice(index) {
   } else {
     // a playing card: straight into the deck
     state.deck = shuffleArray([...state.deck, { ...choice }]);
+    noteAdded(1);
   }
   state.packOpen = null;
   saveGame();
@@ -4713,7 +4914,7 @@ function useItem(itemUid) {
     if (state.overlay !== "playing" || state.selected.length === 0) return;
     const idsToRemove = state.selected.slice(0, eff.maxCards);
     activateCharmSlide(item, () => {
-      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + idsToRemove.length;
+      noteDestroyed([...state.hand, ...state.deck].filter((c) => idsToRemove.includes(c.id)));
       state.hand = state.hand.filter((c) => !idsToRemove.includes(c.id));
       state.deck = state.deck.filter((c) => !idsToRemove.includes(c.id));
       state.usedCards = state.usedCards.filter((c) => !idsToRemove.includes(c.id));
@@ -4732,6 +4933,7 @@ function useItem(itemUid) {
     activateCharmSlide(item, () => {
       const clone = { ...source, id: source.id + "_dup_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined };
       state.deck = [...state.deck, clone];
+      noteAdded(1);
       tryConsumeItem(item, itemUid);
       saveGame();
     });
@@ -4790,6 +4992,7 @@ function useItem(itemUid) {
       state.hand.forEach((c) => { counts[c.suit] = (counts[c.suit] || 0) + 1; });
       const suit = Object.keys(counts).sort((x, y) => counts[y] - counts[x])[0];
       for (let n = 0; n < eff.count; n++) state.deck.push(makeCard(randomOf(RANKS), suit));
+      noteAdded(eff.count);
       state.deck = shuffleArray(state.deck);
     });
   }
@@ -4881,6 +5084,7 @@ function useItem(itemUid) {
     if (!lead) return;
     return quick(() => {
       for (let n = 0; n < eff.count; n++) state.deck.push(withSleeve({ ...lead, id: lead.id + "_jar_" + Date.now() + "_" + n + Math.random().toString(36).slice(2, 6) }, "larva"));
+      noteAdded(eff.count);
       state.deck = shuffleArray(state.deck);
     });
   }
@@ -4901,8 +5105,9 @@ function useItem(itemUid) {
     if (count === 0) return;
     return quick(() => {
       state.deck = state.deck.filter((c) => !isLow(c));
+      noteDestroyed([...state.deck, ...state.usedCards].filter(isLow));
+      state.deck = state.deck.filter((c) => !isLow(c));
       state.usedCards = state.usedCards.filter((c) => !isLow(c));
-      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + count;
     });
   }
   if (eff.type === "forgeAce") {
@@ -4957,7 +5162,7 @@ function useItem(itemUid) {
     const idsToDestroy = state.selected.slice(0, eff.maxCards);
     activateCharmSlide(item, () => {
       const earned = idsToDestroy.length * eff.pricePerCard;
-      state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + idsToDestroy.length;
+      noteDestroyed(state.hand.filter((c) => idsToDestroy.includes(c.id)));
       state.hand = state.hand.filter((c) => !idsToDestroy.includes(c.id));
       state.deck = state.deck.filter((c) => !idsToDestroy.includes(c.id));
       state.selected = state.selected.filter((id) => !idsToDestroy.includes(id));
@@ -5170,6 +5375,9 @@ function useItem(itemUid) {
 }
 
 function leaveShop() {
+  state.charms.filter((c) => c.effect.type === "vaultCopyItem").forEach(() => {
+    if (state.items.length) state.items = [...state.items, { ...randomOf(state.items), uid: newUid(), cameraSaves: 0 }];
+  });
   goNextBlind();
 }
 
@@ -6325,6 +6533,9 @@ function GearDetail() {
     let extra = "";
     if (def.effect.type === "ratchetBossMult") extra = ` (currently +${def.ratchetBonus || 0})`;
     if (def.effect.type === "oracleCompoundMult") extra = ` (currently X${(def.oracleMultBonus || 1).toFixed(2)})`;
+    if (def.effect.type === "saintFaceDestroyedX") extra = ` (currently X${def.saintX || 1})`;
+    if (def.effect.type === "lanternDiscardX") extra = ` (currently X${1 + Math.floor((def.lanternDiscards || 0) / def.effect.per)}, ${def.effect.per - ((def.lanternDiscards || 0) % def.effect.per)} discards to go)`;
+    if (def.effect.type === "mirrorsAddedX") extra = ` (currently X${(1 + (state.cardsAddedRun || 0) * def.effect.value).toFixed(1)})`;
     card.innerHTML = `
       <div class="detail-art">${AnteArt.icon(def)}</div>
       <div class="shop-detail-type">${d.kind === "charm" ? "ARTIFACT" : "ITEM"}</div>
