@@ -6141,7 +6141,7 @@ function ShelfGroup(kind, list, slots, width, title) {
     const v = document.createElement("button");
     v.className = "shelf-vouchers";
     v.textContent = `${state.vouchers.length} upgrade${state.vouchers.length > 1 ? "s" : ""}`;
-    v.onclick = () => { state.gearDetail = { kind: "vouchers" }; render(); };
+    v.onclick = () => { state.gearDetail = { kind: "vouchers", at: Date.now() }; render(); };
     label.appendChild(v);
   }
   group.appendChild(label);
@@ -6270,7 +6270,7 @@ function attachShelfDrag(piece, kind, def) {
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
       if (!drag) {
-        state.gearDetail = { kind, uid: def.uid };
+        state.gearDetail = { kind, uid: def.uid, at: Date.now() };
         render();
         return;
       }
@@ -6303,7 +6303,14 @@ function GearDetail() {
   const close = () => { state.gearDetail = null; render(); };
   const backdrop = document.createElement("div");
   backdrop.className = "shop-detail-backdrop";
-  backdrop.onclick = (e) => { if (e.target === backdrop) close(); };
+  // The detail opens on pointerup, and that same tap's click then lands on
+  // this freshly drawn backdrop. Ignore backdrop taps for a moment so it
+  // doesn't close the instant it opens.
+  backdrop.onclick = (e) => {
+    if (e.target !== backdrop) return;
+    if (Date.now() - (d.at || 0) < 450) return;
+    close();
+  };
   const card = document.createElement("div");
   card.className = "shop-detail-card";
 
