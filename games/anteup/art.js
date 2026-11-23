@@ -3,7 +3,7 @@
 
    Every picture is drawn on a 64x64 canvas with the same ink outline, so the
    whole set reads as one illustrated family. AnteArt.icon(def) picks the
-   drawing by the def's type ("charm", "item" or a voucher) and id; anything
+   drawing by the def's type ("charm", "item", "pack" or "voucher") and id; anything
    without its own drawing falls back to a gem tinted with the def's color. */
 (function () {
   "use strict";
@@ -185,6 +185,7 @@
     ornatePack: packet("#6e3a68", seal(32, 32, 8, "#C0392B", "")),
     celestialPack: packet("#2f4a8a", `<circle cx="32" cy="32" r="8" fill="#22305a" ${T}/>` + sparkle(32, 32, 5, "#fff")),
     legendPack: packet("#E8743B", star5(32, 32, 9, "#F6D35B")),
+    spectralPack: packet("#3b3f8f", `<path d="M25 40 V31 Q25 23 32 23 Q39 23 39 31 V40 L36.5 37.5 L34 40 L32 37.5 L30 40 L27.5 37.5Z" fill="#e8eeff" ${T}/><circle cx="29.5" cy="30.5" r="1.4" fill="${INK}"/><circle cx="34.5" cy="30.5" r="1.4" fill="${INK}"/>`),
   };
 
   // ---------- items (consumables) ----------
@@ -267,20 +268,6 @@
     bountyContract: scroll("#EAD9B0", false) + txt(34, 32, 8, "WANTED", INK) + `<path d="M24 38 L42 38" ${N} ${T}/>` + seal(44, 44, 6, "#C0392B", ""),
   };
 
-  // ---------- vouchers (permanent upgrades, drawn as stamped tickets) ----------
-  const voucherTicket = (fill, art) => `<path d="M6 14 H58 V24 Q52 32 58 40 V50 H6 V40 Q12 32 6 24Z" fill="${fill}" ${O}/><path d="M6 14 H58 V50 H6Z" ${N} stroke="rgba(255,255,255,.35)" stroke-width="1" transform="translate(0 0)"/>` + art;
-  const VOUCHERS = {
-    largerAbdomen: voucherTicket("#e9d9b8", playingCard(16, 20, 12, 18, -10) + playingCard(26, 19, 12, 18, 0) + playingCard(36, 20, 12, 18, 10) + plus(50, 24, 4)),
-    liquidAssets: voucherTicket("#cfe6d6", `<path d="M32 20 Q40 30 40 36 Q40 44 32 44 Q24 44 24 36 Q24 30 32 20Z" fill="#4a90d9" ${O}/>` + txt(32, 40, 8, "$", "#fff")),
-    moreOre: voucherTicket("#e3dbcd", `<path d="M20 44 L24 28 L34 22 L44 30 L44 44Z" fill="#6c757d" ${O}/>` + gem(30, 34, 5, "#E8C04A") + gem(40, 38, 4, "#3FA9A0")),
-    overstock: voucherTicket("#f0e0c0", `<rect x="18" y="32" width="12" height="12" fill="#b07c44" ${T}/><rect x="32" y="32" width="12" height="12" fill="#b07c44" ${T}/><rect x="25" y="20" width="12" height="12" fill="#c99560" ${T}/>` + plus(50, 24, 4)),
-    doubleDown: voucherTicket("#f5d6cf", `<path d="M24 22 V42 L16 34 M24 42 L32 34" ${N} ${O}/>` + txt(42, 38, 13, "+1", "#C0392B")),
-    bankruptcy: voucherTicket("#e6dad6", `<path d="M16 44 H44 L40 24 H20Z" fill="#8a96a3" ${O}/><path d="M22 18 L26 24 M30 16 V24 M38 18 L34 24" ${N} ${T}/>` + plus(50, 24, 4)),
-    compoundInterest: voucherTicket("#e5efd5", coin(24, 36, 7) + coin(36, 30, 7) + arrowUp(48, 32, 7)),
-    cardSharp: voucherTicket("#e8e0f2", playingCard(18, 18, 16, 24, -12, spade(26, 30, 4)) + `<path d="M36 44 L52 20" ${N} stroke="${INK}" stroke-width="3.4" stroke-linecap="round"/><path d="M36 44 L52 20" ${N} stroke="#c9ccd0" stroke-width="1.6" stroke-linecap="round"/>`),
-    clearanceSale: voucherTicket("#f6e1b6", `<path d="M18 24 H34 L46 36 L36 46 L18 28Z" fill="#E35D5B" ${O}/><circle cx="23" cy="28" r="2" fill="#f6e1b6" ${T}/>` + txt(34, 38, 8, "25%", "#fff")),
-    clairvoyance: voucherTicket("#ddd6f2", `<path d="M14 32 Q32 14 50 32 Q32 50 14 32Z" fill="#fff" ${O}/><circle cx="32" cy="32" r="7" fill="#7E57C2" ${O}/><circle cx="32" cy="32" r="3" fill="${INK}"/>${shine(30, 30, 1, 1.6, 0)}`),
-  };
 
   /* Charms are the run's permanent artifacts, so they get a more serious
      treatment than the consumables: the same drawing re-inked as an engraving
@@ -323,6 +310,134 @@
       `<g transform="translate(32 32) scale(.74) translate(-32 -32)">${engrave(inner, legendary ? 0.45 : 0.22)}</g></svg>`;
   }
 
+  // ---------- vouchers: every one is the same coupon card ----------
+  // A paper coupon with a coloured sunburst window, the voucher's own emblem
+  // in it, and a perforated stub. Upgrades (tier 2) are printed on gold foil.
+  // Emblems are drawn on the usual 64x64 canvas.
+  const awning = (y, a, b) => [0, 1, 2, 3, 4, 5].map((i) => `<rect x="${10 + i * 7.33}" y="${y}" width="7.4" height="10" fill="${i % 2 ? b : a}"/>`).join("") +
+    `<rect x="10" y="${y}" width="44" height="10" ${N} ${O}/>` + [0, 1, 2, 3, 4, 5].map((i) => `<path d="M${10 + i * 7.33} ${y + 10} a3.66 3.66 0 0 0 7.33 0Z" fill="${i % 2 ? b : a}" ${T}/>`).join("");
+  const tag = (fill, label) => `<path d="M10 22 H34 L52 36 L34 50 H10Z" transform="rotate(-18 32 36)" fill="${fill}" ${O}/><circle cx="16" cy="30" r="2.6" fill="#f6e1b6" ${T} transform="rotate(-18 32 36)"/>` + `<g transform="rotate(-18 32 36)">${txt(30, 40, 11, label, "#fff")}</g>`;
+  const chip = (x, y, fill) => `<ellipse cx="${x}" cy="${y + 3}" rx="11" ry="4.5" fill="${fill}" ${O}/><rect x="${x - 11}" y="${y - 1}" width="22" height="4" fill="${fill}"/><ellipse cx="${x}" cy="${y}" rx="11" ry="4.5" fill="${fill}" ${O}/><ellipse cx="${x}" cy="${y}" rx="6" ry="2.3" ${N} stroke="#fff" stroke-width="1.4" stroke-dasharray="2 2"/>`;
+  const VOUCHER_ART = {
+    overstock: awning(12, "#E35D5B", "#F5EEDC") + `<path d="M14 26 V50 M50 26 V50" ${N} ${O}/><rect x="10" y="40" width="44" height="12" rx="2" fill="#b07c44" ${O}/>` + gem(22, 34, 5, "#3FA9A0") + coin(32, 34, 5) + gem(42, 34, 5, "#9b5fc0") + plus(52, 12, 5),
+    warehouse: `<path d="M8 28 L32 12 L56 28 V54 H8Z" fill="#C0623A" ${O}/><path d="M8 28 L32 12 L56 28" ${N} stroke="#8a3f22" stroke-width="3"/><rect x="20" y="32" width="24" height="22" fill="#e9c58a" ${O}/><path d="M20 32 L44 54 M44 32 L20 54" ${N} ${O}/><circle cx="32" cy="23" r="3.5" fill="#fff6dc" ${T}/>` + plus(54, 12, 5),
+    clearanceSale: tag("#E35D5B", "25%"),
+    fireSale: flame(46, 16, 10) + tag("#E8743B", "50%") + flame(14, 52, 7),
+    haggler: die(24, 38, 22, 5, "#F5EEDC", INK, -12) + coin(44, 22, 11, "#E8C04A", "−2"),
+    silverTongue: `<path d="M10 14 H54 Q58 14 58 18 V38 Q58 42 54 42 H30 L18 52 L21 42 H10 Q6 42 6 38 V18 Q6 14 10 14Z" fill="#e6eef2" ${O}/>` + coin(32, 28, 9, "#cfd8dc", "−2") + sparkle(52, 10, 5, "#fff"),
+    doubleDown: playingCard(14, 18, 20, 28, -12, heart(24, 32, 4)) + playingCard(30, 16, 20, 28, 8, spade(40, 30, 4)) + plus(50, 46, 6),
+    allIn: chip(22, 46, "#3866B8") + chip(22, 39, "#D2453B") + chip(22, 32, "#E8C04A") + chip(42, 46, "#3FA9A0") + chip(42, 39, "#3866B8") + `<path d="M8 22 Q32 6 56 22" ${N} stroke="${INK}" stroke-width="5" stroke-linecap="round"/><path d="M8 22 Q32 6 56 22" ${N} stroke="#F5EEDC" stroke-width="2.6" stroke-linecap="round"/><path d="M50 15 L57 23 L47 25" fill="#F5EEDC" ${O}/>`,
+    bankruptcy: playingCard(18, 10, 16, 22, -18) + playingCard(30, 8, 16, 22, 14) + `<path d="M14 26 H50 L46 56 H18Z" fill="#8a96a3" ${O}/><path d="M11 22 H53 V27 H11Z" fill="#a9b4be" ${O}/><path d="M24 32 L25 50 M32 32 V50 M40 32 L39 50" ${N} ${T} opacity=".6"/>`,
+    scrapHeap: playingCard(10, 30, 16, 22, -32) + playingCard(36, 30, 16, 22, 28) + playingCard(24, 32, 16, 22, -4) + `<path d="M18 18 A16 16 0 0 1 46 18" ${N} stroke="${INK}" stroke-width="5" stroke-linecap="round"/><path d="M18 18 A16 16 0 0 1 46 18" ${N} stroke="#7FD08A" stroke-width="2.6" stroke-linecap="round"/><path d="M42 10 L50 19 L39 21Z" fill="#7FD08A" ${O}/>`,
+    largerAbdomen: playingCard(10, 20, 16, 24, -16) + playingCard(24, 16, 16, 24, 0) + playingCard(38, 20, 16, 24, 16) + plus(32, 50, 6),
+    deepPockets: playingCard(18, 6, 16, 24, -10, diamond(26, 18, 4)) + playingCard(30, 6, 16, 24, 10, club(38, 18, 4)) + `<path d="M10 22 H54 V40 Q54 56 32 58 Q10 56 10 40Z" fill="#4a6fb3" ${O}/><path d="M10 22 H54" ${N} stroke="#E8C04A" stroke-width="2.4"/><path d="M14 27 V40 Q14 52 32 54 Q50 52 50 40 V27" ${N} stroke="#E8C04A" stroke-width="1.4" stroke-dasharray="3 2.4"/>`,
+    moreOre: `<path d="M12 54 L18 34 L32 26 L48 32 L54 54Z" fill="#6c757d" ${O}/>` + gem(26, 42, 5, "#E8C04A") + gem(40, 46, 4, "#3FA9A0") + `<g transform="rotate(-35 40 20)"><rect x="38" y="8" width="4" height="26" rx="1.5" fill="#b07c44" ${O}/><path d="M26 12 Q40 2 54 12 L50 13 Q40 7 30 13Z" fill="#a9b4be" ${O}/></g>`,
+    motherLode: gem(20, 38, 10, "#3FA9A0") + gem(44, 38, 10, "#9b5fc0") + gem(32, 26, 13, "#E8C04A") + sparkle(52, 14, 5) + sparkle(12, 18, 4),
+    displayCase: `<rect x="16" y="46" width="32" height="10" rx="2" fill="#7a5836" ${O}/><rect x="18" y="12" width="28" height="34" fill="#dfeef0" opacity=".55" ${O}/>` + gem(32, 30, 8, "#9b5fc0") + `<path d="M22 16 L28 22 M38 14 L44 20" ${N} stroke="#fff" stroke-width="2" stroke-linecap="round"/>` + plus(50, 14, 5),
+    grandGallery: `<path d="M8 22 L32 8 L56 22Z" fill="#e9dcc0" ${O}/><rect x="8" y="22" width="48" height="5" fill="#d8c290" ${O}/>` + [14, 26, 38, 50].map((x) => `<rect x="${x - 3}" y="27" width="6" height="22" fill="#f1e6c8" ${T}/>`).join("") + `<rect x="6" y="49" width="52" height="6" fill="#d8c290" ${O}/>` + gem(32, 16, 3.5, "#9b5fc0"),
+    liquidAssets: `<path d="M32 8 Q46 26 46 38 Q46 52 32 52 Q18 52 18 38 Q18 26 32 8Z" fill="#4A90D9" ${O}/>` + txt(32, 45, 17, "$", "#fff") + shine(25, 32, 2.4, 6, 20),
+    trustFund: `<path d="M8 22 L32 8 L56 22Z" fill="#E8C04A" ${O}/><rect x="8" y="22" width="48" height="5" fill="#d9b03c" ${O}/>` + [15, 25, 39, 49].map((x) => `<rect x="${x - 3}" y="27" width="6" height="20" fill="#f1e6c8" ${T}/>`).join("") + `<rect x="6" y="47" width="52" height="7" fill="#d8c290" ${O}/>` + coin(32, 37, 7),
+    piggyBank: `<ellipse cx="32" cy="36" rx="20" ry="15" fill="#F2A7BD" ${O}/><path d="M16 26 L14 16 L24 22Z" fill="#F2A7BD" ${O}/><ellipse cx="51" cy="37" rx="5" ry="6" fill="#e88ba6" ${O}/><circle cx="50" cy="36" r="1" fill="${INK}"/><circle cx="52" cy="38" r="1" fill="${INK}"/><circle cx="42" cy="30" r="1.8" fill="${INK}"/><path d="M20 49 V55 M42 49 V55" ${N} stroke="${INK}" stroke-width="5" stroke-linecap="round"/><rect x="26" y="20" width="12" height="3" rx="1.5" fill="${INK}"/>` + coin(32, 11, 6),
+    goldenGoose: `<ellipse cx="32" cy="36" rx="15" ry="19" fill="#F2C94C" ${O}/>` + shine(26, 28, 3, 8, 20) + `<path d="M22 50 Q32 56 42 50" ${N} stroke="#c99a1e" stroke-width="2"/>` + sparkle(52, 16, 6) + sparkle(12, 24, 4) + sparkle(50, 50, 4),
+    compoundInterest: coin(20, 44, 8) + coin(32, 36, 8) + coin(44, 28, 8) + arrowUp(48, 14, 7),
+    windfall: `<path d="M14 24 Q8 24 8 18 Q8 11 16 12 Q18 4 28 6 Q34 0 42 6 Q52 4 54 12 Q60 14 58 20 Q57 24 52 24Z" fill="#e6eef2" ${O}/>` + coin(18, 36, 6) + coin(34, 44, 7) + coin(48, 34, 6) + coin(24, 54, 5),
+    cardSharp: playingCard(12, 14, 20, 30, -12, spade(22, 29, 5)) + `<path d="M30 50 L52 16" ${N} stroke="${INK}" stroke-width="5" stroke-linecap="round"/><path d="M30 50 L52 16" ${N} stroke="#c9ccd0" stroke-width="2.6" stroke-linecap="round"/><path d="M27 54 L34 44" ${N} stroke="${INK}" stroke-width="6" stroke-linecap="round"/><path d="M27 54 L34 44" ${N} stroke="#8a5a2b" stroke-width="3.4" stroke-linecap="round"/>`,
+    pawnKing: `<path d="M14 30 L18 12 L26 22 L32 8 L38 22 L46 12 L50 30Z" fill="#E8C04A" ${O}/><circle cx="32" cy="8" r="2.6" fill="#D2453B" ${T}/>` + coin(32, 44, 12),
+    clairvoyance: `<path d="M8 32 Q32 8 56 32 Q32 56 8 32Z" fill="#fff" ${O}/><circle cx="32" cy="32" r="10" fill="#7E57C2" ${O}/><circle cx="32" cy="32" r="4" fill="${INK}"/>` + shine(29, 29, 1.6, 2.4, 0) + sparkle(52, 12, 4) + sparkle(12, 52, 3.5),
+    starMap: `<circle cx="32" cy="32" r="24" fill="#24325c" ${O}/><path d="M18 40 L26 24 L38 30 L46 18 M38 30 L42 44" ${N} stroke="#cfe0ff" stroke-width="1.4" stroke-dasharray="2 2"/>` + star5(18, 40, 4) + star5(26, 24, 4.5) + star5(38, 30, 4) + star5(46, 18, 5) + star5(42, 44, 3.5),
+    timeWarp: hourglassShape("#5C6BC0", "#5C6BC0") + `<path d="M50 44 A20 20 0 0 1 12 40" ${N} stroke="${INK}" stroke-width="4.6" stroke-linecap="round"/><path d="M50 44 A20 20 0 0 1 12 40" ${N} stroke="#E8C04A" stroke-width="2.2" stroke-linecap="round"/><path d="M8 34 L12 44 L18 36Z" fill="#E8C04A" ${O}/>`,
+    rewind: `<circle cx="32" cy="34" r="20" fill="#F5EEDC" ${O}/><circle cx="32" cy="34" r="16" ${N} ${T} opacity=".4"/><path d="M32 34 V22 M32 34 L24 39" ${N} stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/><circle cx="32" cy="34" r="2" fill="${INK}"/>` +
+      `<path d="M20 10 A26 26 0 0 0 7 26" ${N} stroke="${INK}" stroke-width="4.6" stroke-linecap="round"/><path d="M20 10 A26 26 0 0 0 7 26" ${N} stroke="#E8C04A" stroke-width="2.2" stroke-linecap="round"/><path d="M2 22 L7 31 L13 23Z" fill="#E8C04A" ${O}/>`,
+  };
+  let voucherSeq = 0;
+  // A voucher coupon on a 64x86 canvas.
+  function voucher(def, cls = "") {
+    const id = "vch" + ++voucherSeq;
+    const gold = def.tier === 2;
+    const col = def.color || "#9b5fc0";
+    const paper = gold ? ["#FBE7A1", "#D9A93A"] : ["#F7EBCD", "#E0C994"];
+    const rays = Array.from({ length: 16 }, (_, i) => {
+      const a = (i / 16) * Math.PI * 2, b = a + Math.PI / 16;
+      return `<path d="M32 31 L${(32 + Math.cos(a) * 60).toFixed(1)} ${(31 + Math.sin(a) * 60).toFixed(1)} L${(32 + Math.cos(b) * 60).toFixed(1)} ${(31 + Math.sin(b) * 60).toFixed(1)}Z" fill="#fff" opacity=".13"/>`;
+    }).join("");
+    const art = VOUCHER_ART[def.id] || gem(32, 34, 18, col);
+    return `<svg class="aart voucher-art${gold ? " tier2" : ""} ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<defs><linearGradient id="${id}p" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${paper[0]}"/><stop offset="1" stop-color="${paper[1]}"/></linearGradient>` +
+      `<radialGradient id="${id}w" cx=".5" cy=".42" r=".75"><stop offset="0" stop-color="${col}"/><stop offset="1" stop-color="${enamel(col, 0.55)}"/></radialGradient>` +
+      `<clipPath id="${id}c"><rect x="7" y="7" width="50" height="49" rx="4"/></clipPath><clipPath id="${id}k"><rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6"/></clipPath>` +
+      `<mask id="${id}m"><rect width="64" height="86" fill="#fff"/><circle cx="1" cy="61" r="4.2" fill="#000"/><circle cx="63" cy="61" r="4.2" fill="#000"/></mask></defs>` +
+      `<g mask="url(#${id}m)"><rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="url(#${id}p)" stroke="${INK}" stroke-width="2.2"/>` +
+      `<rect x="4" y="4" width="56" height="78" rx="4" fill="none" stroke="${gold ? "#8a6410" : "#a88a52"}" stroke-width=".8" stroke-dasharray="${gold ? "none" : "1.6 1.6"}"/></g>` +
+      `<g clip-path="url(#${id}c)"><rect x="7" y="7" width="50" height="49" fill="url(#${id}w)"/>${rays}<circle cx="32" cy="31" r="17" fill="#fff" opacity=".18"/>` +
+      `<g transform="translate(32 31.5) scale(.74) translate(-32 -32)">${art}</g></g>` +
+      `<rect x="7" y="7" width="50" height="49" rx="4" fill="none" stroke="${INK}" stroke-width="1.6"/>` +
+      [[7, 7], [57, 7], [7, 56], [57, 56]].map(([x, y]) => `<path d="M${x} ${y - 2.4} L${x + 2.4} ${y} L${x} ${y + 2.4} L${x - 2.4} ${y}Z" fill="${gold ? "#fff3c4" : "#E8C04A"}" stroke="${INK}" stroke-width=".8"/>`).join("") +
+      `<path d="M6 61 H58" stroke="${INK}" stroke-width="1" stroke-dasharray="2 2" opacity=".55"/>` +
+      `<text x="32" y="71.5" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="7.2" letter-spacing="1.6" fill="${gold ? "#5a3e08" : "#5a4526"}">VOUCHER</text>` +
+      (gold
+        ? star5(26, 77.5, 3, "#fff3c4", 0.45).replace(/stroke-width="2.2"/, 'stroke-width="1"') + star5(38, 77.5, 3, "#fff3c4", 0.45).replace(/stroke-width="2.2"/, 'stroke-width="1"')
+        : star5(32, 77.5, 3, col, 0.45).replace(/stroke-width="2.2"/, 'stroke-width="1"')) +
+      (gold ? `<g clip-path="url(#${id}k)"><path d="M-4 30 L30 -4 H40 L-4 40Z" fill="#fff" opacity=".28"/><path d="M30 90 L68 52 V62 L40 90Z" fill="#fff" opacity=".22"/></g>` : `<path d="M10 9 Q12 30 10 52" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".3"/>`) +
+      `</svg>`;
+  }
+
+  // ---------- spectral cards: every one is the same ghostly card ----------
+  // A dark indigo card with a misty glow, a ring of faint runes, the card's
+  // own emblem in pale light, and its name band. Rare ones have a gold edge.
+  const ghost = (x, y, s, fill = "#e8eeff") =>
+    `<path d="M${x - s} ${y + s * 1.1} V${y} Q${x - s} ${y - s * 1.2} ${x} ${y - s * 1.2} Q${x + s} ${y - s * 1.2} ${x + s} ${y} V${y + s * 1.1} L${x + s * 0.6} ${y + s * 0.8} L${x + s * 0.2} ${y + s * 1.1} L${x - s * 0.2} ${y + s * 0.8} L${x - s * 0.6} ${y + s * 1.1}Z" fill="${fill}" ${O}/>` +
+    `<circle cx="${x - s * 0.35}" cy="${y - s * 0.1}" r="${s * 0.16}" fill="${INK}"/><circle cx="${x + s * 0.35}" cy="${y - s * 0.1}" r="${s * 0.16}" fill="${INK}"/>`;
+  const skull = (x, y, s) => `<path d="M${x - s} ${y} Q${x - s} ${y - s * 1.1} ${x} ${y - s * 1.1} Q${x + s} ${y - s * 1.1} ${x + s} ${y} Q${x + s} ${y + s * 0.5} ${x + s * 0.55} ${y + s * 0.6} V${y + s * 0.95} H${x - s * 0.55} V${y + s * 0.6} Q${x - s} ${y + s * 0.5} ${x - s} ${y}Z" fill="#efe9da" ${O}/><circle cx="${x - s * 0.4}" cy="${y - s * 0.05}" r="${s * 0.25}" fill="${INK}"/><circle cx="${x + s * 0.4}" cy="${y - s * 0.05}" r="${s * 0.25}" fill="${INK}"/>`;
+  const SPECTRALS = {
+    kinfolk: playingCard(12, 18, 16, 24, -14, txt(20, 34, 10, "J")) + playingCard(24, 14, 16, 24, 0, txt(32, 30, 10, "Q")) + playingCard(36, 18, 16, 24, 14, txt(44, 34, 10, "K")) + ghost(32, 48, 7),
+    bonePact: skull(32, 30, 13) + playingCard(8, 34, 14, 20, -18, txt(15, 48, 10, "A")) + playingCard(42, 34, 14, 20, 18, txt(49, 48, 10, "A")),
+    chorus: [10, 22, 34, 46].map((x, i) => playingCard(x, 20 + (i % 2) * 4, 12, 18, (i - 1.5) * 8, txt(x + 6, 33 + (i % 2) * 4, 8, String(i * 2 + 3)))).join("") + `<path d="M14 14 Q32 4 50 14" ${N} stroke="#cfe0ff" stroke-width="1.6" stroke-dasharray="2 2"/>` + sparkle(32, 50, 5, "#cfe0ff"),
+    paupersPact: bag(32, 30, 18, "#8a7a62", "", "#5a4a32") + `<path d="M20 46 L44 30 M44 46 L20 30" ${N} stroke="#D2453B" stroke-width="4" stroke-linecap="round"/>` + gem(32, 12, 5, "#9b5fc0"),
+    seance: `<circle cx="32" cy="34" r="20" fill="#24325c" ${O}/>` + ["A", "7", "K", "3", "Q", "9"].map((t, i) => { const a = (i / 6) * Math.PI * 2 - Math.PI / 2; return txt(32 + Math.cos(a) * 14, 37 + Math.sin(a) * 14, 7, t, "#cfe0ff"); }).join("") + `<path d="M26 28 L38 28 L32 40Z" fill="#E8C04A" ${O}/>`,
+    phantomLimb: `<path d="M16 50 Q14 30 22 22 L26 14 Q28 10 31 13 L30 24 L36 12 Q39 9 41 13 L37 26 L44 16 Q47 13 49 17 L42 32 Q48 38 44 48Z" fill="#cfe9e4" opacity=".85" ${O}/>` + plus(50, 46, 6),
+    pyre: [14, 24, 34, 44].map((x, i) => playingCard(x - 4, 30, 12, 18, (i - 1.5) * 10)).join("") + flame(32, 26, 16) + `<rect x="10" y="48" width="44" height="6" rx="2" fill="#7a5836" ${O}/>`,
+    effigy: `<circle cx="32" cy="16" r="7" fill="#d8b98a" ${O}/><path d="M22 26 H42 L46 40 H38 L40 56 H24 L26 40 H18Z" fill="#c09a68" ${O}/><path d="M26 30 L38 38 M38 30 L26 38" ${N} ${T}/>` + gem(50, 18, 5, "#9b5fc0") + gem(14, 18, 5, "#9b5fc0"),
+    shroud: `<path d="M12 54 Q10 26 32 12 Q54 26 52 54 Q46 48 42 54 Q37 48 32 54 Q27 48 22 54 Q17 48 12 54Z" fill="#dfe7f2" opacity=".9" ${O}/>` + sparkle(24, 30, 4, "#9fb8ff") + sparkle(40, 36, 5, "#FFD45E") + sparkle(30, 44, 3, "#ff9fc0"),
+    exorcism: `<rect x="29" y="8" width="6" height="46" rx="1.5" fill="#E8C04A" ${O}/><rect x="18" y="20" width="28" height="6" rx="1.5" fill="#E8C04A" ${O}/>` + ghost(50, 46, 7, "#e8eeff") + `<path d="M40 52 L44 48" ${N} ${T}/>`,
+    revenant: ghost(32, 34, 16) + `<path d="M10 20 A24 24 0 0 1 30 8" ${N} stroke="${INK}" stroke-width="4.6" stroke-linecap="round"/><path d="M10 20 A24 24 0 0 1 30 8" ${N} stroke="#7FD08A" stroke-width="2.2" stroke-linecap="round"/><path d="M26 3 L33 8 L26 13Z" fill="#7FD08A" ${O}/>`,
+    hollowCrown: `<path d="M12 44 L16 18 L25 30 L32 14 L39 30 L48 18 L52 44Z" fill="none" stroke="${INK}" stroke-width="6" stroke-linejoin="round"/><path d="M12 44 L16 18 L25 30 L32 14 L39 30 L48 18 L52 44Z" fill="none" stroke="#E8C04A" stroke-width="3" stroke-linejoin="round"/><rect x="12" y="44" width="40" height="7" rx="2" fill="#E8C04A" ${O}/>`,
+    wispLantern: `<path d="M26 10 H38 L36 16 H28Z" fill="#7a5836" ${O}/><path d="M22 18 H42 L40 48 H24Z" fill="#dff6fa" opacity=".75" ${O}/><rect x="20" y="48" width="24" height="6" rx="2" fill="#7a5836" ${O}/>` + flame(32, 34, 8).replace(/#F29A2E/g, "#7fd0e0").replace(/#FFE07A/g, "#e8fbff"),
+    soulShard: `<path d="M32 6 L46 30 L32 58 L18 30Z" fill="#F2A65A" ${O}/><path d="M32 6 L32 58 M18 30 H46" ${N} ${T} opacity=".5"/>` + shine(27, 24, 2.4, 7, 20) + sparkle(50, 12, 5) + sparkle(12, 48, 4),
+    eventHorizon: `<circle cx="32" cy="32" r="22" fill="#f6c445" opacity=".35"/><ellipse cx="32" cy="32" rx="26" ry="8" fill="none" stroke="#F6C445" stroke-width="3" transform="rotate(-18 32 32)"/><circle cx="32" cy="32" r="13" fill="#05060c" ${O}/><ellipse cx="32" cy="32" rx="26" ry="8" fill="none" stroke="#FFE28A" stroke-width="1.2" stroke-dasharray="20 60" transform="rotate(-18 32 32)"/>`,
+  };
+  let spectralSeq = 0;
+  function spectral(def, cls = "") {
+    const id = "spc" + ++spectralSeq;
+    const rare = !!def.rare;
+    const col = def.color || "#8f9bff";
+    const art = SPECTRALS[def.id] || ghost(32, 34, 16);
+    const runes = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(32 + Math.cos(a) * 23).toFixed(1)} ${(34 + Math.sin(a) * 23).toFixed(1)} l2 -3 l2 3" fill="none" stroke="#b9c6ff" stroke-width=".9" opacity=".55"/>`; }).join("");
+    return `<svg class="aart spectral-art ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<defs><linearGradient id="${id}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2f66"/><stop offset="1" stop-color="#0f1130"/></linearGradient>` +
+      `<radialGradient id="${id}g" cx=".5" cy=".42" r=".5"><stop offset="0" stop-color="${col}" stop-opacity=".9"/><stop offset=".6" stop-color="${col}" stop-opacity=".18"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></radialGradient>` +
+      `<clipPath id="${id}c"><rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6"/></clipPath></defs>` +
+      `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="url(#${id}b)" stroke="${rare ? "#F2C94C" : INK}" stroke-width="${rare ? 2.6 : 2.2}"/>` +
+      `<g clip-path="url(#${id}c)"><circle cx="32" cy="34" r="34" fill="url(#${id}g)"/>` +
+      `<path d="M-4 70 Q14 58 30 66 T66 60 V90 H-4Z" fill="#b9c6ff" opacity=".12"/><path d="M-4 78 Q20 66 36 74 T66 70 V90 H-4Z" fill="#b9c6ff" opacity=".1"/></g>` +
+      `<rect x="4.5" y="4.5" width="55" height="77" rx="4" fill="none" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".8" opacity=".7"/>` +
+      `<circle cx="32" cy="34" r="25" fill="none" stroke="#b9c6ff" stroke-width=".7" opacity=".5"/>` + runes +
+      `<g transform="translate(32 34) scale(.66) translate(-32 -32)" style="filter:drop-shadow(0 0 3px ${col})">${art}</g>` +
+      `<path d="M8 66 H56 L52 74 H12Z" fill="#0a0c22" stroke="${rare ? "#F2C94C" : "#8f9bff"}" stroke-width=".9"/>` +
+      `<text x="32" y="72.3" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="5.6" letter-spacing="1.6" fill="${rare ? "#F2C94C" : "#cfd8ff"}">SPECTRAL</text>` +
+      [[32, 4.5], [32, 81.5]].map(([x, y]) => `<path d="M${x} ${y - 2.4} L${x + 2.4} ${y} L${x} ${y + 2.4} L${x - 2.4} ${y}Z" fill="${rare ? "#F2C94C" : "#b9c6ff"}" stroke="${INK}" stroke-width=".7"/>`).join("") +
+      `</svg>`;
+  }
+
+  // Major / Mega packs wear a ribbon across the bottom.
+  function packRibbon(size) {
+    if (!size) return "";
+    const mega = size === "mega";
+    const fill = mega ? "#E8C04A" : "#cfd8dc";
+    return `<path d="M6 44 H58 L54 50 L58 56 H6 L10 50Z" fill="${fill}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>` +
+      `<text x="32" y="53.2" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="7.4" letter-spacing="1.4" fill="${INK}">${mega ? "MEGA" : "MAJOR"}</text>` +
+      (mega ? sparkle(54, 40, 4.5, "#FFE28A") + sparkle(10, 40, 3.5, "#FFE28A") : "");
+  }
+
   function wrap(inner, cls = "") {
     return `<svg class="aart ${cls}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><ellipse cx="32" cy="60" rx="20" ry="3" fill="#000" opacity=".22"/>${inner}</svg>`;
   }
@@ -332,11 +447,10 @@
     if (!def) return "";
     if (def.type === "charm" && def.rarity === "legendary") return relic(LEGENDS[def.id] || gem(32, 34, 20, def.color || "#E8743B"), cls, true);
     if (def.type === "charm") return relic(CHARMS[def.id] || gem(32, 34, 20, def.color || "#9b5fc0"), cls);
-    if (def.type === "pack") return wrap(engrave(PACKS[def.id] || packet(def.color || "#C9A227", ""), 0.5), "engraved " + (cls || ""));
+    if (def.type === "pack") return wrap(engrave(PACKS[def.base || def.id] || packet(def.color || "#C9A227", ""), 0.5) + packRibbon(def.size), "engraved " + (cls || ""));
+    if (def.spectral) return spectral(def, cls);
     if (def.type === "item") return wrap(engrave(ITEMS[def.id] || gem(32, 34, 20, def.color || "#9b5fc0"), 0.34), "engraved " + (cls || ""));
-    const bank = VOUCHERS;
-    const inner = bank[def.id] || gem(32, 34, 20, def.color || "#9b5fc0");
-    return wrap(engrave(inner, 0.45), "engraved " + (cls || ""));
+    return voucher(def, cls);
   }
 
   /* ---------- sleeves: drawn plastic sleeves that sit over the card ----------
@@ -398,5 +512,5 @@
     return `<svg class="card-stamp-art" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${seal(32, 32, 26, st.fill, st.glyph)}${shine(24, 22, 3, 7, -40)}</svg>`;
   }
 
-  window.AnteArt = { icon, sleeve, stamp, sleeveLabel: (t) => (SLEEVE_STYLE[t] ? SLEEVE_STYLE[t].label : "") };
+  window.AnteArt = { icon, voucher, spectral, sleeve, stamp, sleeveLabel: (t) => (SLEEVE_STYLE[t] ? SLEEVE_STYLE[t].label : "") };
 })();
