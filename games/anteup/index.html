@@ -798,6 +798,66 @@ html, body {
 .ware-buy:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
 .ware.sold { cursor: default; }
 .ware.sold .ware-art { border: 1.5px dashed #ffffff18; border-radius: 12px; width: 56px; height: 56px; margin: 5px; filter: none; }
+/* ============================== SCORING: CHIPS x MULT ============================== */
+.score-popup { padding: 14px 18px 16px; min-width: 230px; }
+.sp-boxes { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; }
+.sp-box {
+  min-width: 78px; padding: 6px 12px; border-radius: 10px; text-align: center;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 26px; line-height: 1.1; color: #fff;
+  box-shadow: inset 0 -3px 0 #0003, 0 4px 12px -4px #000a;
+}
+.sp-chips { background: linear-gradient(180deg, #3d8ed9, #2a6fb3); }
+.sp-mult { background: linear-gradient(180deg, #e0544a, #b8352c); }
+.sp-x { font-size: 22px; color: #9A917A; font-weight: 700; }
+.sp-box.bump { animation: spBump .22s cubic-bezier(.34,1.56,.64,1); }
+@keyframes spBump { 0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+.score-popup.is-total .sp-boxes { opacity: .7; transform: scale(.88); transition: all .25s ease; }
+.score-popup.is-total .score-popup-total { font-size: 40px; color: #F3ECD9; text-shadow: 0 0 18px #E9C56888; }
+
+/* trigger labels over cards / under artifacts */
+.trig-label {
+  position: fixed; z-index: 160; pointer-events: none; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 15px; line-height: 1;
+  padding: 4px 8px; border-radius: 8px; color: #fff; box-shadow: 0 4px 10px -2px #000b;
+  animation: trigPop .9s cubic-bezier(.22,1,.36,1) forwards;
+}
+.trig-label small { font-family: 'Manrope', sans-serif; font-size: 8.5px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; opacity: .85; margin-top: 2px; }
+.trig-chips { background: #2a6fb3; }
+.trig-mult { background: #b8352c; }
+.trig-xmult { background: #fff; color: #b8352c; border: 2px solid #b8352c; }
+.trig-money { background: #C9A227; color: #2a1d12; }
+.trig-again { background: #E8743B; }
+.trig-info, .trig-base { background: #3a4a38; }
+.trig-use { background: #5f9a7a; }
+@keyframes trigPop {
+  0% { opacity: 0; transform: translateY(6px) scale(.6); }
+  18% { opacity: 1; transform: translateY(0) scale(1.12); }
+  32% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+.card.card-again { animation: cardAgain .35s ease; }
+@keyframes cardAgain { 0%, 100% { filter: none; } 40% { filter: drop-shadow(0 0 10px #E8743B) brightness(1.1); } }
+.shelf-piece.trig-jiggle { animation: trigJiggle .4s ease; z-index: 70 !important; }
+@keyframes trigJiggle {
+  0% { transform: none; } 20% { transform: translateY(-6px) rotate(-8deg) scale(1.12); }
+  45% { transform: translateY(-6px) rotate(7deg) scale(1.12); } 70% { transform: translateY(-2px) rotate(-3deg); } 100% { transform: none; }
+}
+/* using an item: the piece flares and burns away; an artifact flares */
+.shelf-burn { position: fixed; z-index: 150; pointer-events: none; animation: shelfFlare .85s ease forwards; }
+.shelf-burn.is-item { animation: shelfBurn .85s ease forwards; }
+@keyframes shelfFlare {
+  0% { transform: scale(1); filter: drop-shadow(0 0 0 #E9C568); }
+  35% { transform: translateY(-8px) scale(1.25); filter: drop-shadow(0 0 14px #E9C568) brightness(1.3); }
+  100% { transform: scale(1); opacity: 0; }
+}
+@keyframes shelfBurn {
+  0% { transform: scale(1); filter: drop-shadow(0 0 0 #F29A2E); }
+  30% { transform: translateY(-10px) scale(1.3); filter: drop-shadow(0 0 16px #F29A2E) brightness(1.4); }
+  100% { transform: translateY(-26px) scale(.6) rotate(-10deg); opacity: 0; filter: blur(2px) brightness(2); }
+}
+
 /* ============================== BOOSTER PACK SCREEN ============================== */
 .pack-overlay {
   position: fixed; inset: 0; z-index: 90; overflow-y: auto;
@@ -3495,9 +3555,6 @@ function applyCharmEffects(result, cards, charms) {
     }
   });
   
-  // Molt Sleeve: Add mult for each time Molt has visited a card
-  const moltMultBonus = cards.reduce((sum, card) => sum + (card.moltBuff || 0), 0);
-  totalMult += moltMultBonus;
   
   const score = Math.round(totalChips * totalMult);
   return { ...result, totalChips: Math.round(totalChips), totalMult: Math.round(totalMult * 100) / 100, score };
@@ -3988,10 +4045,24 @@ function activationIcon(name) {
 }
 
 function activateCharmSlide(charm, callback) {
-  // Creates a slide-in animation for charm activation
+  // The piece on the shelf lights up and its name pops under it; an item
+  // being used then burns away when the callback consumes it.
   state.activeCharm = charm;
   state.activeCharmStartedAt = Date.now();
   render();
+  const piece = document.querySelector(`.shelf-piece[data-uid="${charm.uid}"]`);
+  if (piece) {
+    spawnTriggerLabel(piece, charm.name, charm.type === "item" ? "use" : "info", "below");
+    const ghost = piece.cloneNode(true);
+    const r = piece.getBoundingClientRect();
+    ghost.className = "shelf-burn" + (charm.type === "item" ? " is-item" : "");
+    ghost.style.left = r.left + "px";
+    ghost.style.top = r.top + "px";
+    ghost.style.width = r.width + "px";
+    ghost.style.height = r.height + "px";
+    document.body.appendChild(ghost);
+    setTimeout(() => ghost.remove(), 900);
+  }
   
   setTimeout(() => {
     // Show charm for 600ms
@@ -4012,6 +4083,270 @@ function activateCharmSlide(charm, callback) {
       }, 300);
     }, 600);
   }, 300);
+}
+
+
+/* ============================== SCORING ENGINE ==============================
+   Works a hand out the way it is shown: as an ordered list of trigger events.
+     1. the hand type's base Chips and Mult
+     2. each scoring card, left to right: its chips, Gold stamp money, Molt
+        marks and every artifact that cares about that card. A retrigger
+        (Crimson stamp, Low Tide, Encore Mask, Eternal Engine, Calculator,
+        The Empress) plays the whole card again, marked "Again!"
+     3. cards held in hand (Duke, Gilded Hand)
+     4. artifacts that act on the whole hand, left to right along the shelf
+     5. next-hand boosts from items, the Boss Blind, the run multiplier
+   Each event carries the running Chips and Mult after it, so the animation
+   can simply step through them. live=false is the preview: no luck rolls. */
+const FACE_RANKS = ["J", "Q", "K"];
+// Artifact effects resolved per scoring card (step 2) or per held card (step 3).
+const PER_CARD_EFFECTS = new Set([
+  "crownFaceCardMult", "prismChipsPerCard", "abacusCardChipsBoost", "blueprintSleeveChips",
+  "midasGoldStampChips", "redThreadCrimsonMult", "curatorStampedCardChips", "spiralRanksMult",
+  "evenRanksMult", "oddRanksChips", "portraitFirstFaceX", "thronesKingQueenX", "hydraSleeveX",
+  "heartstoneChance", "dukeKingMult", "gildedHeldX",
+]);
+// Whole-hand artifact effects that multiply Mult (the rest add).
+const X_EFFECTS = new Set([
+  "pppEncore", "dukeKingMult", "monumentHandTypeMult", "amplifierMultX", "alchemistDoubleMultNoDiscards",
+  "oracleCompoundMult", "zenithLastPlayMult", "cascadeMultPerExtraCard", "solitaireHighCardX", "duetPairX",
+  "checkmateStraightX", "firstHandX", "midnightSunX", "grandLedgerX", "chainsNoDiscardX", "rainbowAllSuitsX",
+  "tidepoolFlushX", "mirrorsAddedX", "saintFaceDestroyedX", "lanternDiscardX",
+]);
+
+function fmtNum(n) {
+  const r = Math.round(n * 100) / 100;
+  return Number.isInteger(r) ? String(r) : r.toFixed(2).replace(/0$/, "");
+}
+
+// Preview: a played hand counts itself before it scores (hands played, hand
+// types this round, Streak, Monument, last play), so the preview does the same
+// on a scratch copy of those counters and then puts them back.
+function previewScore(selectedCards) {
+  const base = evaluateSelection(selectedCards);
+  if (!base) return null;
+  const keys = ["handTypesPlayedThisRound", "handTypeCounts", "streakCounter", "handsPlayedRun", "isLastPlayThisRound", "consecutiveHandsWithoutMostPlayed"];
+  const saved = {};
+  keys.forEach((k) => { saved[k] = state[k]; });
+  try {
+    state.handTypesPlayedThisRound = [...(state.handTypesPlayedThisRound || []), base.name];
+    state.handTypeCounts = { ...(state.handTypeCounts || {}), [base.name]: ((state.handTypeCounts || {})[base.name] || 0) + 1 };
+    state.streakCounter = (state.streakCounter || 0) + 1;
+    state.handsPlayedRun = (state.handsPlayedRun || 0) + 1;
+    state.isLastPlayThisRound = state.playsLeft - 1 === 0;
+    if (state.charms.some((c) => c.effect.type === "monumentHandTypeMult") && state.mostPlayedHandType && base.name !== state.mostPlayedHandType) {
+      state.consecutiveHandsWithoutMostPlayed = (state.consecutiveHandsWithoutMostPlayed || 0) + 1;
+    }
+    return scoreHand(selectedCards, { live: false });
+  } finally {
+    keys.forEach((k) => { state[k] = saved[k]; });
+  }
+}
+
+function scoreHand(selectedCards, { live = false } = {}) {
+  const base = evaluateSelection(selectedCards);
+  if (!base) return null;
+  const hb = HAND_TABLE[base.name];
+  let chips = hb.chips, mult = hb.mult, money = 0;
+  const events = [];
+  const push = (ev) => events.push({ ...ev, chips, mult });
+  push({ target: "hand", kind: "base", text: base.name });
+  if (state.nextHandDoubleBase) {
+    chips += hb.chips; mult += hb.mult;
+    push({ target: "hand", kind: "chips", text: "Double Down" });
+  }
+
+  // scoring cards in the order they sit in the hand
+  const order = getSortedHand().map((c) => c.id);
+  const cards = [...base.scoringCards].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const charms = state.charms;
+  const has = (type) => charms.find((c) => c.effect.type === type);
+  const calc = has("calculatorReplay");
+  const calculatorFires = live && calc && Math.random() < Math.min(1, calc.effect.chance * chanceMultiplier());
+  const heart = has("heartstoneChance");
+  let portraitCardId = null;
+  const firstFace = cards.find((c) => !isCardDebuffed(c) && FACE_RANKS.includes(c.rank));
+  if (firstFace) portraitCardId = firstFace.id;
+
+  cards.forEach((card) => {
+    if (isCardDebuffed(card)) {
+      push({ target: "card", id: card.id, kind: "info", text: "Debuffed" });
+      return;
+    }
+    // every way this card gets played again
+    const again = [];
+    if (card.stamp === "crimson") again.push({ label: "Crimson" });
+    const engine = has("engineRetrigger");
+    if (engine) again.push({ label: engine.name, uid: engine.uid });
+    const tide = has("lowTideRetrigger");
+    if (tide && ["2", "3", "4", "5"].includes(card.rank)) again.push({ label: tide.name, uid: tide.uid });
+    const mask = has("maskFaceRetrigger");
+    if (mask && FACE_RANKS.includes(card.rank)) again.push({ label: mask.name, uid: mask.uid });
+    if (calculatorFires) again.push({ label: calc.name, uid: calc.uid });
+    if (state.nextHandRetrigger) again.push({ label: "The Empress" });
+
+    [{ label: null }, ...again].forEach((round, k) => {
+      if (k > 0) push({ target: "card", id: card.id, kind: "again", text: "Again!", sub: round.label, from: round.uid });
+      const cardChips = rankChipValue(card.rank) + (card.sleeve === "sparkler" ? 20 : 0);
+      chips += cardChips;
+      push({ target: "card", id: card.id, kind: "chips", text: `+${cardChips}` });
+      if (card.stamp === "gold") {
+        money += 3;
+        push({ target: "card", id: card.id, kind: "money", text: "+$3" });
+      }
+      if (card.moltBuff) {
+        mult += card.moltBuff;
+        push({ target: "card", id: card.id, kind: "mult", text: `+${card.moltBuff} Mult` });
+      }
+      charms.forEach((c) => {
+        const e = c.effect;
+        const addC = (n) => { chips += n; push({ target: "card", id: card.id, kind: "chips", text: `+${fmtNum(n)}`, from: c.uid }); };
+        const addM = (n) => { mult += n; push({ target: "card", id: card.id, kind: "mult", text: `+${fmtNum(n)} Mult`, from: c.uid }); };
+        const xM = (n) => { mult *= n; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(n)} Mult`, from: c.uid }); };
+        switch (e.type) {
+          case "crownFaceCardMult": if (FACE_RANKS.includes(card.rank)) addM(e.value); break;
+          case "prismChipsPerCard": addC(e.value); break;
+          case "abacusCardChipsBoost": addC(Math.round(rankChipValue(card.rank) * e.value)); break;
+          case "blueprintSleeveChips": if (card.sleeve) addC(e.value); break;
+          case "midasGoldStampChips": if (card.stamp === "gold") addC(e.value); break;
+          case "redThreadCrimsonMult": if (card.stamp === "crimson") addM(e.value); break;
+          case "curatorStampedCardChips": if (card.stamp) addC(e.value); break;
+          case "spiralRanksMult": if (["A", "2", "3", "5", "8"].includes(card.rank)) addM(e.value); break;
+          case "evenRanksMult": if (["2", "4", "6", "8", "10"].includes(card.rank)) addM(e.value); break;
+          case "oddRanksChips": if (["A", "3", "5", "7", "9"].includes(card.rank)) addC(e.value); break;
+          case "portraitFirstFaceX": if (card.id === portraitCardId) xM(e.value); break;
+          case "thronesKingQueenX": if (card.rank === "K" || card.rank === "Q") xM(e.value); break;
+          case "hydraSleeveX": if (card.sleeve) xM(e.value); break;
+          case "heartstoneChance":
+            if (live && card.suit === "hearts" && Math.random() < Math.min(1, e.chance * chanceMultiplier())) xM(e.value);
+            break;
+          default: break;
+        }
+      });
+    });
+  });
+  const chipsAfterCards = chips;
+
+  // cards held in hand
+  state.hand.filter((c) => !selectedCards.some((s) => s.id === c.id)).forEach((card) => {
+    if (isCardDebuffed(card)) return;
+    charms.forEach((c) => {
+      const e = c.effect;
+      if (e.type === "dukeKingMult" && card.rank === "K") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
+      if (e.type === "gildedHeldX" && card.stamp === "gold") { mult *= e.value; push({ target: "card", id: card.id, kind: "xmult", text: `X${fmtNum(e.value)} Mult`, from: c.uid, held: true }); }
+    });
+  });
+
+  // whole-hand artifacts, in shelf order
+  charms.forEach((c) => {
+    const e = c.effect;
+    if (PER_CARD_EFFECTS.has(e.type)) return;
+    if (e.type === "gamblerMult") { mult += e.value; push({ target: "charm", uid: c.uid, kind: "mult", text: `+${e.value} Mult` }); return; }
+    const r = applyCharmEffects({ name: base.name, totalChips: chips, totalMult: mult }, cards, [c]);
+    const dc = r.totalChips - Math.round(chips);
+    if (dc) { chips += dc; push({ target: "charm", uid: c.uid, kind: "chips", text: `+${fmtNum(dc)} Chips` }); }
+    if (Math.abs(r.totalMult - mult) > 0.001) {
+      if (X_EFFECTS.has(e.type) && mult) {
+        const x = r.totalMult / mult;
+        mult = r.totalMult;
+        push({ target: "charm", uid: c.uid, kind: "xmult", text: `X${fmtNum(x)} Mult` });
+      } else {
+        const d = r.totalMult - mult;
+        mult = r.totalMult;
+        push({ target: "charm", uid: c.uid, kind: "mult", text: `${d >= 0 ? "+" : ""}${fmtNum(d)} Mult` });
+      }
+    }
+  });
+
+  // items held with a scoring effect (older item kinds)
+  state.items.forEach((it) => {
+    const r = applyItemEffects({ name: base.name, totalChips: chips, totalMult: mult }, cards, [it]);
+    if (r.totalChips !== Math.round(chips)) { const d = r.totalChips - Math.round(chips); chips += d; push({ target: "item", uid: it.uid, kind: "chips", text: `+${d} Chips` }); }
+    if (Math.abs(r.totalMult - mult) > 0.001) { mult = r.totalMult; push({ target: "item", uid: it.uid, kind: "mult", text: "Mult" }); }
+  });
+
+  // next-hand boosts from items used earlier
+  if (state.nextHandChipBonus) { chips += state.nextHandChipBonus; push({ target: "hand", kind: "chips", text: `+${state.nextHandChipBonus} Chips` }); }
+  if (state.nextHandDoubleChips) { chips *= 2; push({ target: "hand", kind: "chips", text: "X2 Chips" }); }
+  if (state.nextHandChipsX && state.nextHandChipsX !== 1) { chips *= state.nextHandChipsX; push({ target: "hand", kind: "chips", text: `X${fmtNum(state.nextHandChipsX)} Chips` }); }
+  if (state.nextHandDoubleMult) { mult *= 2; push({ target: "hand", kind: "xmult", text: "X2 Mult" }); }
+  if (state.nextHandMultX && state.nextHandMultX !== 1) { mult *= state.nextHandMultX; push({ target: "hand", kind: "xmult", text: `X${fmtNum(state.nextHandMultX)} Mult` }); }
+  if (state.nextHandBalance) { const avg = (chips + mult) / 2; chips = avg; mult = avg; push({ target: "hand", kind: "info", text: "Balanced" }); }
+
+  // Boss Blind
+  const boss = state.bossBlind;
+  if (boss && boss.multPenaltyPerCard) {
+    const m2 = Math.max(1, mult - cards.length * boss.multPenaltyPerCard);
+    if (m2 !== mult) { mult = m2; push({ target: "hand", kind: "mult", text: `${boss.name}: -Mult` }); }
+  }
+  if (state.runMultiplier !== 1) push({ target: "hand", kind: "xmult", text: `Run X${fmtNum(state.runMultiplier)}` });
+
+  chips = Math.round(chips);
+  mult = Math.round(mult * 100) / 100;
+  const score = Math.round(chips * mult * state.runMultiplier);
+  return { name: base.name, scoringCards: cards, chips, mult, score, events, money, chipsAfterCards };
+}
+
+// Floating trigger label ("+11", "+4 Mult", "X2 Mult", "+$3", "Again!")
+// above a card or under an artifact. Fixed to <body> so render() can't eat it.
+function spawnTriggerLabel(el, text, kind, where, sub) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const lab = document.createElement("div");
+  lab.className = `trig-label trig-${kind}`;
+  lab.innerHTML = `<span>${text}</span>${sub ? `<small>${sub}</small>` : ""}`;
+  document.body.appendChild(lab);
+  const w = lab.offsetWidth, h = lab.offsetHeight;
+  lab.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, r.left + r.width / 2 - w / 2)) + "px";
+  lab.style.top = (where === "below" ? r.bottom + 4 : r.top - h - 4) + "px";
+  setTimeout(() => lab.remove(), 900);
+}
+
+function jiggleShelfPiece(uid) {
+  const piece = uid && document.querySelector(`.shelf-piece[data-uid="${uid}"]`);
+  if (!piece) return null;
+  piece.classList.remove("trig-jiggle");
+  void piece.offsetWidth;
+  piece.classList.add("trig-jiggle");
+  return piece;
+}
+
+// Steps through a scored hand's events: each one updates the Chips/Mult
+// boxes and pops whatever fired, then the total lands.
+function animateScoring(result, onDone) {
+  const evs = result.events;
+  const delay = Math.max(110, Math.min(360, 520 - evs.length * 14));
+  let i = 0;
+  const first = evs[0];
+  state.popup = { name: result.name, chips: first.chips, mult: first.mult, phase: "counting", score: null };
+  state.popupStartedAt = Date.now();
+  render();
+  const step = () => {
+    if (i >= evs.length) {
+      state.popup = { ...state.popup, chips: result.chips, mult: result.mult, score: result.score, phase: "total" };
+      render();
+      setTimeout(onDone, 700);
+      return;
+    }
+    const ev = evs[i++];
+    state.popup = { ...state.popup, chips: ev.chips, mult: ev.mult, bump: ev.kind };
+    render();
+    if (ev.target === "card") {
+      const el = document.querySelector(`.hand-fan .card[data-card-id="${ev.id}"]`);
+      if (el) {
+        void el.offsetWidth;
+        el.classList.add(ev.kind === "again" ? "card-again" : "card-ping");
+        spawnTriggerLabel(el, ev.text, ev.kind, "above", ev.sub);
+      }
+      jiggleShelfPiece(ev.from);
+    } else if (ev.target === "charm" || ev.target === "item") {
+      spawnTriggerLabel(jiggleShelfPiece(ev.uid), ev.text, ev.kind, "below");
+    } else if (ev.target === "hand" && ev.kind !== "base") {
+      spawnTriggerLabel(document.querySelector(".score-popup .sp-boxes"), ev.text, ev.kind, "below");
+    }
+    setTimeout(step, ev.kind === "again" ? Math.round(delay * 1.2) : delay);
+  };
+  setTimeout(step, 380);
 }
 
 function triggerCharmEffects(result, cards) {
@@ -4078,21 +4413,9 @@ function playHand() {
     }
   }
 
-  const handBaseChips = HAND_TABLE[baseResult.name].chips * (state.nextHandDoubleBase ? 2 : 1);
-  const baseResultMult = withNextHandBase(baseResult).totalMult;
-  state.nextHandDoubleBase = false;
   const scoringCards = baseResult.scoringCards;
   const scoringIds = scoringCards.map((c) => c.id);
-  state.heartstoneHits = 0;
-  const heartstone = state.charms.find((c) => c.effect.type === "heartstoneChance");
-  if (heartstone) {
-    const p = Math.min(1, heartstone.effect.chance * chanceMultiplier());
-    scoringCards.filter((c) => c.suit === "hearts" && !isCardDebuffed(c)).forEach((c) => {
-      for (let k = 0; k < scoringPings(c); k++) if (Math.random() < p) state.heartstoneHits++;
-    });
-  }
   const newPlaysLeft = state.playsLeft - 1;
-  const PING_DELAY = 300;
 
   // Handle Monument: track consecutive hands without most played hand type
   const hasMonument = state.charms.some((c) => c.effect.type === "monumentHandTypeMult");
@@ -4179,138 +4502,25 @@ function playHand() {
   });
 
   state.scoringIds = scoringIds;
-  state.popup = { name: baseResult.name, runningChips: handBaseChips, totalMult: null, score: null, phase: "pinging" };
-  state.popupStartedAt = Date.now();
-  render();
 
-  // Pings each card id in order, one at a time, adding its chip value to the running
-  // total as it goes and popping the card visually. Calls onDone with the final total
-  // once every card in the list has fired. Used both for the initial count and again
-  // for a full re-count if a retrigger effect activates afterward.
-  // A Crimson-stamped card pings itself twice in place (chips + Gold stamp money both
-  // fire twice); a Gold-stamped card pays $3 into state.stampMoneyBonus each time it pings.
-  function pingCards(cardIds, startingChips, onDone) {
-    let running = startingChips;
-    let i = 0;
-    function pingOnce(card, id, cb) {
-      const debuffed = isCardDebuffed(card);
-      const chipsAdded = debuffed ? 0 : rankChipValue(card.rank) + (card.sleeve === "sparkler" ? 20 : 0);
-      running += chipsAdded;
-      if (!debuffed && card.stamp === "gold") {
-        state.stampMoneyBonus = (state.stampMoneyBonus || 0) + 3;
-      }
-      state.popup = { ...state.popup, runningChips: running };
-      render();
-      // render() rebuilds the hand-fan from scratch, so the shake/float must be
-      // applied to the freshly created element AFTER render, not the stale one.
-      const el = document.querySelector(`.hand-fan .card[data-card-id="${id}"]`);
-      if (el) {
-        if (chipsAdded) spawnChipFloat(el, chipsAdded);
-        if (!debuffed && card.stamp === "gold") {
-          spawnSleeveFloat(el, "+$3", STAMP_COLORS.gold);
-        }
-        void el.offsetWidth;
-        el.classList.add("card-ping");
-      }
-      setTimeout(cb, PING_DELAY);
-    }
-    function step() {
-      if (i >= cardIds.length) { onDone(running); return; }
-      const id = cardIds[i];
-      const card = state.hand.find((c) => c.id === id) || scoringCards.find((c) => c.id === id);
-      const pingsForThisCard = scoringPings(card);
-      let pingsDone = 0;
-      function nextPing() {
-        if (pingsDone >= pingsForThisCard) { i++; step(); return; }
-        pingsDone++;
-        pingOnce(card, id, nextPing);
-      }
-      nextPing();
-    }
-    step();
-  }
-
-  pingCards(scoringIds, handBaseChips, (chipsAfterCards) => {
-    // All scoring cards have been individually counted. Now resolve everything that
-    // isn't a per-card ping: item/charm flat bonuses, the hand's mult, Fortune/Star
-    // bonuses, and whether a retrigger effect (Calculator or The Empress) fires.
-    const itemResult = applyItemEffects(
-      { ...baseResult, totalChips: chipsAfterCards, totalMult: baseResultMult },
-      scoringCards,
-      state.items
-    );
-    const charmResult = applyCharmEffects(itemResult, scoringCards, state.charms);
-    const bossResult = applyBossBlindScoringEffects(charmResult, scoringCards);
-    const chipsWithFortune = bossResult.totalChips + state.nextHandChipBonus;
-    let totalMult = bossResult.totalMult;
-    const doubleChips = state.nextHandDoubleChips;
-    // Star's "double chips" is applied here for the no-retrigger case. If a retrigger
-    // fires below, we re-derive from the undoubled chip total so the doubling covers
-    // retriggered chips too, not just the pre-retrigger subtotal (the fix for the bug
-    // where retrigger chips weren't getting doubled by Star).
-    const chipsX = state.nextHandChipsX || 1;
-    state.nextHandChipsX = 1;
-    let chipsWithBonus = (doubleChips ? chipsWithFortune * 2 : chipsWithFortune) * chipsX;
-    state.nextHandChipBonus = 0;
-    state.nextHandDoubleChips = false;
-    // Coin: doubles this hand's Mult, resolved before Justice's balance step
-    // so Balance sees the post-Coin value like it does with Star's chip double.
-    if (state.nextHandDoubleMult) {
-      totalMult = totalMult * 2;
-    }
-    state.nextHandDoubleMult = false;
-    // Dice: multiplies this hand's Mult by a random amount rolled when it was used
-    if (state.nextHandMultX !== 1) {
-      totalMult = totalMult * state.nextHandMultX;
-    }
-    state.nextHandMultX = 1;
-    // Justice: averages this hand's Chips and Mult together, setting both to
-    // the midpoint. Applied after all other chip/mult bonuses have resolved.
-    if (state.nextHandBalance) {
-      const balanced = (chipsWithBonus + totalMult) / 2;
-      chipsWithBonus = balanced;
-      totalMult = balanced;
-    }
-    state.nextHandBalance = false;
-    
-    // Calculate Bell charm money bonus (gain $1 per 35 BASE chips scored, before charm effects)
-    state.bellMoneyBonus = 0;
-    state.charms.forEach((charm) => {
-      if (charm.effect.type === "bellMoneyPerChips") {
-        state.bellMoneyBonus = Math.floor(itemResult.totalChips / charm.effect.chipsPerDollar);
-      }
-    });
-
-    const scoreSoFar = Math.round(chipsWithBonus * totalMult * state.runMultiplier);
-    state.popup = { name: baseResult.name, runningChips: chipsWithBonus, totalMult, score: scoreSoFar, phase: "totals" };
-    render();
-
-    setTimeout(() => {
-      const cardsToReplay = triggerCharmEffects(baseResult, scoringCards);
-      const empressFires = cardsToReplay.length === 0 && state.nextHandRetrigger;
-      state.nextHandRetrigger = false;
-      const idsToReping = (cardsToReplay.length > 0 ? cardsToReplay : scoringCards).map((c) => c.id);
-
-      if (cardsToReplay.length > 0 || empressFires) {
-        // Retrigger: seed the re-ping from the UNDOUBLED chip total (chipsWithFortune),
-        // not chipsWithBonus, so Star's doubling — like totalMult — gets applied exactly
-        // once at the very end, to the full chip total including retriggered cards.
-        setTimeout(() => {
-          pingCards(idsToReping, chipsWithFortune, (finalChipsUndoubled) => {
-            const finalChips = (doubleChips ? finalChipsUndoubled * 2 : finalChipsUndoubled) * chipsX;
-            const finalScore = Math.round(finalChips * totalMult * state.runMultiplier);
-            state.popup = { name: baseResult.name, runningChips: finalChips, totalMult, score: finalScore, phase: "done" };
-            render();
-            finishPlay(finalScore, newPlaysLeft);
-          });
-        }, 400);
-      } else {
-        state.popup = { ...state.popup, phase: "done" };
-        render();
-        finishPlay(scoreSoFar, newPlaysLeft);
-      }
-    }, 550);
+  // Work the whole hand out (luck rolled now), use up the next-hand boosts,
+  // then show it trigger by trigger.
+  const result = scoreHand(selectedCards, { live: true });
+  state.nextHandDoubleBase = false;
+  state.nextHandChipBonus = 0;
+  state.nextHandDoubleChips = false;
+  state.nextHandChipsX = 1;
+  state.nextHandDoubleMult = false;
+  state.nextHandMultX = 1;
+  state.nextHandBalance = false;
+  state.nextHandRetrigger = false;
+  state.stampMoneyBonus = (state.stampMoneyBonus || 0) + result.money;
+  // Bell: $1 per 35 chips scored by the cards themselves
+  state.bellMoneyBonus = 0;
+  state.charms.forEach((charm) => {
+    if (charm.effect.type === "bellMoneyPerChips") state.bellMoneyBonus = Math.floor(result.chipsAfterCards / charm.effect.chipsPerDollar);
   });
+  animateScoring(result, () => finishPlay(result.score, newPlaysLeft));
 }
 
 function finishPlay(finalScore, newPlaysLeft) {
@@ -5881,20 +6091,12 @@ function render() {
   const previewBar = document.createElement("div");
   previewBar.className = "preview-bar";
   const selectedCards = state.hand.filter((c) => state.selected.includes(c.id));
-  const previewBase = selectedCards.length ? withNextHandBase(evaluateSelection(selectedCards)) : evaluateSelection(selectedCards);
-  const preview = previewBase ? (() => {
-    const r = applyBossBlindScoringEffects(
-      applyCharmEffects(
-        applyItemEffects(previewBase, previewBase.scoringCards, state.items),
-        previewBase.scoringCards,
-        state.charms
-      ),
-      previewBase.scoringCards
-    );
-    const chipsWithFortune = r.totalChips + state.nextHandChipBonus;
-    const chips = state.nextHandDoubleChips ? chipsWithFortune * 2 : chipsWithFortune;
-    return { ...r, totalChips: chips, score: Math.round(chips * r.totalMult * state.runMultiplier) };
-  })() : null;
+  // Same engine as a real play, minus luck rolls (Heartstone, Calculator).
+  const preview = (() => {
+    // Hidden while a played hand is being counted, so the total isn't given away.
+    const r = selectedCards.length && !state.popup ? previewScore(selectedCards) : null;
+    return r ? { name: r.name, totalChips: r.chips, totalMult: r.mult, score: r.score } : null;
+  })();
   if (preview) {
     const nameEl = document.createElement("div");
     nameEl.className = "preview-name serif";
@@ -5919,7 +6121,7 @@ function render() {
   } else {
     const placeholder = document.createElement("div");
     placeholder.className = "preview-placeholder";
-    placeholder.textContent = "Select cards to preview your hand";
+    placeholder.textContent = state.popup ? "" : "Select cards to preview your hand";
     previewBar.appendChild(placeholder);
   }
   app.appendChild(previewBar);
@@ -6013,15 +6215,19 @@ function render() {
     const popup = document.createElement("div");
     popup.className = "score-popup";
     const p = state.popup;
-    const detail = p.phase === "pinging"
-      ? `${p.runningChips} <span style="color:#3FA9A0">chips</span>`
-      : `${p.runningChips} <span style="color:#3FA9A0">chips</span> × ${p.totalMult} <span style="color:#C9A227">mult</span>${state.runMultiplier !== 1 ? ` × ${state.runMultiplier} <span style="color:#A23B3B">run</span>` : ""}`;
-    const totalLine = p.phase === "pinging" ? "" : `<div class="score-popup-total serif">+${p.score}</div>`;
+    const bumpChips = p.phase === "counting" && (p.bump === "chips");
+    const bumpMult = p.phase === "counting" && (p.bump === "mult" || p.bump === "xmult");
+    const totalLine = p.phase === "total" ? `<div class="score-popup-total serif">${Number(p.score).toLocaleString()}</div>` : "";
     popup.innerHTML = `
       <div class="score-popup-name serif">${p.name}</div>
-      <div class="score-popup-detail">${detail}</div>
+      <div class="sp-boxes">
+        <div class="sp-box sp-chips${bumpChips ? " bump" : ""}">${Math.round(p.chips).toLocaleString()}</div>
+        <div class="sp-x">×</div>
+        <div class="sp-box sp-mult${bumpMult ? " bump" : ""}">${fmtNum(p.mult)}</div>
+      </div>
       ${totalLine}
     `;
+    popup.classList.toggle("is-total", p.phase === "total");
     // The whole #app tree gets rebuilt on every render() call (e.g. when a
     // charm activation shows/hides while this popup is still on screen),
     // which would otherwise restart the popIn/popNameSlide/popTotalPunch
@@ -6094,7 +6300,10 @@ function render() {
   }
 
   // ===== CHARM ACTIVATION DISPLAY =====
-  if (state.activeCharm) {
+  // An artifact or item on the shelf fires in place (see activateCharmSlide);
+  // only one that isn't on the shelf falls back to the sliding banner.
+  const onShelf = state.activeCharm && [...state.charms, ...state.items].some((d) => d.uid === state.activeCharm.uid);
+  if (state.activeCharm && !onShelf) {
     const activation = document.createElement("div");
     activation.className = "charm-activation" + (state.activeCharmClosing ? " out" : "");
     // The whole #app tree gets rebuilt on every render() call, which would
