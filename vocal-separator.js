@@ -7,9 +7,15 @@
 (() => {
   const HF_BASE = 'https://huggingface.co/Myman577/Splitter/resolve/main/';
   const SP4 = 'https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main/';   // fallback host if a 4-stem file isn't in HF_BASE
+  // Official UVR5 model release (settings from UVR's mdx_model_data/model_data.json). GitHub sends no CORS headers,
+  // so these files can only be downloaded by the Android app (Java); models marked nativeOnly are hidden in the browser.
+  const UVR = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/';
   const MODELS = {
     spleeter2: { label: 'Fast · 2 stems (~80 MB)', kind: 'spleeter', files: { vocals: 'spleeter-vocals.onnx', accomp: 'spleeter-accompaniment.onnx' }, sources: [] },
     spleeter4: { label: 'Spleeter · 4 stems (~79 MB)', kind: 'sp4', files: { vocals: 'vocals.fp16.onnx', drums: 'drums.fp16.onnx', bass: 'bass.fp16.onnx', other: 'other.fp16.onnx' }, sources: ['vocals', 'drums', 'bass', 'other'] },
+    // Middle tier: MDX-Net with 2048 bins, about 3x faster than Voc_FT on CPU, far cleaner than Spleeter.
+    mdx_lite:  { label: 'Balanced vocals · MDX-Net Lite (~30 MB)', kind: 'mdx', file: UVR + 'UVR_MDXNET_1_9703.onnx', nativeOnly: true, sources: [], nfft: 6144, dimF: 2048, comp: 1.03 },
+    mdx_kara:  { label: 'Karaoke · lead vocal only, keeps backing vocals (~30 MB)', kind: 'mdx', file: UVR + 'UVR_MDXNET_KARA.onnx', nativeOnly: true, sources: [], nfft: 6144, dimF: 2048, comp: 1.035 },
     mdx_voc:   { label: 'Cleaner vocals · MDX-Net (~67 MB)', kind: 'mdx', file: 'UVR-MDX-NET-Voc_FT.onnx', sources: [], nfft: 7680, dimF: 3072, comp: 1.021 },
     demucs4:   { label: 'Best · 4 stems (316 MB)', kind: 'demucs', file: 'htdemucs.onnx',    sources: ['drums', 'bass', 'other', 'vocals'] },
     demucs6:   { label: '6 stems + guitar/piano (~316 MB)', kind: 'demucs', file: 'htdemucs_6s.onnx', sources: ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'] }
@@ -24,7 +30,7 @@
     if (e == null) return 'Unknown error.' + OOM_HINT;
     if (typeof e === 'number') return 'The audio engine crashed (code ' + e + ').' + OOM_HINT;
     let m = e.message || (typeof e === 'string' ? e : '');
-    if (!m) { try { m = JSON.stringify(e); } catch (x) {} if (!m || m === '{}') m = String(e); }
+    if (!m) { try { m = JSON.stringify(e); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); } if (!m || m === '{}') m = String(e); }
     if (/abort|assertions|out of memory|memory access|alloc|bad_alloc|RangeError/i.test(m)) m += OOM_HINT;
     return m;
   };
@@ -33,10 +39,99 @@
   //  2 Medium : + lean ONNX runtime, pauses between chunks, skip work for stems you didn't tick
   //  3 Max    : + longer pauses, UI yields inside the DSP loops, screen wake lock
   const LEVELS = [null,
-    { name: 'Light', info: 'Big savings only: CPU only, low-RAM model download, basic graph optimization.', blob: true, lean: false, pause: [0, 0], skip: false, ye: 0, wake: false },
-    { name: 'Medium', info: 'Light + lean runtime memory settings, short pauses between chunks, skips unused stems.', blob: true, lean: true, pause: [80, 150], skip: true, ye: 0, wake: false },
-    { name: 'Max', info: 'Medium + longer pauses, UI yields inside heavy loops, keeps the screen awake. Slowest, safest.', blob: true, lean: true, pause: [250, 400], skip: true, ye: 64, wake: true }
+    { name: 'Light', info: 'Basic savings: lowest memory use.', blob: true, lean: false, pause: [0, 0], skip: false, ye: 0, wake: false },
+    { name: 'Medium', info: 'Light, plus short pauses and skipping unused stems.', blob: true, lean: true, pause: [80, 150], skip: true, ye: 0, wake: false },
+    { name: 'Max', info: 'Medium, plus longer pauses and keeping the screen awake. Slowest, safest.', blob: true, lean: true, pause: [250, 400], skip: true, ye: 64, wake: true }
   ];
+  // Custom level (option 4): the person picks each setting. Stored as JSON under ppvCustom.
+  const CUSTOM_DEFAULT = { threads: 0, rest: 0, lean: false, skip: true, smooth: false, wake: false, blob: false, spin: false };
+  const customLoad = () => { try { return Object.assign({}, CUSTOM_DEFAULT, JSON.parse(localStorage.getItem('ppvCustom') || '{}')); } catch (e) { return Object.assign({}, CUSTOM_DEFAULT); } };
+  const customLevel = () => {
+    const c = customLoad(), d = Math.max(0, Math.min(1, (+c.rest || 0) / 100));     // rest = % of each chunk's working time spent idle
+    return { name: 'Custom', custom: true, info: 'Custom mix. Pick each setting below.', blob: !!c.blob, lean: !!c.lean, skip: !!c.skip, ye: c.smooth ? 64 : 0, wake: !!c.wake,
+      threads: Math.max(0, +c.threads || 0), spin: !!c.spin, duty: d, pause: [Math.round(500 * d), Math.round(800 * d)] };   // native sleeps via duty, the web path via the pause values (ms)
+  };
+
+  // ---------- native ONNX bridge (Android app only; the web version is unchanged) ----------
+  const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const NP = NATIVE ? window.Capacitor.Plugins.OnnxSeparator : null;
+  let curStatus = null;
+  if (NATIVE) {
+    // The separator only needs ort.Tensor from ORT; the real inference happens natively.
+    if (!window.ort) window.ort = { Tensor: class { constructor(type, data, dims) { this.type = type; this.data = data; this.dims = dims; } } };
+    NP.addListener('download', e => { if (curStatus) curStatus('Downloading ' + e.id.replace(/^sp4?_/, '') + ' ' + e.percent + '%'); });
+  }
+  const toB64Slow = f32 => {
+    const u = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength); let s = '';
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
+  const fromB64Slow = b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Float32Array(u.buffer); };
+  // Base64 done by the browser's own native code instead of a JavaScript loop over every byte (these tensors are megabytes).
+  // If the WebView refuses either trick it switches to the loops above and stays there.
+  let b64Fast = true;
+  const toB64 = async f32 => {
+    if (b64Fast) {
+      try {
+        const url = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = () => rej(fr.error); fr.readAsDataURL(new Blob([f32])); });
+        const i = url.indexOf(','); if (i > 0) return url.slice(i + 1);
+      } catch (e) { b64Fast = false; }
+    }
+    return toB64Slow(f32);
+  };
+  const fromB64 = async b64 => {
+    if (b64Fast) {
+      try { const buf = await (await fetch('data:application/octet-stream;base64,' + b64)).arrayBuffer(); if (buf.byteLength % 4 === 0) return new Float32Array(buf); }
+      catch (e) { b64Fast = false; }
+    }
+    return fromB64Slow(b64);
+  };
+  async function nativeFetch(key, file, status) {
+    const urls = /^https?:/.test(file) ? [file] : [HF_BASE + file, SP4 + file];   // same fallback as the web path
+    let last = null;
+    for (const url of urls) {
+      try { curStatus = status; await NP.download({ id: key, url }); curStatus = null; return; }
+      catch (e) { last = e; }
+    }
+    curStatus = null;
+    throw new Error('Download failed for ' + file + ': ' + errText(last));
+  }
+  // NNAPI (phone GPU/NPU) for everything except Demucs, whose transformer ops run better on CPU. The Java side falls back to CPU by itself.
+  // The tiny classifier heads (a few hundred KB) lose time compiling for NNAPI and copying data over: CPU is faster for them.
+  const cpuOnly = new Set((() => { try { return JSON.parse(localStorage.getItem('ppvCpuOnly') || '[]'); } catch (e) { return []; } })());   // models whose NNAPI output came back NaN: always CPU
+  const markCpu = key => { cpuOnly.add(key); try { localStorage.setItem('ppvCpuOnly', JSON.stringify([...cpuOnly])); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+  const hasBad = d => { if (!d || !d.length) return true; const st = Math.max(1, (d.length / 512) | 0); for (let i = 0; i < d.length; i += st) if (!Number.isFinite(d[i])) return true; return !Number.isFinite(d[d.length - 1]); };
+  const wantNnapi = key => { if (cpuOnly.has(key) || /^demucs/.test(key) || /^(tgh_|tg_hinst$|tg_hvoice$|tg_hgenre$|tg_effnet$|tg_effstyle$|tg_mn10$|ww_)/.test(key)) return false;   // tagger models stay on CPU: NNAPI fp16 blurs the embedding and the in-graph log-mel, so every score came out weak
+     try { return localStorage.getItem('ppvNnapi') !== '0'; } catch (e) { return true; } };
+  const b64Memo = new WeakMap();
+  async function nativeSession(key) {
+    let info = await NP.load({ id: key, nnapi: wantNnapi(key), tune: false });   // no NNAPI-vs-CPU timing pass: the NaN check below already falls back to CPU if NNAPI misbehaves
+    window.__ppLastSep = ' (on ' + info.accel + ')';
+    const once = async feed => {
+      const t = Object.values(feed)[0];
+      let b = null;
+      const small = /^(tgh_|tg_hinst$|tg_hvoice$|tg_hgenre$)/.test(key);   // the ~10 classifier heads all get the very same embedding: encode it once
+      if (small) b = b64Memo.get(t.data);
+      if (!b) { b = await toB64(t.data); if (small) b64Memo.set(t.data, b); }
+      const r = await NP.run({ id: key, data: b, dims: Array.from(t.dims) });
+      return { name: r.outputName, data: await fromB64(r.data), dims: r.dims };
+    };
+    return {
+      inputNames: [info.inputName], outputNames: [info.outputName],
+      run: async feed => {
+        let o = await once(feed);
+        if (hasBad(o.data) && wantNnapi(key)) {                      // NNAPI (fp16) overflowed: reload this model on the CPU and redo the call
+          console.warn('NaN from NNAPI for', key, '- switching to CPU');
+          markCpu(key); try { await NP.unload({ id: key }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+          info = await NP.load({ id: key, nnapi: false });
+          o = await once(feed);
+        }
+        if (hasBad(o.data)) throw new Error('model ' + key + ' returned invalid numbers');
+        return { [o.name]: { data: o.data, dims: o.dims } };
+      },
+      release: () => { NP.unload({ id: key }).catch(() => {}); }
+    };
+  }
 
   // ---------- model storage (own IndexedDB, survives sw.js cache cleanup) ----------
   const idb = () => new Promise((res, rej) => {
@@ -90,6 +185,81 @@
     }
   }
   const tick = () => new Promise(r => setTimeout(r));
+
+  // ---------- pacing: rest when the phone is hot ----------
+  // Call after a unit of heavy work (a batch, a slice, a track). Sleeps a share of that unit's own time when the phone is warm.
+  // In the Android app the thermal reading comes from the native side. Anywhere else (no thermal data) it watches for the chip slowing
+  // down: a unit much slower than the fastest unit of the same kind (per `size`) means throttling, so it rests.
+  const EASE_BEST = {}; let thermalDead = false;
+  async function ease(workMs, rest, key, size) {
+    let f = rest || 0;
+    if (NATIVE && NP && !thermalDead) { try { f = Math.max(f, (await NP.thermal()).factor || 0); } catch (e) { thermalDead = true; } }
+    if (key && workMs > 400) {
+      const per = workMs / (size || 1), b = EASE_BEST[key];
+      if (!b || per < b) EASE_BEST[key] = per;
+      else if (per > b * 1.6) f = Math.max(f, Math.min(1, (per / b - 1.6) / 1.4));
+    }
+    const ms = Math.min(8000, workMs * f);
+    if (ms > 20) await new Promise(r => setTimeout(r, ms));
+  }
+
+  // 2:1 decimation 32 kHz -> 16 kHz with a 63-tap half-band low-pass (only 33 taps are non-zero), so ONE decode feeds both taggers.
+  const HB = (() => {
+    const n = 63, c = 31, ix = [], w = []; let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i - c; if (k !== 0 && k % 2 === 0) continue;                  // every even tap but the centre is exactly zero
+      const h = (k === 0 ? 0.5 : Math.sin(Math.PI * k / 2) / (Math.PI * k)) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+      ix.push(k); w.push(h); sum += h;
+    }
+    return { ix: Int16Array.from(ix), w: Float32Array.from(w.map(v => v / sum)) };
+  })();
+  function down2(a, start, n) {                                                // n output samples; output i sits at input sample start + 2i
+    const out = new Float32Array(n), L = a.length, ix = HB.ix, w = HB.w, T = ix.length;
+    for (let i = 0; i < n; i++) {
+      const p = start + 2 * i; let s = 0;
+      if (p >= 31 && p + 31 < L) for (let t = 0; t < T; t++) s += a[p + ix[t]] * w[t];
+      else for (let t = 0; t < T; t++) { const j = p + ix[t]; if (j >= 0 && j < L) s += a[j] * w[t]; }
+      out[i] = s;
+    }
+    return out;
+  }
+  // The few 5 s windows the AudioSet tagger looks at (same positions as before), cut from an already decoded 32 kHz track.
+  function audiosetWindows(x) {
+    const W = 160000, nW = Math.max(1, Math.min(6, Math.floor(x.length / W))), out = [];   // 5 s at 32 kHz: the fixed input length of mn10_as.onnx (160000 samples)
+    for (let w = 0; w < nW; w++) {
+      const wav = new Float32Array(W), st = x.length > W ? Math.floor((x.length - W) * (w + 0.5) / nW) : 0;
+      wav.set(x.subarray(st, st + W)); out.push(wav);
+    }
+    return out;
+  }
+  // Finds the stretches of a clip that hold speech or singing, so silence (intros, gaps, instrumental breaks) is never sent to Whisper.
+  // Returns [[startSec, endSec], ...]. Gaps under 4 s stay inside a stretch, each stretch gets 1.5 s of padding, and if less than
+  // 10% would be skipped (or the clip is too quiet to judge) the whole clip is returned unchanged.
+  function speechRegions(x, sr) {
+    const dur = x.length / sr, F = Math.round(sr * 0.5), n = Math.floor(x.length / F);
+    if (n < 16) return [[0, dur]];
+    const rms = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let s = 0; const a = i * F; for (let j = 0; j < F; j++) { const v = x[a + j]; s += v * v; } rms[i] = Math.sqrt(s / F); }
+    const ref = Array.from(rms).sort((u, v) => u - v)[Math.floor(n * 0.9)];
+    if (!(ref > 0.002)) return [[0, dur]];
+    const thr = ref * 0.035, HOLD = 8, PAD = 3, spans = [];
+    let a = -1, last = -1;
+    for (let i = 0; i < n; i++) {
+      if (rms[i] <= thr) continue;
+      if (a >= 0 && i - last > HOLD) { spans.push([a, last]); a = -1; }
+      if (a < 0) a = i;
+      last = i;
+    }
+    if (a >= 0) spans.push([a, last]);
+    if (!spans.length) return [[0, dur]];
+    const out = [];
+    for (const [u, v] of spans) {
+      const s0 = Math.max(0, u - PAD) * 0.5, s1 = v + PAD + 1 >= n ? dur : Math.min(dur, (v + PAD + 1) * 0.5);
+      if (out.length && s0 <= out[out.length - 1][1] + 0.01) out[out.length - 1][1] = Math.max(out[out.length - 1][1], s1); else out.push([s0, s1]);
+    }
+    const kept = out.reduce((m, r) => m + r[1] - r[0], 0);
+    return kept > dur * 0.9 ? [[0, dur]] : out;
+  }
 
   // pcm: [L, R] Float32Array at 44.1k. Finished audio is streamed to sink(vocals:[L,R], accomp:[L,R], startSample) one
   // segment at a time, so peak RAM stays flat. Without a sink it collects everything and returns {vocals, accomp}.
@@ -198,6 +368,106 @@
     };
   }
 
+  // ---------- Subtitle mask: use the lyrics/subtitles to know where singing is ----------
+  // Solos, breaks and other non-vocal sound that leaks into the Vocals stem get faded out of it, and the removed sound is ADDED to
+  // Instrumental (and Other) so nothing is lost. Cue starts are trusted; cue ends are not, because online LRC lyrics end a line
+  // exactly when the next one starts (so a solo between two lines would look like singing). The end is estimated from the text instead.
+  const MASKS = [null, { pre: 0.35, post: 0.6, fade: 0.12, floor: 0.15 }, { pre: 0.25, post: 0.4, fade: 0.08, floor: 0.03 }, { pre: 0.15, post: 0.25, fade: 0.05, floor: 0 }];   // Gentle, Normal, Strong
+  const NOVOCAL = /^[\s\[\]()\u266a\u266b*\-\u2013\u2014]*(instrumental|solo|guitar solo|music|interlude|intro|outro|break)?[\s\[\]()\u266a\u266b*\-\u2013\u2014]*$/i;
+  function sungSecs(text) {                                          // rough time a line takes to sing, with room for held notes
+    const t = String(text || '').trim(), cjk = (t.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g) || []).length;
+    return 0.8 + 0.4 * Math.max(t.split(/\s+/).filter(Boolean).length, cjk / 2, t.length / 7);
+  }
+  // Returns { spans: [[startSec, endSec], ...] } or { skip: 'why' } when the lyrics can't be trusted to cover the whole song.
+  function subtitleSpans(dbId, level, dur, tag, ov) {
+    const m = MASKS[level]; if (!m) return { skip: '' };
+    let e; try { e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[dbId]; } catch (x) {}
+    const raw = ov && ov.length ? ov.map(q => [q.start, q.end, q.text, q.m]) : e && (Array.isArray(e) ? e.map(q => [q.start, q.end, q.text]) : e.c);
+    if (!raw || raw.length < 3) return { skip: ' Subtitle mute skipped: this track has no synced lyrics or subtitles.' };
+    const off = !ov && e && !Array.isArray(e) && isFinite(+e.o) ? +e.o : 0;     // positive offset = lines appear later (re-timed cues are already in media time)
+    const trusted = !!(e && !Array.isArray(e) && /^whisper/i.test(e.n || ''));   // Whisper ends are measured, online ones are just "next line starts"
+    const sp = [];
+    for (const c of raw) {
+      const s0 = +c[0], e0 = +c[1], txt = String(c[2] || '');
+      if (!isFinite(s0) || !txt.trim() || NOVOCAL.test(txt)) continue;
+      const len = sungSecs(txt), cap = trusted || c[3] ? len * 2 + 1.5 : len * 1.5 + 1;   // c[3]: line was re-timed from Whisper's own timestamps
+      const end = e0 > s0 ? Math.min(e0, s0 + cap) : s0 + cap;
+      sp.push([Math.max(0, s0 + off - m.pre), end + off + m.post]);
+    }
+    sp.sort((a, b) => a[0] - b[0]);
+    const out = [];
+    for (const q of sp) { const l = out[out.length - 1]; if (l && q[0] <= l[1] + 0.2) l[1] = Math.max(l[1], q[1]); else out.push([q[0], q[1]]); }
+    if (!out.length) return { skip: ' Subtitle mute skipped: no sung lines found.' };
+    const covered = out.reduce((n, q) => n + q[1] - q[0], 0), lastEnd = out[out.length - 1][1], firstStart = out[0][0];
+    // Safety: if the lyrics stop early or start late, muting outside them would cut real singing. Use the tagger's first/last vocal time when known.
+    if (tag && tag.lv != null && tag.lv > lastEnd + 3) return { skip: ' Subtitle mute skipped: the lyrics end before the singing does.' };
+    if (tag && tag.fv != null && tag.fv < firstStart - 3) return { skip: ' Subtitle mute skipped: the singing starts before the lyrics do.' };
+    if (dur && (covered < dur * 0.15 || (!(tag && tag.lv != null) && lastEnd < dur * 0.6))) return { skip: ' Subtitle mute skipped: the lyrics look incomplete.' };
+    return { spans: out };
+  }
+  // Gain follows the spans with short fades. process(L, R, extra): scales the vocal chunk in place and adds what it removed to every [L, R] in extra.
+  function makeMask(spans, level) {
+    const m = MASKS[level]; if (!m || !spans || !spans.length) return null;
+    const A = spans.map(q => Math.round(q[0] * SR)), B = spans.map(q => Math.round(q[1] * SR)), step = (1 - m.floor) / Math.max(1, Math.round(m.fade * SR));
+    let pos = 0, si = 0, gain = m.floor;
+    return {
+      process(Lc, Rc, extra) {
+        const n = Math.min(Lc.length, Rc.length), ex = (extra || []).filter(q => q && q[0] && q[0].length >= n && q[1].length >= n);
+        for (let i = 0; i < n; i++, pos++) {
+          while (si < A.length && pos >= B[si]) si++;
+          const target = si < A.length && pos >= A[si] ? 1 : m.floor;
+          gain += target > gain ? Math.min(step, target - gain) : -Math.min(step, gain - target);
+          if (gain < 1) {
+            const l = Lc[i], r = Rc[i], k = 1 - gain; Lc[i] = l * gain; Rc[i] = r * gain;
+            for (const q of ex) { q[0][i] += l * k; q[1][i] += r * k; }
+          }
+        }
+      }
+    };
+  }
+  function maskChunks(mask, names, chunks) {                          // multi-stem models: chunks line up with names
+    if (!mask) return; const vi = names.indexOf('Vocals'); if (vi < 0 || !chunks[vi]) return;
+    mask.process(chunks[vi][0], chunks[vi][1], ['Instrumental', 'Other'].map(n => names.indexOf(n)).filter(i => i >= 0).map(i => chunks[i]));
+  }
+  // Re-time lyric lines (e.g. online LRC) against measured cues (e.g. Whisper): each line takes the start/end of the best-matching measured cue within 20 s.
+  function alignLines(cues, ref) {
+    const nz = t => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, ' ').split(/\s+/).filter(Boolean);
+    const rw = ref.map(r => ({ r, w: new Set(nz(r.text)) }));
+    return cues.map(c => {
+      const w = nz(c.text); if (!w.length) return c; let best = null, bs = 0;
+      for (const q of rw) {
+        if (Math.abs(q.r.start - c.start) > 20 || !q.w.size) continue;
+        let hit = 0; for (const x of w) if (q.w.has(x)) hit++;
+        const sc = hit / (w.length + q.w.size - hit); if (sc > bs) { bs = sc; best = q.r; }
+      }
+      return best && bs >= 0.35 ? { start: best.start, end: best.end > best.start ? best.end : c.end, text: c.text, m: true } : c;
+    });
+  }
+
+  // Whisper first: lyrics that were not made by Whisper (online LRC, loaded files) have unreliable timing, so Whisper listens to the song
+  // (vocals only) and each lyric line takes the start/end of the Whisper line it matches. Nothing is saved over the user's lyrics.
+  // Returns { cues, matched, total } in media time, or null when there is nothing to re-time (no lyrics, or Whisper already made them).
+  async function alignedCues(t, o, status) {
+    let e; try { e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[t.dbId]; } catch (x) {}
+    if (!e || (!Array.isArray(e) && /^whisper/i.test(e.n || ''))) return null;
+    const off = Array.isArray(e) || !isFinite(+e.o) ? 0 : +e.o;
+    const raw = (Array.isArray(e) ? e.map(q => [q.start, q.end, q.text]) : e.c || []).map(q => ({ start: +q[0] + off, end: +q[1] + off, text: String(q[2] || '') })).filter(q => isFinite(q.start) && q.text.trim());
+    if (raw.length < 3) return null;
+    const sig = (Array.isArray(e) ? '' : e.n || '') + '|' + raw.length + '|' + raw[0].start.toFixed(2) + '|' + raw[raw.length - 1].start.toFixed(2);
+    let cache = {}; try { cache = JSON.parse(localStorage.getItem('ppvAlign')) || {}; } catch (x) {}
+    const hit = cache[t.dbId];
+    if (hit && hit.sig === sig) { const cues = hit.c.map(q => ({ start: q[0], end: q[1], text: q[2], m: !!q[3] })); return { cues, matched: cues.filter(q => q.m).length, total: cues.length, cached: true }; }
+    const sz0 = ls0('ppvWSize'), m0 = sz0 && WH[sz0] && WH[sz0][2], size = whOk(sz0) && m0 && !m0.big ? sz0 : 'base_en';   // never pops a big-download prompt mid-split
+    const lg = ls0('ppvWLang');
+    let ref;
+    try { status('Whisper is checking where the lines really are…'); ref = await transcribeRun(t, { size, lang: whEn(size) ? '' : (lg === null ? 'english' : lg), task: 'transcribe', clean: true, acc: 0, strength: o.strength, lv: o.lv }, status); }
+    finally { if (asr) { try { await asr.dispose(); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); } asr = null; asrId = ''; } }   // give the memory back before the real split
+    const cues = alignLines(raw, (ref || []).map(q => ({ start: q.start, end: q.end, text: q.text })));
+    const out = { cues, matched: cues.filter(q => q.m).length, total: cues.length };
+    try { cache[t.dbId] = { sig, c: cues.map(q => [+q.start.toFixed(2), +q.end.toFixed(2), q.text, q.m ? 1 : 0]) }; localStorage.setItem('ppvAlign', JSON.stringify(cache)); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); }
+    return out;
+  }
+
   function makeEncoder(gate) {
     const mp3 = !!window.lamejs, enc = mp3 ? new lamejs.Mp3Encoder(2, SR, 192) : null, out = [];
     let cl = new Int16Array(0), cr = new Int16Array(0), n = 0;
@@ -223,9 +493,117 @@
     };
   }
   function encode(ch) { const e = makeEncoder(); e.push(ch[0], ch[1]); return e.finish(); }
+  // The Android engines hand back 16-bit WAV (about 10 MB a minute). This turns it into a 192 kbps MP3 like the in-page
+  // engines make (about 1.4 MB a minute), in slices so the page stays responsive. null: not a 16-bit PCM WAV, or no encoder.
+  async function wavToMp3(blob, onFrac) {
+    if (!window.lamejs || !blob) return null;
+    const buf = await blob.arrayBuffer(), dv = new DataView(buf), len = buf.byteLength;
+    const str = o => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+    if (len < 44 || str(0) !== 'RIFF' || str(8) !== 'WAVE') return null;
+    let p = 12, fmt = null, data = null;
+    while (p + 8 <= len) {
+      const id = str(p), sz = dv.getUint32(p + 4, true);
+      if (id === 'fmt ') fmt = { tag: dv.getUint16(p + 8, true), ch: dv.getUint16(p + 10, true), sr: dv.getUint32(p + 12, true), bits: dv.getUint16(p + 22, true) };
+      else if (id === 'data') { data = { off: p + 8, len: Math.min(sz, len - p - 8) }; break; }
+      p += 8 + sz + (sz & 1);
+    }
+    if (!fmt || !data || fmt.tag !== 1 || fmt.bits !== 16 || fmt.ch < 1 || fmt.ch > 2) return null;
+    const ch = fmt.ch, frames = Math.floor(data.len / (2 * ch));
+    const pcm = data.off % 2 ? new Int16Array(buf.slice(data.off, data.off + frames * ch * 2)) : new Int16Array(buf, data.off, frames * ch);
+    const enc = new lamejs.Mp3Encoder(ch, fmt.sr, 192), out = [], B = 1152 * 64;
+    const L = new Int16Array(B), R = ch === 2 ? new Int16Array(B) : null;
+    for (let i = 0, k = 0; i < frames; i += B, k++) {
+      const n = Math.min(B, frames - i);
+      if (R) for (let j = 0, s = i * 2; j < n; j++, s += 2) { L[j] = pcm[s]; R[j] = pcm[s + 1]; }
+      else L.set(pcm.subarray(i, i + n));
+      const b = enc.encodeBuffer(L.subarray(0, n), R ? R.subarray(0, n) : undefined);
+      if (b.length) out.push(new Uint8Array(b));
+      if (k % 4 === 3) { onFrac && onFrac(i / frames); await tick(); }
+    }
+    const f = enc.flush(); if (f.length) out.push(new Uint8Array(f));
+    onFrac && onFrac(1);
+    return new Blob(out, { type: 'audio/mpeg' });
+  }
   function addSplit(files, info) {        // split tracks: kept out of "All tracks", grouped under "Split tracks"
     const A = window.__ppApi;
     if (A && A.addStemFiles) A.addStemFiles(files, info); else addToLibrary(files);
+  }
+  // Fast path: remux instead of re-record. The original video packets are copied as-is (no decode, no re-encode),
+  // and only the stem's audio is added. Takes a second or two per stem instead of the full song length.
+  const MB = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.0/dist/bundles/mediabunny.min.mjs';
+  let mbLib = null, videoBlobFor = null, videoBlobCache = null;
+  async function muxVideo(videoUrl, audioBlob, onFrac) {
+    // A WAV stem would be copied into the MP4 as raw PCM, which Android's player can't decode: the video played silent.
+    if (/wav/i.test(audioBlob.type || '')) { try { audioBlob = (await wavToMp3(audioBlob)) || audioBlob; } catch (e) { console.warn('WAV to MP3 failed:', e); } }
+    try { return await muxVideoFast(videoUrl, audioBlob, onFrac); }
+    catch (e) { console.warn('Fast video mux failed, using real-time re-record:', e); return muxVideoSlow(videoUrl, audioBlob, onFrac); }
+  }
+  async function muxVideoFast(videoUrl, audioBlob, onFrac) {
+    const mb = mbLib || (mbLib = await import(MB));
+    if (videoBlobFor !== videoUrl) { videoBlobCache = await (await fetch(videoUrl)).blob(); videoBlobFor = videoUrl; }   // fetched once, reused for every stem
+    const vin = new mb.Input({ source: new mb.BlobSource(videoBlobCache), formats: mb.ALL_FORMATS });
+    const vtrack = await vin.getPrimaryVideoTrack(); if (!vtrack) throw new Error('No video track.');
+    const vcodec = vtrack.codec, vcfg = await vtrack.getDecoderConfig();
+    const fmt = vcodec === 'vp8' ? new mb.WebMOutputFormat() : new mb.Mp4OutputFormat({ fastStart: 'in-memory' });
+    if (!fmt.getSupportedCodecs().includes(vcodec)) throw new Error('Video codec ' + vcodec + ' not supported by the container.');
+    const ain = new mb.Input({ source: new mb.BlobSource(audioBlob), formats: mb.ALL_FORMATS });
+    const atrack = await ain.getPrimaryAudioTrack(); if (!atrack) throw new Error('No audio in stem.');
+    const out = new mb.Output({ format: fmt, target: new mb.BufferTarget() });
+    const vsrc = new mb.EncodedVideoPacketSource(vcodec); out.addVideoTrack(vsrc);
+    const dur = await vtrack.computeDuration();
+    // mp3 stems go straight into the mp4 untouched. Only codecs phones play inside a video are copied: the container also
+    // takes raw PCM, FLAC and Vorbis, but Android plays a video with those as its sound silent. Anything else is encoded.
+    let asrc, copyAudio = ['aac', 'mp3', 'opus'].includes(atrack.codec) && fmt.getSupportedCodecs().includes(atrack.codec);
+    let encAudio = null;
+    if (copyAudio) { asrc = new mb.EncodedAudioPacketSource(atrack.codec); }
+    else {
+      const codec = await mb.getFirstEncodableAudioCodec(fmt.getSupportedAudioCodecs ? fmt.getSupportedAudioCodecs() : ['aac', 'opus'], { numberOfChannels: 2, sampleRate: SR });
+      if (!codec) throw new Error('No audio encoder available.');
+      asrc = new mb.AudioBufferSource({ codec, bitrate: 192000 });
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try { encAudio = await ctx.decodeAudioData(await audioBlob.arrayBuffer()); } finally { ctx.close && ctx.close(); }
+    }
+    out.addAudioTrack(asrc);
+    await out.start();
+    const vp = (async () => {
+      const sink = new mb.EncodedPacketSink(vtrack); let first = true;
+      for await (const pk of sink.packets()) {
+        await vsrc.add(pk, first ? { decoderConfig: vcfg } : undefined); first = false;
+        if (onFrac && dur) onFrac(Math.min(1, pk.timestamp / dur) * 0.9);
+      }
+      vsrc.close();
+    })();
+    const ap = (async () => {
+      if (copyAudio) {
+        const acfg = await atrack.getDecoderConfig(), sink = new mb.EncodedPacketSink(atrack); let first = true;
+        for await (const pk of sink.packets()) { await asrc.add(pk, first ? { decoderConfig: acfg } : undefined); first = false; }
+      } else await asrc.add(encAudio);
+      asrc.close();
+    })();
+    await Promise.all([vp, ap]);
+    await out.finalize(); onFrac && onFrac(1);
+    return new Blob([out.target.buffer], { type: fmt.mimeType });
+  }
+  // Slow fallback: re-records the original video with a split stem as its sound. Real time: one pass per stem.
+  async function muxVideoSlow(videoUrl, audioBlob, onFrac) {
+    const mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+    if (!mime) throw new Error('This device cannot record video.');
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const v = document.createElement('video');
+    try {
+      const ab = await ctx.decodeAudioData(await audioBlob.arrayBuffer());
+      v.src = videoUrl; v.muted = true; v.playsInline = true; v.preload = 'auto';
+      await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('Could not load the original video.')); });
+      const cs = v.captureStream || v.mozCaptureStream; if (!cs) throw new Error('Video capture is not supported here.');
+      const dest = ctx.createMediaStreamDestination(), src = ctx.createBufferSource(); src.buffer = ab; src.connect(dest);
+      const rec = new MediaRecorder(new MediaStream([...cs.call(v).getVideoTracks(), ...dest.stream.getAudioTracks()]), { mimeType: mime }), chunks = [];
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise(res => { rec.onstop = res; }), ended = new Promise(res => { v.onended = res; });
+      v.ontimeupdate = () => onFrac && v.duration && onFrac(v.currentTime / v.duration);
+      await ctx.resume(); rec.start(1000); v.currentTime = 0; await v.play(); src.start();
+      await ended; rec.stop(); await stopped;
+      return new Blob(chunks, { type: mime.split(';')[0] });
+    } finally { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} ctx.close && ctx.close(); }
   }
   function addToLibrary(files) {
     const inp = document.getElementById('file-input'); if (!inp) throw new Error('file-input not found');
@@ -414,6 +792,11 @@
     document.head.appendChild(s);
   });
   async function makeSession(key, gpu, lv) {
+    if (NATIVE) {
+      if (engineDead) throw new Error('The audio engine crashed earlier. Reload the app, then try again.');
+      try { return await nativeSession(key); }
+      catch (e) { throw new Error('Could not load model "' + key + '": ' + errText(e)); }
+    }
     if (engineDead) throw new Error('The audio engine crashed earlier and cannot recover until the app is reloaded. Reload the app, then try again.');
     const buf = await getPart(key);
     if (!buf) throw new Error('Model file "' + key + '" is missing. Press Split again to download it.');
@@ -423,9 +806,9 @@
       throw new Error('The downloaded model "' + key + '" was not a valid ONNX file (' + u8.length + ' bytes). I deleted it: press Split again to re-download.');
     }
     ort.env.wasm.wasmPaths = ORT;
-    const threads = !lv && self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    const threads = lv && lv.custom ? (self.crossOriginIsolated && lv.threads ? Math.min(lv.threads, navigator.hardwareConcurrency || lv.threads) : 1) : !lv && self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;   // custom: the person's pick
     const big = u8.length > 100e6;                                       // Demucs (316 MB): keep every extra copy of the weights out of memory
-    const base = { graphOptimizationLevel: lv || big || key === 'mdx_voc' ? 'basic' : 'all' };
+    const base = { graphOptimizationLevel: lv || big || /^mdx_/.test(key) ? 'basic' : 'all' };
     if (big) { base.enableCpuMemArena = false; base.enableMemPattern = false; base.executionMode = 'sequential'; }   // MDX: 'all' makes the load slow and memory hungry
     if (lv && lv.lean) { base.enableCpuMemArena = false; base.enableMemPattern = false; base.executionMode = 'sequential'; }
     // try in order: WebGPU (if asked) -> wasm with threads -> wasm single thread, basic optimization (smallest memory)
@@ -449,25 +832,125 @@
     }
     throw new Error('Could not load model "' + key + '": ' + errText(first || last) + (engineDead ? ' The engine has crashed, so reload the app before trying again. If Multi-thread is ticked, untick it for this model.' : ''));
   }
-  async function haveModel(id) { for (const [k] of parts(id)) if (!(await getPart(k))) return false; return true; }
+  async function haveModel(id) {
+    if (NATIVE) { for (const [k] of parts(id)) if (!(await NP.exists({ id: k })).ready) return false; return true; }
+    for (const [k] of parts(id)) if (!(await getPart(k))) return false; return true; }
   async function downloadModel(id, status, low) {
+    if (NATIVE) { for (const [k, f] of parts(id)) { if ((await NP.exists({ id: k })).ready) continue; status('Downloading ' + f.split('/').pop() + '…'); await nativeFetch(k, f, status); } return; }
     for (const [k, f] of parts(id)) { if (await getPart(k)) continue; await fetchPart(k, f, (g, t) => status('Downloading ' + f.split('/').pop() + ' ' + (t ? Math.round(g / t * 100) + '%' : (g / 1048576 | 0) + ' MB')), low); }
   }
-  async function deleteModel(id) { for (const [k] of parts(id)) { await idbDel(k); if (k.startsWith('sp_')) await idbDel(legacyKey(k)); if (k.startsWith('sp4_')) await idbDel('sp4f_' + k.slice(4)); } }
+  async function deleteModel(id) {
+    if (NATIVE) { for (const [k] of parts(id)) { await NP.remove({ id: k }); if (k.startsWith('sp_')) await idbDel(legacyKey(k)).catch(() => {}); } return; } for (const [k] of parts(id)) { await idbDel(k); if (k.startsWith('sp_')) await idbDel(legacyKey(k)); if (k.startsWith('sp4_')) await idbDel('sp4f_' + k.slice(4)); } }
+
+  // Native 4-stem, MDX and Demucs path (Android app): decode, STFT, model and WAV output all run in Java.
+  const nativeGrab = async p => new Blob([await (await fetch(window.Capacitor.convertFileSrc(p))).arrayBuffer()], { type: 'audio/wav' });
+  const ls0 = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  // Subtitle mute for the native engines: the Java side rewrites the finished WAVs in place (OnnxSeparator.maskStems).
+  // nm = { spans, floor, fade }. Never fails the split: on an error the stems are kept as they came out, with a note.
+  async function nativeMask(nm, vocals, extras, status) {
+    if (!nm || !vocals) return '';
+    try { status('Muting non-vocal parts…'); await NP.maskStems({ vocals, extras: extras.filter(Boolean), spans: nm.spans, floor: nm.floor, fade: nm.fade }); return ''; }
+    catch (e) { console.warn('native subtitle mute failed', e); return ' Subtitle mute failed (' + errText(e) + '), so the stems were left as they came out.'; }
+  }
+  // Length of a track in seconds without decoding it (0 if the WebView can't tell).
+  function mediaDur(url) {
+    return new Promise(res => {
+      const a = document.createElement('audio'); let done = false;
+      const end = d => { if (done) return; done = true; clearTimeout(tm); a.removeAttribute('src'); try { a.load(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } res(isFinite(d) && d > 0 ? d : 0); };
+      const tm = setTimeout(() => end(0), 8000);
+      a.preload = 'metadata'; a.onloadedmetadata = () => end(a.duration); a.onerror = () => end(0); a.src = url;
+    });
+  }
+
+  async function nativeStems(m, id, track, wanted, opts, status, onProgress) {
+    const SS = window.Capacitor.Plugins.SpleeterSeparator;
+    status('Preparing audio…');
+    const blob = await (await fetch(track.url)).blob();
+    const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+    const saved = await SS.writeInput({ name: 'track-' + Date.now() + '.audio', data: b64 });
+    window.__ppLastSep = '';
+    const h = await NP.addListener('progress', e => { onProgress(e.fraction); status('Separating… ' + Math.round(e.fraction * 100) + '%'); });
+    const nm = opts.nmask || null, hid = !!nm && !wanted.includes('Vocals') && (wanted.includes('Instrumental') || wanted.includes('Other'));
+    const W = hid ? wanted.concat('Vocals') : wanted;                 // vocals are needed to put the removed sound back
+    const accKey = 'ppvAccel2_' + id, remembered = ls0(accKey);
+    const useNn = opts.nnapi !== false && !/^demucs/.test(id) && !cpuOnly.has(id) && remembered !== 'cpu';   // Demucs is always CPU; a model that already lost or gave NaN stays on CPU
+    // tune (optional checkbox): race the NPU/NNAPI against the CPU once per model per phone (verdict remembered natively). Off: the NPU is
+    // used straight away, and only a crash or NaN output moves that model to the CPU (also remembered).
+    // fast: no optimization level picked, so run flat out (spinning pool, big-model memory arena, less Demucs overlap, rest only at critical heat).
+    const base = { tune: !!opts.tune, fast: !opts.lv, input: saved.path, stems: W, nnapi: useNn, duty: opts.lv ? (opts.lv.custom ? opts.lv.duty : ({ Light: 0, Medium: 0.2, Max: 0.5 }[opts.lv.name] || 0)) : 0,
+      threads: opts.lv && opts.lv.custom ? opts.lv.threads : 0, spin: !!(opts.lv && opts.lv.custom && opts.lv.spin), lean: !!(opts.lv && opts.lv.custom && opts.lv.lean) };
+    let out;
+    try {
+      status('Loading models…');
+      if (m.kind === 'sp4') {
+        try { out = await NP.separate(Object.assign({ kind: 'sp4', prefix: 'sp4_' }, base)); }
+        catch (e) {                                                   // half precision rejected: use the full precision files
+          if (!/Could not load model/.test(errText(e))) throw e;
+          for (const n of ['vocals', 'drums', 'bass', 'other']) if (!(await NP.exists({ id: 'sp4f_' + n })).ready) await nativeFetch('sp4f_' + n, n + '.onnx', status);
+          status('Loading models…');
+          out = await NP.separate(Object.assign({ kind: 'sp4', prefix: 'sp4f_' }, base));
+        }
+      } else if (m.kind === 'demucs') out = await NP.separate(Object.assign({ kind: 'demucs', model: id, sources: m.sources }, base));
+      else out = await NP.separate(Object.assign({ kind: 'mdx', model: id, nfft: m.nfft, dimF: m.dimF, comp: m.comp }, base));
+    } finally { h.remove(); }
+    window.__ppLastSep = ' (' + Math.round(out.seconds) + ' s on ' + out.accel + ')';
+    try { localStorage.setItem(accKey, /nnapi|npu|gpu/i.test(String(out.accel)) ? 'nnapi' : 'cpu'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    if (nm) {
+      window.__ppLastSep += await nativeMask(nm, out.files.Vocals, ['Instrumental', 'Other'].map(n => out.files[n]), status);
+      if (hid) { NP.deleteFiles({ paths: [out.files.Vocals] }).catch(() => {}); delete out.files.Vocals; }
+    }
+    const res = {};
+    if (opts.pathOnly) { for (const n of wanted) res[n] = { path: out.files[n], ext: 'wav' }; return res; }   // caller reads and deletes the file itself
+    for (const n of wanted) res[n] = { blob: await nativeGrab(out.files[n]), ext: 'wav' };
+    NP.deleteFiles({ paths: Object.values(out.files) }).catch(() => {});
+    return res;
+  }
+
+  // Native 2-stem path (Android app): the whole separation runs in Java, not in this page.
+  async function nativeSpleeter(track, wanted, opts, status, onProgress) {
+    const SS = window.Capacitor.Plugins.SpleeterSeparator;
+    status('Preparing audio…');
+    const blob = await (await fetch(track.url)).blob();
+    const b64 = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result).split(',')[1]);
+      fr.onerror = () => rej(fr.error);
+      fr.readAsDataURL(blob);
+    });
+    const saved = await SS.writeInput({ name: 'track-' + Date.now() + '.audio', data: b64 });
+    window.__ppLastSep = '';
+    const h = await SS.addListener('progress', e => { onProgress(e.fraction); status('Separating… ' + Math.round(e.fraction * 100) + '%'); });
+    let out;
+    try { out = await SS.separate({ input: saved.path, sharp: opts.strength, nnapi: opts.nnapi !== false && ls0('ppvAccel_spleeter2') !== 'cpu' && !cpuOnly.has('spleeter2'), tune: false }); try { localStorage.setItem('ppvAccel_spleeter2', /nnapi|npu|gpu/i.test(String(out.accel)) ? 'nnapi' : 'cpu'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+    finally { h.remove(); }
+    window.__ppLastSep = ' (' + Math.round(out.seconds) + ' s on ' + out.accel + ')';
+    if (opts.nmask) window.__ppLastSep += await nativeMask(opts.nmask, out.vocals, [out.instrumental], status);
+    const grab = async p => new Blob([await (await fetch(window.Capacitor.convertFileSrc(p))).arrayBuffer()], { type: 'audio/wav' });
+    const res = {};
+    if (wanted.includes('Vocals')) res.Vocals = opts.pathOnly ? { path: out.vocals, ext: 'wav' } : { blob: await grab(out.vocals), ext: 'wav' };
+    if (wanted.includes('Instrumental')) res.Instrumental = { blob: await grab(out.instrumental), ext: 'wav' };
+    return res;
+  }
 
   // Runs the chosen model; returns {outputName: [L, R]} for just the wanted outputs.
   async function run(id, pcm, wanted, opts, status, onProgress) {
     const m = MODELS[id]; await loadOrt();
     const mkGate = n => n === 'Vocals' ? makeGate(opts.gate) : null;
+    const mask = opts.mask || null;                                   // subtitle mask (JS engines only)
+    const hid = !!mask && !wanted.includes('Vocals') && (wanted.includes('Instrumental') || wanted.includes('Other'));   // vocals are needed internally to put the removed sound back
+    const W = hid ? wanted.concat('Vocals') : wanted;
+    const mkEnc = n => n === 'Vocals' && hid ? { push() {}, finish() { return null; } } : makeEncoder(mkGate(n));
+    if (m.kind === 'spleeter' && NATIVE && !pcm) return nativeSpleeter(opts.track, wanted, opts, status, onProgress);
+    if ((m.kind === 'sp4' || m.kind === 'mdx' || m.kind === 'demucs') && NATIVE && !pcm) return nativeStems(m, id, opts.track, wanted, opts, status, onProgress);
     if (m.kind === 'spleeter') {
       status('Loading models…');
       const sess = { vocals: await makeSession('sp_vocals', false, opts.lv), accomp: await makeSession('sp_accomp', false, opts.lv) };
       try {
-        const enc = {}; wanted.forEach(n => enc[n] = makeEncoder(mkGate(n)));      // encode while separating, no full-length stems in RAM
-        const sink = (v, a) => { if (enc.Vocals) enc.Vocals.push(v[0], v[1]); if (enc.Instrumental) enc.Instrumental.push(a[0], a[1]); };
+        const enc = {}; W.forEach(n => enc[n] = mkEnc(n));      // encode while separating, no full-length stems in RAM
+        const sink = (v, a) => { if (mask && v && a) mask.process(v[0], v[1], [a]); if (enc.Vocals) enc.Vocals.push(v[0], v[1]); if (enc.Instrumental) enc.Instrumental.push(a[0], a[1]); };
         const lv = opts.lv;
         const q = opts.quality || 0;
-        await separate(pcm, sess, onProgress, opts.strength, sink, { pause: lv ? lv.pause[0] : 0, need: lv && lv.skip ? { v: !!enc.Vocals, a: !!enc.Instrumental } : null, ye: lv ? lv.ye : 0, ctx: q >= 1 ? CTX : 0, shift: q >= 2 ? 512 : 0 });
+        await separate(pcm, sess, onProgress, opts.strength, sink, { pause: lv ? lv.pause[0] : 0, need: lv && lv.skip && !mask ? { v: !!enc.Vocals, a: !!enc.Instrumental } : null, ye: lv ? lv.ye : 0, ctx: q >= 1 ? CTX : 0, shift: q >= 2 ? 512 : 0 });
         const out = {}; wanted.forEach(n => out[n] = enc[n].finish()); return out;   // already {blob, ext}
       } finally { sess.vocals.release && sess.vocals.release(); sess.accomp.release && sess.accomp.release(); }
     }
@@ -484,17 +967,17 @@
           status('Loading models…'); await load('sp4f_');
         }
         const idx = { Vocals: [0], Drums: [1], Bass: [2], Other: [3], Instrumental: [1, 2, 3] };
-        const outs = wanted.map(n => ({ name: n, idx: idx[n] })), enc = outs.map(o => makeEncoder(mkGate(o.name))), lv = opts.lv;
-        await separate4(pcm, sess, outs, onProgress, chunks => chunks.forEach((c, k) => enc[k].push(c[0], c[1])), lv ? lv.pause[0] : 0, lv ? lv.ye : 0);
-        return Object.fromEntries(outs.map((o, k) => [o.name, enc[k].finish()]));   // already {blob, ext}
+        const outs = W.map(n => ({ name: n, idx: idx[n] })), enc = outs.map(o => mkEnc(o.name)), lv = opts.lv, nm = outs.map(o => o.name);
+        await separate4(pcm, sess, outs, onProgress, chunks => { maskChunks(mask, nm, chunks); chunks.forEach((c, k) => enc[k].push(c[0], c[1])); }, lv ? lv.pause[0] : 0, lv ? lv.ye : 0);
+        return Object.fromEntries(outs.map((o, k) => [o.name, enc[k].finish()]).filter(q => q[1]));   // already {blob, ext}
       } finally { sess.forEach(x => x.release && x.release()); }
     }
     if (m.kind === 'mdx') {
       status('Loading model…');
       const sess = await makeSession(id, opts.gpu, opts.lv);
       try {
-        const enc = {}; wanted.forEach(n => enc[n] = makeEncoder(mkGate(n)));
-        const sink = (v, a) => { if (enc.Vocals) enc.Vocals.push(v[0], v[1]); if (enc.Instrumental) enc.Instrumental.push(a[0], a[1]); };
+        const enc = {}; W.forEach(n => enc[n] = mkEnc(n));
+        const sink = (v, a) => { if (mask && v && a) mask.process(v[0], v[1], [a]); if (enc.Vocals) enc.Vocals.push(v[0], v[1]); if (enc.Instrumental) enc.Instrumental.push(a[0], a[1]); };
         await separateMdx(pcm, sess, m, onProgress, sink, opts.lv ? opts.lv.pause[1] : 0, opts.lv ? opts.lv.ye : 0);
         const out = {}; wanted.forEach(n => out[n] = enc[n].finish()); return out;   // already {blob, ext}
       } finally { sess.release && sess.release(); }
@@ -502,10 +985,10 @@
     status('Loading model… (can take a moment)');
     const sess = await makeSession(id, opts.gpu, opts.lv);
     try {
-      const outs = wanted.map(n => ({ name: n, rows: n === 'Instrumental' ? m.sources.map((s, i) => s === 'vocals' ? -1 : i).filter(i => i >= 0) : [m.sources.indexOf(n.toLowerCase())] }));
-      const enc = outs.map(o => makeEncoder(mkGate(o.name)));             // encode while separating, no full-length stems in RAM
-      await separateDemucs(pcm, sess, outs, onProgress, chunks => chunks.forEach((c, k) => enc[k].push(c[0], c[1])), opts.lv ? opts.lv.pause[1] : 0);
-      return Object.fromEntries(outs.map((o, k) => [o.name, enc[k].finish()]));   // already {blob, ext}
+      const outs = W.map(n => ({ name: n, rows: n === 'Instrumental' ? m.sources.map((s, i) => s === 'vocals' ? -1 : i).filter(i => i >= 0) : [m.sources.indexOf(n.toLowerCase())] }));
+      const enc = outs.map(o => mkEnc(o.name)), nm = outs.map(o => o.name);             // encode while separating, no full-length stems in RAM
+      await separateDemucs(pcm, sess, outs, onProgress, chunks => { maskChunks(mask, nm, chunks); chunks.forEach((c, k) => enc[k].push(c[0], c[1])); }, opts.lv ? opts.lv.pause[1] : 0);
+      return Object.fromEntries(outs.map((o, k) => [o.name, enc[k].finish()]).filter(q => q[1]));   // already {blob, ext}
     } finally { sess.release && sess.release(); }                       // free RAM right away
   }
   const stemNames = id => MODELS[id].kind === 'spleeter' ? ['Vocals', 'Instrumental'] : ['Vocals', 'Instrumental'].concat(MODELS[id].sources.filter(s => s !== 'vocals').map(cap));
@@ -520,17 +1003,24 @@
     tg_hvoice: HFM + 'swillsoftware/describesong-tagger/resolve/main/head-voice.onnx',
     tg_mel: HFM + 'swillsoftware/describesong-tagger/resolve/main/melbank_96x257.npy',
     tg_mn10: HFM + 'minhducjp/webdonhac-models/resolve/main/mn10_as.onnx',
-    tg_hgenre: 'genre_discogs400-discogs-effnet-1.onnx',                // optional, looked up in HF_BASE (your own repo wins if you upload it)
+    tg_hgenre: 'genre_discogs400-discogs-effnet-1.onnx',                // looked up in your HF_BASE repo first; Essentia is the fallback (TAG_FALLBACK)
     // Public fallback for the Styles section: MTG/Essentia's unmodified Discogs-EffNet ONNX (also outputs the 400 Discogs style activations).
     tg_effstyle: HFM + 'Heyian/discogs-effnet-onnx/resolve/main/discogs-effnet-bsdynamic-1.onnx'
   };
   const INST40 = ["accordion","acousticbassguitar","acousticguitar","bass","beat","bell","bongo","brass","cello","clarinet","classicalguitar","computer","doublebass","drummachine","drums","electricguitar","electricpiano","flute","guitar","harmonica","harp","horn","keyboard","oboe","orchestra","organ","pad","percussion","piano","pipeorgan","rhodes","sampler","saxophone","strings","synthesizer","trombone","trumpet","viola","violin","voice"], DISCOGS = ["Boogie Woogie (Blues)","Chicago Blues (Blues)","Country Blues (Blues)","Delta Blues (Blues)","Electric Blues (Blues)","Harmonica Blues (Blues)","Jump Blues (Blues)","Louisiana Blues (Blues)","Modern Electric Blues (Blues)","Piano Blues (Blues)","Rhythm & Blues (Blues)","Texas Blues (Blues)","Brass Band (Brass & Military)","Marches (Brass & Military)","Military (Brass & Military)","Educational (Children's)","Nursery Rhymes (Children's)","Story (Children's)","Baroque (Classical)","Choral (Classical)","Classical (Classical)","Contemporary (Classical)","Impressionist (Classical)","Medieval (Classical)","Modern (Classical)","Neo-Classical (Classical)","Neo-Romantic (Classical)","Opera (Classical)","Post-Modern (Classical)","Renaissance (Classical)","Romantic (Classical)","Abstract (Electronic)","Acid (Electronic)","Acid House (Electronic)","Acid Jazz (Electronic)","Ambient (Electronic)","Bassline (Electronic)","Beatdown (Electronic)","Berlin-School (Electronic)","Big Beat (Electronic)","Bleep (Electronic)","Breakbeat (Electronic)","Breakcore (Electronic)","Breaks (Electronic)","Broken Beat (Electronic)","Chillwave (Electronic)","Chiptune (Electronic)","Dance-pop (Electronic)","Dark Ambient (Electronic)","Darkwave (Electronic)","Deep House (Electronic)","Deep Techno (Electronic)","Disco (Electronic)","Disco Polo (Electronic)","Donk (Electronic)","Downtempo (Electronic)","Drone (Electronic)","Drum n Bass (Electronic)","Dub (Electronic)","Dub Techno (Electronic)","Dubstep (Electronic)","Dungeon Synth (Electronic)","EBM (Electronic)","Electro (Electronic)","Electro House (Electronic)","Electroclash (Electronic)","Euro House (Electronic)","Euro-Disco (Electronic)","Eurobeat (Electronic)","Eurodance (Electronic)","Experimental (Electronic)","Freestyle (Electronic)","Future Jazz (Electronic)","Gabber (Electronic)","Garage House (Electronic)","Ghetto (Electronic)","Ghetto House (Electronic)","Glitch (Electronic)","Goa Trance (Electronic)","Grime (Electronic)","Halftime (Electronic)","Hands Up (Electronic)","Happy Hardcore (Electronic)","Hard House (Electronic)","Hard Techno (Electronic)","Hard Trance (Electronic)","Hardcore (Electronic)","Hardstyle (Electronic)","Hi NRG (Electronic)","Hip Hop (Electronic)","Hip-House (Electronic)","House (Electronic)","IDM (Electronic)","Illbient (Electronic)","Industrial (Electronic)","Italo House (Electronic)","Italo-Disco (Electronic)","Italodance (Electronic)","Jazzdance (Electronic)","Juke (Electronic)","Jumpstyle (Electronic)","Jungle (Electronic)","Latin (Electronic)","Leftfield (Electronic)","Makina (Electronic)","Minimal (Electronic)","Minimal Techno (Electronic)","Modern Classical (Electronic)","Musique Concr\u00e8te (Electronic)","Neofolk (Electronic)","New Age (Electronic)","New Beat (Electronic)","New Wave (Electronic)","Noise (Electronic)","Nu-Disco (Electronic)","Power Electronics (Electronic)","Progressive Breaks (Electronic)","Progressive House (Electronic)","Progressive Trance (Electronic)","Psy-Trance (Electronic)","Rhythmic Noise (Electronic)","Schranz (Electronic)","Sound Collage (Electronic)","Speed Garage (Electronic)","Speedcore (Electronic)","Synth-pop (Electronic)","Synthwave (Electronic)","Tech House (Electronic)","Tech Trance (Electronic)","Techno (Electronic)","Trance (Electronic)","Tribal (Electronic)","Tribal House (Electronic)","Trip Hop (Electronic)","Tropical House (Electronic)","UK Garage (Electronic)","Vaporwave (Electronic)","African (Folk, World, & Country)","Bluegrass (Folk, World, & Country)","Cajun (Folk, World, & Country)","Canzone Napoletana (Folk, World, & Country)","Catalan Music (Folk, World, & Country)","Celtic (Folk, World, & Country)","Country (Folk, World, & Country)","Fado (Folk, World, & Country)","Flamenco (Folk, World, & Country)","Folk (Folk, World, & Country)","Gospel (Folk, World, & Country)","Highlife (Folk, World, & Country)","Hillbilly (Folk, World, & Country)","Hindustani (Folk, World, & Country)","Honky Tonk (Folk, World, & Country)","Indian Classical (Folk, World, & Country)","La\u00efk\u00f3 (Folk, World, & Country)","Nordic (Folk, World, & Country)","Pacific (Folk, World, & Country)","Polka (Folk, World, & Country)","Ra\u00ef (Folk, World, & Country)","Romani (Folk, World, & Country)","Soukous (Folk, World, & Country)","S\u00e9ga (Folk, World, & Country)","Volksmusik (Folk, World, & Country)","Zouk (Folk, World, & Country)","\u00c9ntekhno (Folk, World, & Country)","Afrobeat (Funk / Soul)","Boogie (Funk / Soul)","Contemporary R&B (Funk / Soul)","Disco (Funk / Soul)","Free Funk (Funk / Soul)","Funk (Funk / Soul)","Gospel (Funk / Soul)","Neo Soul (Funk / Soul)","New Jack Swing (Funk / Soul)","P.Funk (Funk / Soul)","Psychedelic (Funk / Soul)","Rhythm & Blues (Funk / Soul)","Soul (Funk / Soul)","Swingbeat (Funk / Soul)","UK Street Soul (Funk / Soul)","Bass Music (Hip Hop)","Boom Bap (Hip Hop)","Bounce (Hip Hop)","Britcore (Hip Hop)","Cloud Rap (Hip Hop)","Conscious (Hip Hop)","Crunk (Hip Hop)","Cut-up/DJ (Hip Hop)","DJ Battle Tool (Hip Hop)","Electro (Hip Hop)","G-Funk (Hip Hop)","Gangsta (Hip Hop)","Grime (Hip Hop)","Hardcore Hip-Hop (Hip Hop)","Horrorcore (Hip Hop)","Instrumental (Hip Hop)","Jazzy Hip-Hop (Hip Hop)","Miami Bass (Hip Hop)","Pop Rap (Hip Hop)","Ragga HipHop (Hip Hop)","RnB/Swing (Hip Hop)","Screw (Hip Hop)","Thug Rap (Hip Hop)","Trap (Hip Hop)","Trip Hop (Hip Hop)","Turntablism (Hip Hop)","Afro-Cuban Jazz (Jazz)","Afrobeat (Jazz)","Avant-garde Jazz (Jazz)","Big Band (Jazz)","Bop (Jazz)","Bossa Nova (Jazz)","Contemporary Jazz (Jazz)","Cool Jazz (Jazz)","Dixieland (Jazz)","Easy Listening (Jazz)","Free Improvisation (Jazz)","Free Jazz (Jazz)","Fusion (Jazz)","Gypsy Jazz (Jazz)","Hard Bop (Jazz)","Jazz-Funk (Jazz)","Jazz-Rock (Jazz)","Latin Jazz (Jazz)","Modal (Jazz)","Post Bop (Jazz)","Ragtime (Jazz)","Smooth Jazz (Jazz)","Soul-Jazz (Jazz)","Space-Age (Jazz)","Swing (Jazz)","Afro-Cuban (Latin)","Bai\u00e3o (Latin)","Batucada (Latin)","Beguine (Latin)","Bolero (Latin)","Boogaloo (Latin)","Bossanova (Latin)","Cha-Cha (Latin)","Charanga (Latin)","Compas (Latin)","Cubano (Latin)","Cumbia (Latin)","Descarga (Latin)","Forr\u00f3 (Latin)","Guaguanc\u00f3 (Latin)","Guajira (Latin)","Guaracha (Latin)","MPB (Latin)","Mambo (Latin)","Mariachi (Latin)","Merengue (Latin)","Norte\u00f1o (Latin)","Nueva Cancion (Latin)","Pachanga (Latin)","Porro (Latin)","Ranchera (Latin)","Reggaeton (Latin)","Rumba (Latin)","Salsa (Latin)","Samba (Latin)","Son (Latin)","Son Montuno (Latin)","Tango (Latin)","Tejano (Latin)","Vallenato (Latin)","Audiobook (Non-Music)","Comedy (Non-Music)","Dialogue (Non-Music)","Education (Non-Music)","Field Recording (Non-Music)","Interview (Non-Music)","Monolog (Non-Music)","Poetry (Non-Music)","Political (Non-Music)","Promotional (Non-Music)","Radioplay (Non-Music)","Religious (Non-Music)","Spoken Word (Non-Music)","Ballad (Pop)","Bollywood (Pop)","Bubblegum (Pop)","Chanson (Pop)","City Pop (Pop)","Europop (Pop)","Indie Pop (Pop)","J-pop (Pop)","K-pop (Pop)","Kay\u014dkyoku (Pop)","Light Music (Pop)","Music Hall (Pop)","Novelty (Pop)","Parody (Pop)","Schlager (Pop)","Vocal (Pop)","Calypso (Reggae)","Dancehall (Reggae)","Dub (Reggae)","Lovers Rock (Reggae)","Ragga (Reggae)","Reggae (Reggae)","Reggae-Pop (Reggae)","Rocksteady (Reggae)","Roots Reggae (Reggae)","Ska (Reggae)","Soca (Reggae)","AOR (Rock)","Acid Rock (Rock)","Acoustic (Rock)","Alternative Rock (Rock)","Arena Rock (Rock)","Art Rock (Rock)","Atmospheric Black Metal (Rock)","Avantgarde (Rock)","Beat (Rock)","Black Metal (Rock)","Blues Rock (Rock)","Brit Pop (Rock)","Classic Rock (Rock)","Coldwave (Rock)","Country Rock (Rock)","Crust (Rock)","Death Metal (Rock)","Deathcore (Rock)","Deathrock (Rock)","Depressive Black Metal (Rock)","Doo Wop (Rock)","Doom Metal (Rock)","Dream Pop (Rock)","Emo (Rock)","Ethereal (Rock)","Experimental (Rock)","Folk Metal (Rock)","Folk Rock (Rock)","Funeral Doom Metal (Rock)","Funk Metal (Rock)","Garage Rock (Rock)","Glam (Rock)","Goregrind (Rock)","Goth Rock (Rock)","Gothic Metal (Rock)","Grindcore (Rock)","Grunge (Rock)","Hard Rock (Rock)","Hardcore (Rock)","Heavy Metal (Rock)","Indie Rock (Rock)","Industrial (Rock)","Krautrock (Rock)","Lo-Fi (Rock)","Lounge (Rock)","Math Rock (Rock)","Melodic Death Metal (Rock)","Melodic Hardcore (Rock)","Metalcore (Rock)","Mod (Rock)","Neofolk (Rock)","New Wave (Rock)","No Wave (Rock)","Noise (Rock)","Noisecore (Rock)","Nu Metal (Rock)","Oi (Rock)","Parody (Rock)","Pop Punk (Rock)","Pop Rock (Rock)","Pornogrind (Rock)","Post Rock (Rock)","Post-Hardcore (Rock)","Post-Metal (Rock)","Post-Punk (Rock)","Power Metal (Rock)","Power Pop (Rock)","Power Violence (Rock)","Prog Rock (Rock)","Progressive Metal (Rock)","Psychedelic Rock (Rock)","Psychobilly (Rock)","Pub Rock (Rock)","Punk (Rock)","Rock & Roll (Rock)","Rockabilly (Rock)","Shoegaze (Rock)","Ska (Rock)","Sludge Metal (Rock)","Soft Rock (Rock)","Southern Rock (Rock)","Space Rock (Rock)","Speed Metal (Rock)","Stoner Rock (Rock)","Surf (Rock)","Symphonic Rock (Rock)","Technical Death Metal (Rock)","Thrash (Rock)","Twist (Rock)","Viking Metal (Rock)","Y\u00e9-Y\u00e9 (Rock)","Musical (Stage & Screen)","Score (Stage & Screen)","Soundtrack (Stage & Screen)","Theme (Stage & Screen)"], AUDIOSET = ["Speech","Male speech, man speaking","Female speech, woman speaking","Child speech, kid speaking","Conversation","Narration, monologue","Babbling","Speech synthesizer","Shout","Bellow","Whoop","Yell","Battle cry","Children shouting","Screaming","Whispering","Laughter","Baby laughter","Giggle","Snicker","Belly laugh","Chuckle, chortle","Crying, sobbing","Baby cry, infant cry","Whimper","Wail, moan","Sigh","Singing","Choir","Yodeling","Chant","Mantra","Male singing","Female singing","Child singing","Synthetic singing","Rapping","Humming","Groan","Grunt","Whistling","Breathing","Wheeze","Snoring","Gasp","Pant","Snort","Cough","Throat clearing","Sneeze","Sniff","Run","Shuffle","Walk, footsteps","Chewing, mastication","Biting","Gargling","Stomach rumble","Burping, eructation","Hiccup","Fart","Hands","Finger snapping","Clapping","Heart sounds, heartbeat","Heart murmur","Cheering","Applause","Chatter","Crowd","Hubbub, speech noise, speech babble","Children playing","Animal","Domestic animals, pets","Dog","Bark","Yip","Howl","Bow-wow","Growling","Whimper (dog)","Cat","Purr","Meow","Hiss","Caterwaul","Livestock, farm animals, working animals","Horse","Clip-clop","Neigh, whinny","Cattle, bovinae","Moo","Cowbell","Pig","Oink","Goat","Bleat","Sheep","Fowl","Chicken, rooster","Cluck","Crowing, cock-a-doodle-doo","Turkey","Gobble","Duck","Quack","Goose","Honk","Wild animals","Roaring cats (lions, tigers)","Roar","Bird","Bird vocalization, bird call, bird song","Chirp, tweet","Squawk","Pigeon, dove","Coo","Crow","Caw","Owl","Hoot","Bird flight, flapping wings","Canidae, dogs, wolves","Rodents, rats, mice","Mouse","Patter","Insect","Cricket","Mosquito","Fly, housefly","Buzz","Bee, wasp, etc.","Frog","Croak","Snake","Rattle","Whale vocalization","Music","Musical instrument","Plucked string instrument","Guitar","Electric guitar","Bass guitar","Acoustic guitar","Steel guitar, slide guitar","Tapping (guitar technique)","Strum","Banjo","Sitar","Mandolin","Zither","Ukulele","Keyboard (musical)","Piano","Electric piano","Organ","Electronic organ","Hammond organ","Synthesizer","Sampler","Harpsichord","Percussion","Drum kit","Drum machine","Drum","Snare drum","Rimshot","Drum roll","Bass drum","Timpani","Tabla","Cymbal","Hi-hat","Wood block","Tambourine","Rattle (instrument)","Maraca","Gong","Tubular bells","Mallet percussion","Marimba, xylophone","Glockenspiel","Vibraphone","Steelpan","Orchestra","Brass instrument","French horn","Trumpet","Trombone","Bowed string instrument","String section","Violin, fiddle","Pizzicato","Cello","Double bass","Wind instrument, woodwind instrument","Flute","Saxophone","Clarinet","Harp","Bell","Church bell","Jingle bell","Bicycle bell","Tuning fork","Chime","Wind chime","Change ringing (campanology)","Harmonica","Accordion","Bagpipes","Didgeridoo","Shofar","Theremin","Singing bowl","Scratching (performance technique)","Pop music","Hip hop music","Beatboxing","Rock music","Heavy metal","Punk rock","Grunge","Progressive rock","Rock and roll","Psychedelic rock","Rhythm and blues","Soul music","Reggae","Country","Swing music","Bluegrass","Funk","Folk music","Middle Eastern music","Jazz","Disco","Classical music","Opera","Electronic music","House music","Techno","Dubstep","Drum and bass","Electronica","Electronic dance music","Ambient music","Trance music","Music of Latin America","Salsa music","Flamenco","Blues","Music for children","New-age music","Vocal music","A capella","Music of Africa","Afrobeat","Christian music","Gospel music","Music of Asia","Carnatic music","Music of Bollywood","Ska","Traditional music","Independent music","Song","Background music","Theme music","Jingle (music)","Soundtrack music","Lullaby","Video game music","Christmas music","Dance music","Wedding music","Happy music","Funny music","Sad music","Tender music","Exciting music","Angry music","Scary music","Wind","Rustling leaves","Wind noise (microphone)","Thunderstorm","Thunder","Water","Rain","Raindrop","Rain on surface","Stream","Waterfall","Ocean","Waves, surf","Steam","Gurgling","Fire","Crackle","Vehicle","Boat, Water vehicle","Sailboat, sailing ship","Rowboat, canoe, kayak","Motorboat, speedboat","Ship","Motor vehicle (road)","Car","Vehicle horn, car horn, honking","Toot","Car alarm","Power windows, electric windows","Skidding","Tire squeal","Car passing by","Race car, auto racing","Truck","Air brake","Air horn, truck horn","Reversing beeps","Ice cream truck, ice cream van","Bus","Emergency vehicle","Police car (siren)","Ambulance (siren)","Fire engine, fire truck (siren)","Motorcycle","Traffic noise, roadway noise","Rail transport","Train","Train whistle","Train horn","Railroad car, train wagon","Train wheels squealing","Subway, metro, underground","Aircraft","Aircraft engine","Jet engine","Propeller, airscrew","Helicopter","Fixed-wing aircraft, airplane","Bicycle","Skateboard","Engine","Light engine (high frequency)","Dental drill, dentist's drill","Lawn mower","Chainsaw","Medium engine (mid frequency)","Heavy engine (low frequency)","Engine knocking","Engine starting","Idling","Accelerating, revving, vroom","Door","Doorbell","Ding-dong","Sliding door","Slam","Knock","Tap","Squeak","Cupboard open or close","Drawer open or close","Dishes, pots, and pans","Cutlery, silverware","Chopping (food)","Frying (food)","Microwave oven","Blender","Water tap, faucet","Sink (filling or washing)","Bathtub (filling or washing)","Hair dryer","Toilet flush","Toothbrush","Electric toothbrush","Vacuum cleaner","Zipper (clothing)","Keys jangling","Coin (dropping)","Scissors","Electric shaver, electric razor","Shuffling cards","Typing","Typewriter","Computer keyboard","Writing","Alarm","Telephone","Telephone bell ringing","Ringtone","Telephone dialing, DTMF","Dial tone","Busy signal","Alarm clock","Siren","Civil defense siren","Buzzer","Smoke detector, smoke alarm","Fire alarm","Foghorn","Whistle","Steam whistle","Mechanisms","Ratchet, pawl","Clock","Tick","Tick-tock","Gears","Pulleys","Sewing machine","Mechanical fan","Air conditioning","Cash register","Printer","Camera","Single-lens reflex camera","Tools","Hammer","Jackhammer","Sawing","Filing (rasp)","Sanding","Power tool","Drill","Explosion","Gunshot, gunfire","Machine gun","Fusillade","Artillery fire","Cap gun","Fireworks","Firecracker","Burst, pop","Eruption","Boom","Wood","Chop","Splinter","Crack","Glass","Chink, clink","Shatter","Liquid","Splash, splatter","Slosh","Squish","Drip","Pour","Trickle, dribble","Gush","Fill (with liquid)","Spray","Pump (liquid)","Stir","Boiling","Sonar","Arrow","Whoosh, swoosh, swish","Thump, thud","Thunk","Electronic tuner","Effects unit","Chorus effect","Basketball bounce","Bang","Slap, smack","Whack, thwack","Smash, crash","Breaking","Bouncing","Whip","Flap","Scratch","Scrape","Rub","Roll","Crushing","Crumpling, crinkling","Tearing","Beep, bleep","Ping","Ding","Clang","Squeal","Creak","Rustle","Whir","Clatter","Sizzle","Clicking","Clickety-clack","Rumble","Plop","Jingle, tinkle","Hum","Zing","Boing","Crunch","Silence","Sine wave","Harmonic","Chirp tone","Sound effect","Pulse","Inside, small room","Inside, large room or hall","Inside, public space","Outside, urban or manmade","Outside, rural or natural","Reverberation","Echo","Noise","Environmental noise","Static","Mains hum","Distortion","Sidetone","Cacophony","White noise","Pink noise","Throbbing","Vibration","Television","Radio","Field recording"];
+  const TAG_FALLBACK = { tg_hgenre: 'https://essentia.upf.edu/models/classification-heads/genre_discogs400/genre_discogs400-discogs-effnet-1.onnx' };
   const AS_GENRE = [216, 265], AS_MOOD = [276, 282], AS_NOT_INST = new Set([145, 146, 166, 167, 192]);
   const asInst = i => (i >= 140 && i <= 199 && !AS_NOT_INST.has(i)) || [208, 209, 210, 211, 213].includes(i);
 
   async function ensureTagFile(key, status, low, pr) {
-    if (await idbGet(key)) return;
     const f = TAG_FILES[key];
+    if (NATIVE && /\.onnx$/.test(f)) {                                 // the app's native engine reads its own model store, not IndexedDB
+      if ((await NP.exists({ id: key })).ready) return;
+      status('Downloading ' + f.split('/').pop() + '…');
+      try { await nativeFetch(key, f, status); } catch (e) { if (!TAG_FALLBACK[key]) throw e; await nativeFetch(key, TAG_FALLBACK[key], status); }
+      return;
+    }
+    if (await idbGet(key)) return;
     await fetchPart(key, f, (g, t) => { status('Downloading ' + f.split('/').pop() + ' ' + (t ? Math.round(g / t * 100) + '%' : (g / 1048576 | 0) + ' MB')); pr && pr(g, t); }, low);
   }
   async function decodeMono(url, sr) {
@@ -554,12 +1044,14 @@
     if (bank.length !== NB * K) throw new Error('melbank has the wrong size');
     const w = new Float64Array(M); for (let i = 0; i < M; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (M - 1));   // symmetric Hann
     const mel = new Float32Array(nF * NB), re = new Float64Array(M), im = new Float64Array(M), pw = new Float64Array(K);
+    const blo = new Int32Array(NB), bhi = new Int32Array(NB);                // where each mel filter is non-zero: skip the rest of the 257 bins
+    for (let b = 0; b < NB; b++) { let lo = K, hi = -1; for (let k = 0; k < K; k++) if (bank[b * K + k] !== 0) { if (k < lo) lo = k; hi = k; } blo[b] = lo; bhi[b] = hi; }
     for (let f = 0; f < nF; f++) {
       const st = f * H - H;                                           // frame centred on f*256 (256 zeros in front)
       for (let j = 0; j < M; j++) { const q = st + j; re[j] = (q >= 0 && q < x.length ? x[q] : 0) * w[j]; im[j] = 0; }
       fftS(re, im);
       for (let k = 0; k < K; k++) pw[k] = re[k] * re[k] + im[k] * im[k];
-      for (let b = 0; b < NB; b++) { let a = 0; const o = b * K; for (let k = 0; k < K; k++) a += bank[o + k] * pw[k]; mel[f * NB + b] = Math.log10(1 + 10000 * a); }
+      for (let b = 0; b < NB; b++) { let a = 0; const o = b * K, hi = bhi[b]; for (let k = blo[b]; k <= hi; k++) a += bank[o + k] * pw[k]; mel[f * NB + b] = Math.log10(1 + 10000 * a); }
       if (f % 300 === 299) await tick();
     }
     return mel;
@@ -576,6 +1068,20 @@
     ['happy', 'mood_happy', 'Happy', 0], ['sad', 'mood_sad', 'Sad', 1], ['relaxed', 'mood_relaxed', 'Relaxed', 1], ['aggressive', 'mood_aggressive', 'Aggressive', 0],
     ['party', 'mood_party', 'Party', 1], ['acoustic', 'mood_acoustic', 'Acoustic', 0], ['electronic', 'mood_electronic', 'Electronic', 0], ['danceable', 'danceability', 'Danceable', 0]
   ].map(([id, dir, label, pos]) => ({ id, label, pos, base: dir + '-discogs-effnet-1', file: ESS + dir + '/' + dir + '-discogs-effnet-1.onnx', info: ESS + dir + '/' + dir + '-discogs-effnet-1.json' }));
+  // Extra heads on the same embedding (each ~0.5 MB, almost free to run): 56 moods/themes, singer's voice, bright/dark tone,
+  // how approachable (mainstream) and how engaging a track is. Same download routes as the mood heads. Any that cannot be
+  // downloaded are skipped (and not retried for 3 days), so they never block tagging. Multi-class heads need their .json
+  // (class names); two-class ones fall back to the names below.
+  const EXTRA_HEADS = [
+    ['theme', 'mtg_jamendo_moodtheme', 'Mood/theme', 'multi', 'theme', null],
+    ['gender', 'gender', 'Voice', 'class', 'gender', ['female', 'male']],
+    ['tone', 'nsynth_bright_dark', 'Tone', 'class', 'timbre', ['bright', 'dark']],
+    ['approachable', 'approachability_2c', 'Approachable', 'binary', 'feel', ['not_approachable', 'approachable']],
+    ['engaging', 'engagement_2c', 'Engaging', 'binary', 'feel', ['not_engaging', 'engaging']]
+  ].map(([id, dir, label, kind, group, classes]) => ({ id, label, kind, group, classes, pos: 1, extra: true, base: dir + '-discogs-effnet-1', file: ESS + dir + '/' + dir + '-discogs-effnet-1.onnx', info: ESS + dir + '/' + dir + '-discogs-effnet-1.json' }));
+  const HEAD_MISS = 'ppvHeadMiss', MISS_MS = 3 * 864e5;
+  const headMiss = () => { try { return JSON.parse(localStorage.getItem(HEAD_MISS)) || {}; } catch (e) { return {}; } };
+  const setHeadMiss = (id, on) => { const m = headMiss(); if (on) m[id] = Date.now(); else delete m[id]; try { localStorage.setItem(HEAD_MISS, JSON.stringify(m)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
   const moodsOn = () => { try { return localStorage.getItem('ppvMoods') !== '0'; } catch (e) { return true; } };
   // Fetch with a hard deadline (response start AND stalls mid-download), so a dead host can never freeze the app.
   async function fetchTimed(url, ms, onProgress) {
@@ -613,30 +1119,47 @@
     }
     throw last || new Error('all routes failed');
   }
+  // App: the mood models used to come only from essentia.upf.edu, so when that server was down every one failed.
+  // Now your own Hugging Face repo (HF_BASE) is tried first, under Essentia's file name or the short one
+  // (mood_happy-discogs-effnet-1.onnx or mood_happy.onnx), then Essentia itself.
+  async function nativeHeadFetch(b) {
+    const short = b.base.replace(/-discogs-effnet-1$/, '');
+    const tries = [b.base + '.onnx', short + '.onnx', b.file];
+    let last = null;
+    for (const f of tries) {
+      try { await nativeFetch('tgh_' + b.id, f, () => {}); return; }
+      catch (e) { last = e; }
+    }
+    throw new Error('not found in your Hugging Face repo or on essentia.upf.edu (' + errText(last) + ')');
+  }
   let headsLog = [];                                                 // why each mood model failed, shown in the tag result
   async function builtinHeads(status, low, prog) {
     if (headsFailed) return [];
-    const ok = new Array(BUILTIN_HEADS.length).fill(null); let got = 0;
+    const miss = headMiss(), LIST = BUILTIN_HEADS.concat(EXTRA_HEADS.filter(b => !(miss[b.id] && Date.now() - miss[b.id] < MISS_MS)));
+    const ok = new Array(LIST.length).fill(null); let got = 0;
     const one = async (b, k) => {
       try {
-        let h = null; try { const c = await idbGet('tghm_' + b.id); if (c) h = JSON.parse(c); } catch (e) {}
-        if (!h || !(await idbGet('tgh_' + b.id))) {
-          h = { id: b.id, label: b.label, kind: 'binary', group: 'mood', pos: b.pos, classes: null };
-          const buf = await fetchHeadFile(b, 'onnx', 8000);
-          try { const j = JSON.parse(new TextDecoder().decode(await fetchHeadFile(b, 'json', 4000))); if (j.classes && j.classes.length === 2) { h.classes = j.classes; const p = j.classes.findIndex(c => !/^(non|not)[_ -]/i.test(c)); if (p >= 0) h.pos = p; } } catch (e) {}
-          await idbPut('tgh_' + b.id, buf);
+        let h = null; try { const c = await idbGet('tghm_' + b.id); if (c) h = JSON.parse(c); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        if (!h || !(NATIVE ? (await NP.exists({ id: 'tgh_' + b.id })).ready : await idbGet('tgh_' + b.id))) {
+          h = { id: b.id, label: b.label, kind: b.kind || 'binary', group: b.group || 'mood', pos: b.pos, classes: b.classes ? b.classes.slice() : null };
+          const buf = NATIVE ? (await nativeHeadFetch(b), null) : await fetchHeadFile(b, 'onnx', 8000);
+          let j = null; try { j = JSON.parse(new TextDecoder().decode(await fetchHeadFile(b, 'json', 4000))); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+          if (j && Array.isArray(j.classes) && j.classes.length >= 2 && (h.kind === 'multi' || j.classes.length === 2)) h.classes = j.classes;
+          if (h.kind === 'binary' && h.classes && h.classes.length === 2) { const p = h.classes.findIndex(c => !/^(non|not)[_ -]/i.test(c)); if (p >= 0) h.pos = p; }
+          if (h.kind !== 'binary' && !h.classes) throw new Error('class names (.json) not found');
+          if (buf) await idbPut('tgh_' + b.id, buf);
           await idbPut('tghm_' + b.id, JSON.stringify(h));
         }
-        ok[k] = h; headsFailed = false;
-      } catch (e) { headsLog.push(b.label + ': ' + ((e && e.message) || e)); console.warn('mood head skipped', b.id, e); }
-      finally { got++; status('Mood models: ' + got + ' of ' + BUILTIN_HEADS.length + ' ready…'); prog && prog(got / BUILTIN_HEADS.length); }
+        ok[k] = h; headsFailed = false; if (b.extra) setHeadMiss(b.id, false);
+      } catch (e) { if (b.extra) setHeadMiss(b.id, true); else headsLog.push(b.label + ': ' + ((e && e.message) || e)); console.warn('mood head skipped', b.id, e); }
+      finally { got++; status('Mood & theme models: ' + got + ' of ' + LIST.length + ' ready…'); prog && prog(got / LIST.length); }
     };
-    status('Mood models: checking…');
-    const all = Promise.all(BUILTIN_HEADS.map(one));                  // all eight at once, so the wait is the slowest one, not the sum
+    status('Mood & theme models: checking…');
+    const all = Promise.all(LIST.map(one));                           // all at once, so the wait is the slowest one, not the sum
     await Promise.race([all, new Promise(r => setTimeout(r, 25000))]);   // never hold up tagging for more than 25 s
-    if (got < BUILTIN_HEADS.length) headsLog.push('some are still downloading in the background, they will be ready next run');
+    if (got < LIST.length) headsLog.push('some are still downloading in the background, they will be ready next run');
     const out = ok.filter(Boolean);
-    if (!out.length) headsFailed = true;                              // skip the wait on the next tracks (cleared if a background download succeeds, or by Refresh)
+    if (!out.some(h => !EXTRA_HEADS.some(b => b.id === h.id))) headsFailed = true;                              // skip the wait on the next tracks (cleared if a background download succeeds, or by Refresh)
     return out;
   }
   async function loadHeads(status, low, enabled, prog) {
@@ -644,26 +1167,29 @@
     if (enabled === false) return [];
     if (headsMemo) return headsMemo;
     let man = null;
-    try { const c = await idbGet('tg_manifest'); if (c) man = JSON.parse(c); } catch (e) {}
+    try { const c = await idbGet('tg_manifest'); if (c) man = JSON.parse(c); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
     if (!man) {
       try { man = JSON.parse(new TextDecoder().decode(await fetchTimed(HF_BASE + 'tagger-heads.json', 6000))); await idbPut('tg_manifest', JSON.stringify(man)); } catch (e) { man = null; }
     }
     const heads = [];
     for (const h of ((man && man.heads) || [])) {
       try {
-        if (!(await idbGet('tgh_' + h.id))) await fetchPart('tgh_' + h.id, h.file, (g, t) => status('Downloading ' + h.file + ' ' + (t ? Math.round(g / t * 100) + '%' : '')), low);
+        if (NATIVE) { if (!(await NP.exists({ id: 'tgh_' + h.id })).ready) await nativeFetch('tgh_' + h.id, h.file, () => {}); }
+        else if (!(await idbGet('tgh_' + h.id))) await fetchPart('tgh_' + h.id, h.file, (g, t) => status('Downloading ' + h.file + ' ' + (t ? Math.round(g / t * 100) + '%' : '')), low);
         heads.push(h);
       } catch (e) { console.warn('head skipped', h.id, e); }
     }
     let custom = heads.length > 0;
     if (!custom) heads.push(...await builtinHeads(status, low, prog));
-    return heads.length && (custom || heads.length === BUILTIN_HEADS.length) ? (headsMemo = heads) : heads;   // only remember a complete set       // don't remember an empty result, so a later run can try again
+    const core = heads.filter(h => BUILTIN_HEADS.some(b => b.id === h.id)).length;
+    return heads.length && (custom || core === BUILTIN_HEADS.length) ? (headsMemo = heads) : heads;   // only remember a complete set       // don't remember an empty result, so a later run can try again
   }
   async function resetHeads() {
     headsMemo = null; headsFailed = false;
-    try { const c = await idbGet('tg_manifest'); if (c) for (const h of (JSON.parse(c).heads || [])) await idbDel('tgh_' + h.id); } catch (e) {}
+    try { const c = await idbGet('tg_manifest'); if (c) for (const h of (JSON.parse(c).heads || [])) await idbDel('tgh_' + h.id); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
     await idbDel('tg_manifest').catch(() => {});
-    for (const b of BUILTIN_HEADS) { await idbDel('tgh_' + b.id).catch(() => {}); await idbDel('tghm_' + b.id).catch(() => {}); }
+    try { localStorage.removeItem(HEAD_MISS); } catch (e) {}
+    for (const b of BUILTIN_HEADS.concat(EXTRA_HEADS)) { if (NATIVE) await NP.remove({ id: 'tgh_' + b.id }).catch(() => {}); await idbDel('tgh_' + b.id).catch(() => {}); await idbDel('tghm_' + b.id).catch(() => {}); }
   }
 
   // ---------- Tempo (BPM) from the log-mel frames we already have ----------
@@ -690,6 +1216,208 @@
     }
     if (!bpm || best <= 0) return null;
     return { bpm: Math.round(bpm), conf: Math.max(0, Math.min(1, (best / (sum / cnt) - 1) / 4)) };
+  }
+
+  // ---------- Shifts: where a song changes pace or sound (uses the same log-mel frames as the tempo code) ----------
+  // Finds (1) sound changes: the average spectrum before a point differs from the average after it,
+  // (2) tempo changes: tempo measured in short windows, folded to the song's main tempo octave.
+  // Each shift is described by comparing the stretch before it with the stretch after it (loudness, brightness, rhythm density, tempo).
+  function shiftsFromMel(mel, nF, off0, bpm0) {
+    const NB = 96, FPS = 16000 / 256, BL = Math.round(FPS), L = 6;
+    if (nF < FPS * 24) return null;
+    const o = new Float32Array(nF);
+    for (let f = 1; f < nF; f++) { let a = 0; for (let b = 0; b < NB; b++) { const d = mel[f * NB + b] - mel[(f - 1) * NB + b]; if (d > 0) a += d; } o[f] = a; }
+    const nb = Math.floor(nF / BL);
+    const bv = new Float32Array(nb * NB), loud = new Float32Array(nb), dens = new Float32Array(nb), bright = new Float32Array(nb);
+    for (let i = 0; i < nb; i++) {
+      let lo = 0, hi = 0, od = 0;
+      for (let f = i * BL; f < (i + 1) * BL; f++) { for (let b = 0; b < NB; b++) { const v = mel[f * NB + b]; bv[i * NB + b] += v / BL; if (b < NB / 2) lo += v; else hi += v; } od += o[f]; }
+      loud[i] = (lo + hi) / (BL * NB); bright[i] = (hi - lo) / (BL * NB / 2); dens[i] = od / BL;
+    }
+    const sd = a => { let m = 0; for (const v of a) m += v; m /= a.length; let s = 0; for (const v of a) s += (v - m) * (v - m); return Math.sqrt(s / a.length) || 1e-6; };
+    const sL = sd(loud), sB = sd(bright), sD = sd(dens);
+    // 1) sound novelty
+    const nov = new Float32Array(nb);
+    for (let i = L; i <= nb - L; i++) {
+      let d = 0;
+      for (let b = 0; b < NB; b++) { let A = 0, B = 0; for (let k = 1; k <= L; k++) { A += bv[(i - k) * NB + b]; B += bv[(i + k - 1) * NB + b]; } const x = (A - B) / L; d += x * x; }
+      nov[i] = Math.sqrt(d / NB);
+    }
+    let m = 0, c = 0; for (let i = L; i <= nb - L; i++) { m += nov[i]; c++; } m /= c || 1;
+    let s = 0; for (let i = L; i <= nb - L; i++) s += (nov[i] - m) * (nov[i] - m); s = Math.sqrt(s / (c || 1)) || 1e-6;
+    const cand = [], nm = Array.from(nov.subarray(L, nb - L + 1)).sort((p, q) => p - q), medN = nm[nm.length >> 1] || 1e-6;
+    for (let i = L; i <= nb - L; i++) {
+      if (nov[i] < m + 1.5 * s || nov[i] < 2.2 * medN || nov[i] < 0.12) continue;
+      let top = true; for (let k = Math.max(L, i - 5); k <= Math.min(nb - L, i + 5); k++) if (nov[k] > nov[i]) { top = false; break; }
+      if (top) cand.push({ i, sc: (nov[i] - m) / s, snd: true });
+    }
+    // 2) tempo windows
+    const W = Math.round(FPS * 10), H = Math.round(FPS * 5), tw = [];
+    const z = new Float32Array(nF), WW = 16, pre = new Float64Array(nF + 1);
+    for (let i = 0; i < nF; i++) pre[i + 1] = pre[i] + o[i];
+    for (let i = 0; i < nF; i++) { const a = Math.max(0, i - WW), b = Math.min(nF, i + WW + 1); z[i] = Math.max(0, o[i] - (pre[b] - pre[a]) / (b - a)); }
+    for (let a0 = 0; a0 + W <= nF; a0 += H) {
+      const acf = lag => { const L0 = Math.floor(lag), fr = lag - L0, n = W - L0 - 1; if (n < FPS * 3) return 0; let a = 0; for (let i = 0; i < n; i++) a += z[a0 + i] * (z[a0 + i + L0] * (1 - fr) + z[a0 + i + L0 + 1] * fr); return a / n; };
+      let best = 0, bp = 0, sum = 0, cnt = 0;
+      for (let t = 60; t <= 200; t += 1) { const lg = FPS * 60 / t; const v = Math.max(0, acf(lg)) + 0.5 * Math.max(0, acf(2 * lg)); sum += v; cnt++; if (v > best) { best = v; bp = t; } }
+      tw.push({ a0, bpm: best > 0 && best / (sum / cnt) > 1.8 ? bp : 0 });
+    }
+    const ref = bpm0 || (() => { const v = tw.map(x => x.bpm).filter(Boolean).sort((p, q) => p - q); return v[v.length >> 1] || 0; })();
+    const fold = v => { if (!v || !ref) return 0; let x = v; while (x < ref * 0.72) x *= 2; while (x > ref * 1.45) x /= 2; return x; };
+    const ft = tw.map(x => fold(x.bpm)), med2 = (p, q) => p && q ? (p + q) / 2 : (p || q || 0);
+    for (let k = 2; k < tw.length - 1; k++) {
+      const a = med2(ft[k - 2], ft[k - 1]), b = med2(ft[k], ft[k + 1]);
+      if (a && b && Math.abs(b / a - 1) > 0.06) cand.push({ i: Math.round((tw[k].a0 + W / 2) / BL) , sc: 3, tempo: [Math.round(a), Math.round(b)] });
+    }
+    // merge: keep strongest within 8 s, then describe each one
+    cand.sort((p, q) => q.sc - p.sc); const keep = [];
+    for (const cd of cand) { if (keep.some(k => Math.abs(k.i - cd.i) < 8)) { const k = keep.find(k => Math.abs(k.i - cd.i) < 8); if (cd.tempo && !k.tempo) k.tempo = cd.tempo; continue; } keep.push(cd); }
+    keep.sort((p, q) => p.i - q.i);
+    const mean = (arr, a, b) => { let t = 0, n = 0; for (let i = Math.max(0, a); i < Math.min(arr.length, b); i++) { t += arr[i]; n++; } return n ? t / n : 0; };
+    const out = [];
+    for (const k of keep.slice(0, 16)) {
+      const w = [], dl = (mean(loud, k.i, k.i + L) - mean(loud, k.i - L, k.i)) / sL, db = (mean(bright, k.i, k.i + L) - mean(bright, k.i - L, k.i)) / sB, dd = (mean(dens, k.i, k.i + L) - mean(dens, k.i - L, k.i)) / sD;
+      if (k.tempo) { const fb = k.i * BL, bef = [], aft = []; tw.forEach((x, j) => { if (!ft[j]) return; if (x.a0 + W <= fb) bef.push(ft[j]); else if (x.a0 >= fb) aft.push(ft[j]); }); const md = a => { a = a.slice(-3).sort((p, q) => p - q); return a.length ? a[a.length >> 1] : 0; }, mA = md(bef), mB = md(aft.slice(0, 3)); if (mA && mB) k.tempo = [Math.round(mA), Math.round(mB)]; }
+      if (k.tempo) w.push(k.tempo[1] > k.tempo[0] ? 'faster (~' + k.tempo[0] + ' to ~' + k.tempo[1] + ' BPM)' : 'slower (~' + k.tempo[0] + ' to ~' + k.tempo[1] + ' BPM)');
+      if (dl > 0.6) w.push('louder'); else if (dl < -0.6) w.push('quieter');
+      if (db > 0.6) w.push('brighter'); else if (db < -0.6) w.push('darker');
+      if (dd > 0.6) w.push('busier rhythm'); else if (dd < -0.6) w.push('sparser rhythm');
+      if (!w.length) w.push('texture change');
+      out.push([Math.round(off0 + k.i * BL / FPS), w.join(', ')]);
+    }
+    return { list: out, from: Math.round(off0), to: Math.round(off0 + nF / FPS) };
+  }
+
+  // ---------- Structure: sections, per-section tags and instrument entries/exits ----------
+  // Works on the per-second "patches" the tagger already scores (embedding, 40 instrument classes, vocal chance, loudness, genre, mood heads).
+  // 1) boundaries: where the sound stops resembling what came just before (checkerboard novelty on a similarity matrix), plus clear loudness / vocal steps
+  // 2) repeats: sections that sound alike get the same letter
+  // 3) labels (a guess from repeats, loudness and vocals): Intro, Verse, Chorus (Drop when there are few vocals), Bridge, Breakdown, Outro
+  const STEM_GROUPS = [
+    ['drums', ['drums', 'drummachine', 'beat', 'percussion']], ['bass', ['bass', 'acousticbassguitar', 'doublebass']], ['vocals', null],
+    ['guitar', ['guitar', 'acousticguitar', 'electricguitar', 'classicalguitar']], ['keys', ['piano', 'keyboard', 'electricpiano', 'rhodes', 'organ', 'pipeorgan']],
+    ['synth', ['synthesizer', 'pad', 'sampler', 'computer']], ['strings', ['strings', 'violin', 'viola', 'cello', 'orchestra']],
+    ['horns', ['brass', 'trumpet', 'trombone', 'horn', 'saxophone', 'flute', 'clarinet', 'oboe']]
+  ];
+  function structureFromPatches(P) {
+    const n = P.t.length, D = 1280, sig = v => 1 / (1 + Math.exp(-v));
+    if (n < 24) return null;
+    const smooth = (a, r) => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) { let s = 0, c = 0; for (let k = Math.max(0, i - r); k <= Math.min(a.length - 1, i + r); k++) { s += a[k]; c++; } o[i] = s / c; } return o; };
+    const avg = (a, i0, i1) => { let s = 0, c = 0; for (let i = Math.max(0, i0); i < Math.min(a.length, i1); i++) { s += a[i]; c++; } return c ? s / c : 0; };
+    const pct = (a, q) => { const b = Array.from(a).sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
+    // embeddings: centred on the song's average, lightly smoothed, unit length
+    const mu = new Float64Array(D); for (let i = 0; i < n; i++) for (let d = 0; d < D; d++) mu[d] += P.emb[i * D + d] / n;
+    const E = new Float32Array(n * D);
+    for (let i = 0; i < n; i++) {
+      let nr = 0;
+      for (let d = 0; d < D; d++) { let s = 0, c = 0; for (let k = Math.max(0, i - 1); k <= Math.min(n - 1, i + 1); k++) { s += P.emb[k * D + d] - mu[d]; c++; } const v = s / c; E[i * D + d] = v; nr += v * v; }
+      nr = Math.sqrt(nr) || 1; for (let d = 0; d < D; d++) E[i * D + d] /= nr;
+    }
+    const SM = new Float32Array(n * n).fill(NaN);
+    const sim = (i, j) => { const k = i * n + j; if (SM[k] === SM[k]) return SM[k]; let s = 0; for (let d = 0; d < D; d++) s += E[i * D + d] * E[j * D + d]; SM[k] = SM[j * n + i] = s; return s; };
+    const en0 = smooth(P.loud, 1), elo = pct(en0, 0.05), ehi = pct(en0, 0.95), en = en0.map(v => Math.max(0, Math.min(1, (v - elo) / ((ehi - elo) || 1))));
+    const vs = smooth(Float32Array.from(P.voice), 1);
+    // instrument groups: on/off over time
+    let ilo = Infinity, ihi = -Infinity; for (let i = 0; i < P.inst.length; i++) { const v = P.inst[i]; if (v < ilo) ilo = v; if (v > ihi) ihi = v; }
+    const iraw = ilo < 0 || ihi > 1, groups = [];
+    for (const [name, list] of STEM_GROUPS) {
+      let s = new Float32Array(n);
+      if (!list) s = Float32Array.from(P.voice);
+      else { const ci = list.map(x => P.INST40.indexOf(x)).filter(x => x >= 0); for (let i = 0; i < n; i++) { let m = 0; for (const c of ci) { let v = P.inst[i * 40 + c]; if (iraw) v = sig(v); if (v > m) m = v; } s[i] = m; } }
+      s = smooth(s, 1); const p90 = pct(s, 0.9); if (p90 < 0.3) continue;
+      const hi = Math.max(0.3, 0.6 * p90), lo = Math.max(0.18, 0.35 * p90), on = new Uint8Array(n); let st = s[0] >= hi ? 1 : 0;
+      for (let i = 0; i < n; i++) { if (st && s[i] <= lo) st = 0; else if (!st && s[i] >= hi) st = 1; on[i] = st; }
+      for (let i = 0; i < n;) { let j = i; while (j < n && on[j] === on[i]) j++; if (j - i < 4 && i > 0 && j < n) for (let k = i; k < j; k++) on[k] = on[i - 1]; i = j; }   // runs shorter than ~4 s are blips
+      groups.push({ name, on });
+    }
+    // boundaries
+    const K = Math.min(8, n >> 2), w = Array.from({ length: K }, (_, a) => Math.exp(-0.5 * Math.pow((a + 0.5) / (K * 0.6), 2)));
+    const nov = new Float32Array(n);
+    for (let i = K; i <= n - K; i++) { let s = 0, ws = 0; for (let a = 0; a < K; a++) for (let b = 0; b < K; b++) { const ww = w[a] * w[b]; s += ww * (sim(i - 1 - a, i - 1 - b) + sim(i + a, i + b) - sim(i - 1 - a, i + b) - sim(i + a, i - 1 - b)); ws += ww; } nov[i] = s / ws; }
+    let m = 0, c = 0; for (let i = K; i <= n - K; i++) { m += nov[i]; c++; } m /= c || 1; let sd = 0; for (let i = K; i <= n - K; i++) sd += (nov[i] - m) * (nov[i] - m); sd = Math.sqrt(sd / (c || 1)) || 1e-6;
+    const cand = [], isMax = (arr, i, r) => { for (let k = Math.max(0, i - r); k <= Math.min(n - 1, i + r); k++) if (arr[k] > arr[i]) return false; return true; };
+    for (let i = K; i <= n - K; i++) if (nov[i] > 0.05 && nov[i] > m + 0.6 * sd && isMax(nov, i, 4)) cand.push({ i, sc: (nov[i] - m) / sd });
+    const de = new Float32Array(n), dv = new Float32Array(n), W6 = 6;
+    for (let i = W6; i <= n - W6; i++) { de[i] = Math.abs(avg(en, i, i + W6) - avg(en, i - W6, i)); dv[i] = Math.abs(avg(vs, i, i + W6) - avg(vs, i - W6, i)); }
+    for (let i = W6; i <= n - W6; i++) { if (de[i] > 0.3 && isMax(de, i, 4)) cand.push({ i, sc: de[i] / 0.12 }); if (dv[i] > 0.5 && isMax(dv, i, 4)) cand.push({ i, sc: dv[i] / 0.2 }); }
+    cand.sort((p, q) => q.sc - p.sc); const maxB = Math.max(2, Math.round(n / 14)), bnd = [];
+    for (const cd of cand) { if (bnd.length >= maxB) break; if (cd.i < 6 || cd.i > n - 6) continue; if (bnd.some(x => Math.abs(x - cd.i) < 6)) continue; bnd.push(cd.i); }
+    bnd.sort((p, q) => p - q);
+    const edges = [0, ...bnd, n], segs = [];
+    for (let k = 0; k + 1 < edges.length; k++) {
+      const a = edges[k], b = edges[k + 1], ce = new Float32Array(D); let nr = 0;
+      for (let i = a; i < b; i++) for (let d = 0; d < D; d++) ce[d] += E[i * D + d];
+      for (let d = 0; d < D; d++) nr += ce[d] * ce[d]; nr = Math.sqrt(nr) || 1; for (let d = 0; d < D; d++) ce[d] /= nr;
+      segs.push({ a, b, ce, dur: b - a, e: avg(en, a, b), voc: avg(vs, a, b) });
+    }
+    // repeats: greedy grouping by similarity of the average sound
+    const cl = [], cos = (p, q) => { let s = 0; for (let d = 0; d < D; d++) s += p[d] * q[d]; return s; };
+    for (const sg of segs) {
+      let best = -1, bs = 0.7; cl.forEach((q, k) => { const v = cos(sg.ce, q.ce); if (v > bs) { bs = v; best = k; } });
+      if (best < 0) { cl.push({ ce: Float32Array.from(sg.ce), n: 1, dur: sg.dur, es: sg.e * sg.dur, vs: sg.voc * sg.dur }); sg.k = cl.length - 1; }
+      else { const q = cl[best]; q.n++; q.dur += sg.dur; q.es += sg.e * sg.dur; q.vs += sg.voc * sg.dur; let nr = 0; for (let d = 0; d < D; d++) { q.ce[d] += sg.ce[d] / q.n; nr += q.ce[d] * q.ce[d]; } nr = Math.sqrt(nr) || 1; for (let d = 0; d < D; d++) q.ce[d] /= nr; sg.k = best; }
+    }
+    cl.forEach(q => { q.e = q.es / q.dur; q.voc = q.vs / q.dur; });
+    const vMean = avg(vs, 0, n), instr = vMean < 0.35;
+    let chorus = -1, bsc = -1;
+    cl.forEach((q, k) => { if (q.n < 2) return; const sc = q.e * 0.6 + q.voc * 0.2 + Math.min(1, q.dur / n * 2) * 0.2; if (sc > bsc) { bsc = sc; chorus = k; } });
+    const last = segs.length - 1, cnt = {}, tot = {};
+    segs.forEach((sg, i) => {
+      const q = cl[sg.k]; let lab;
+      if (P.whole && i === 0 && sg.k !== chorus && (q.n < 2 || sg.voc < 0.3) && sg.dur <= 0.2 * n) lab = 'Intro';
+      else if (P.whole && i === last && sg.k !== chorus && (q.n < 2 || sg.voc < 0.3) && sg.dur <= 0.2 * n) lab = 'Outro';
+      else if (sg.k === chorus) lab = instr ? 'Drop' : 'Chorus';
+      else if (q.n >= 2) lab = sg.voc >= 0.4 ? 'Verse' : 'Instrumental';
+      else if (sg.e < 0.35) lab = 'Breakdown';
+      else lab = sg.voc >= 0.4 ? 'Bridge' : 'Interlude';
+      sg.lab = lab; tot[lab] = (tot[lab] || 0) + 1;
+    });
+    segs.forEach(sg => { cnt[sg.lab] = (cnt[sg.lab] || 0) + 1; if (tot[sg.lab] > 1) sg.lab += ' ' + cnt[sg.lab]; });
+    // per-section tags
+    const MOODS = ['happy', 'sad', 'relaxed', 'aggressive', 'party'], mh = (P.heads || []).filter(h => h.kind === 'binary' && MOODS.includes(h.id)).map(h => { let lo = Infinity, hi = -Infinity; for (const v of h.v) { if (v < lo) lo = v; if (v > hi) hi = v; } return Object.assign({ raw: lo < 0 || hi > 1 }, h); });
+    // singer's voice per section (gender head), only where there is real singing: lets the map spot a second singer / duet
+    const gh = (P.heads || []).find(h => h.group === 'gender' && h.classes && h.classes.length === h.n && h.n >= 2);
+    const voiceOf = sg => {
+      if (!gh || sg.voc < 0.45) return '';
+      const acc = new Float64Array(gh.n); let c2 = 0;
+      for (let p = sg.a; p < sg.b; p++) { if (P.voice[p] < 0.5) continue; for (let k = 0; k < gh.n; k++) acc[k] += gh.v[p * gh.n + k]; c2++; }
+      if (c2 < 3) return '';
+      let pr = Array.from(acc, v => v / c2); if (pr.some(v => v < 0 || v > 1)) { const mx = Math.max(...pr), ex = pr.map(v => Math.exp(v - mx)), sm = ex.reduce((a, b) => a + b, 0); pr = ex.map(v => v / sm); }
+      const sm = pr.reduce((a, b) => a + b, 0) || 1; let bi = 0; pr.forEach((v, k) => { if (v > pr[bi]) bi = k; });
+      const conf = Math.round(pr[bi] / sm * 100); return conf >= 62 ? gh.classes[bi] + ':' + conf : '';
+    };
+    const sections = segs.map((sg, i) => {
+      const inst = groups.filter(g => avg(g.on, sg.a, sg.b) >= 0.6).map(g => g.name);
+      let gen = ''; if (P.gen) { const acc = new Float64Array(400); for (let p = sg.a; p < sg.b; p++) for (let c2 = 0; c2 < 400; c2++) { let v = P.gen[p * 400 + c2]; if (!Number.isFinite(v)) v = 0; acc[c2] += P.genRaw ? sig(v) : v; } let bi = 0; for (let c2 = 1; c2 < 400; c2++) if (acc[c2] > acc[bi]) bi = c2; gen = String(P.DISCOGS[bi]).replace(/\s*\([^)]*\)$/, ''); }
+      let md = '', bv = 0.45; for (const h of mh) { let v = 0; for (let p = sg.a; p < sg.b; p++) { const x = h.v[p * h.n + h.pos]; v += h.raw ? sig(x) : x; } v /= (sg.b - sg.a); if (v > bv) { bv = v; md = h.id; } }
+      return { t0: i === 0 ? Math.max(0, Math.round(P.t[0] - 1)) : Math.round(P.t[sg.a] - 0.5), t1: i === last ? Math.round(P.dur ? Math.min(P.dur, P.t[n - 1] + 1) : P.t[n - 1] + 1) : Math.round(P.t[segs[i + 1].a] - 0.5),
+        label: sg.lab, group: String.fromCharCode(65 + sg.k), voc: Math.round(sg.voc * 100), en: Math.round(sg.e * 100), inst, gen, md, vg: voiceOf(sg) };
+    });
+    // entries and exits (merged when several arrive together)
+    let ev = []; for (const g of groups) for (let i = 1; i < n; i++) if (g.on[i] !== g.on[i - 1] && i >= 3 && i <= n - 3) ev.push([Math.round(P.t[i] - 0.5), g.name, g.on[i]]);
+    ev.sort((p, q) => p[0] - q[0]);
+    const merged = []; for (const e of ev) { const p = merged.find(x => x[2] === e[2] && Math.abs(x[0] - e[0]) <= 2); if (p) p[1] += '+' + e[1]; else merged.push(e.slice()); }
+    return { sections, events: merged.slice(0, 24), from: Math.max(0, Math.round(P.t[0] - 1)), to: sections[sections.length - 1].t1 };
+  }
+  // compact form for saving, and plain-language lines for the tag view and for the AI
+  function compactStruct(r) {
+    if (!r.sections || !r.sections.length) return null;
+    return { sc: r.sections.map(s => [s.t0, s.t1, s.label, s.voc, s.en, s.inst.join('+'), s.gen, s.md, s.vg || '']), ie: (r.stemEv || []).map(e => [e[0], e[1], e[2]]), scs: r.structSpan, scw: r.structWhole ? 1 : 0 };
+  }
+  function structLines(c) {
+    if (!c || !c.sc || !c.sc.length) return [];
+    const mode = k => { const f = {}; c.sc.forEach(s => { if (s[k]) f[s[k]] = (f[s[k]] || 0) + (s[1] - s[0]); }); const e = Object.entries(f).sort((p, q) => q[1] - p[1])[0]; return e ? e[0] : ''; }, mg = mode(6), mm = mode(7);
+    const nrg = e => e >= 66 ? 'loud' : e >= 33 ? 'medium' : 'quiet';
+    const L = ['Sections' + (c.scs ? ' (' + mmss(c.scs[0]) + '-' + mmss(c.scs[1]) + (c.scw ? '' : ', middle part only') + ')' : '') + ':'];
+    c.sc.forEach(s => { const bits = [nrg(s[4]), s[3] >= 50 ? 'vocals' : s[3] >= 20 ? 'some vocals' : 'no vocals']; if (s[5]) bits.push(s[5].split('+').filter(x => x !== 'vocals').join(', ')); if (s[6] && s[6] !== mg) bits.push(s[6]); if (s[7] && s[7] !== mm) bits.push(s[7]); if (s[8]) bits.push(String(s[8]).split(':')[0] + ' voice'); L.push('  ' + mmss(s[0]) + ' ' + s[2] + ' (' + bits.filter(Boolean).join('; ') + ')'); });
+    if (c.ie && c.ie.length) L.push('Enter/exit: ' + c.ie.map(e => mmss(e[0]) + ' ' + e[1] + (e[2] ? ' in' : ' out')).join(' · '));
+    return L;
+  }
+  function structSentence(c) {
+    if (!c || !c.sc || !c.sc.length) return '';
+    let t = 'Structure: ' + c.sc.slice(0, 10).map(s => s[2] + ' at ' + mmss(s[0])).join(', ') + '.';
+    if (c.ie && c.ie.length) t += ' Parts come in and out: ' + c.ie.slice(0, 6).map(e => e[1] + ' ' + (e[2] ? 'enters' : 'drops out') + ' at ' + mmss(e[0])).join(', ') + '.';
+    return t;
   }
 
   // ---------- Musical key (chroma + Krumhansl profiles) ----------
@@ -754,9 +1482,9 @@
   // opt.cache : object that keeps ONNX sessions alive between tracks (batch mode).
   async function tagTrack(url, status, lv, opt) {
     opt = opt || {};
-    const P = f => { try { opt.progress && opt.progress(Math.max(0, Math.min(1, f))); } catch (e) {} };
+    const P = f => { try { opt.progress && opt.progress(Math.max(0, Math.min(1, f))); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     P(0); await loadOrt();
-    const low = !!(lv && lv.blob), r = { errors: [] }, own = [];
+    const low = !!(lv && lv.blob), r = { errors: [] }, own = [], dg = {};
     const TF = ['tg_effnet', 'tg_hinst', 'tg_hvoice', 'tg_mel', 'tg_mn10'];
     for (let i = 0; i < TF.length; i++) { await ensureTagFile(TF[i], status, low, (g, t) => P(0.1 * (i + (t ? g / t : 0.5)) / TF.length)); P(0.1 * (i + 1) / TF.length); await tick(); }
     let hasGenre = true; try { await ensureTagFile('tg_hgenre', status, low); } catch (e) { hasGenre = false; }
@@ -769,13 +1497,16 @@
       if (opt.cache) return opt.cache[key] || (opt.cache[key] = await makeSession(key, false, lv));
       const s = await makeSession(key, false, lv); own.push(s); return s;
     };
+    let tagWins = null;                                           // the AudioSet windows, cut out of the single decode below
     // 1) Discogs-EffNet (+ heads, tempo, key, vocal timeline, embedding)
     try {
       status('Listening (1 of 2)…');
-      let x = await decodeMono(url, 16000);
-      r.dur = x.length / 16000;
-      const SEC = 140 * 16000; let off = 0;
-      if (!opt.deep && x.length > SEC) { off = (x.length - SEC) >> 1; x = x.slice(off, off + SEC); }   // the middle ~2 minutes is plenty
+      let full = await decodeMono(url, 32000);                    // decoded ONCE: EffNet (16 kHz) and the AudioSet windows (32 kHz) both come from this
+      r.dur = full.length / 32000;
+      tagWins = audiosetWindows(full);                            // cut out now, so the long array can go
+      const SEC = 140 * 16000, n16 = full.length >> 1, mid = !opt.deep && n16 > SEC; let off = 0;
+      if (mid) off = (n16 - SEC) >> 1;                            // the middle ~2 minutes is plenty
+      let x = down2(full, off * 2, mid ? SEC : n16); full = null;
       const whole = !!opt.deep || r.dur <= 142;
       status('Finding the key…'); await tick();
       try { const k = await chromaKey(x); if (k) { r.key = k.name; r.camelot = k.camelot; r.keyConf = k.conf; } } catch (e) { r.errors.push('Key: ' + e.message); }
@@ -783,18 +1514,53 @@
       const mel = await effnetMel(x, parseNpy(await getPart('tg_mel'))); x = null;
       const nF = mel.length / 96;
       try { const t = tempoFromMel(mel, nF); if (t) { r.bpm = t.bpm; r.bpmConf = t.conf; } } catch (e) { r.errors.push('Tempo: ' + e.message); }
+      try { const sh = shiftsFromMel(mel, nF, mid ? off / 16000 : 0, r.bpm); if (sh) { r.shifts = sh.list; r.shiftSpan = [sh.from, sh.to]; } } catch (e) { r.errors.push('Shifts: ' + e.message); }
       const nP = nF >= 128 ? Math.floor((nF - 128) / 62) + 1 : 1, take = Math.min(nP, opt.deep ? 400 : 128);
       const idx = Array.from({ length: take }, (_, i) => Math.floor(i * nP / take));
+      // Loudness of each patch (mean log-mel). Near-silent patches (intros, fades, gaps) say nothing about genre or mood,
+      // and averaging them in pulled every score towards "unsure". They still count for the vocal timeline.
+      const pLoud = idx.map(p => { const s0 = p * 62 * 96, e0 = Math.min(mel.length, s0 + 128 * 96); let a = 0; for (let q = s0; q < e0; q++) a += mel[q]; return e0 > s0 ? a / (e0 - s0) : 0; });
+      const loudRef = pLoud.slice().sort((a, b) => b - a)[Math.floor(pLoud.length * 0.2)] || 0;
+      const useP = pLoud.map(v => pLoud.length < 4 || v >= loudRef * 0.45);
       const eff = await S('tg_effnet'), hI = await S('tg_hinst'), hV = await S('tg_hvoice');
       const hG = hasGenre ? await S('tg_hgenre') : null;
       const sNet = hasStyleNet ? await S('tg_effstyle') : null;
       const hs = [], okHeads = [];
-      for (const h of heads) { try { hs.push(await S('tgh_' + h.id)); okHeads.push(h); status('Loading mood models ' + okHeads.length + ' of ' + heads.length + '…'); P(0.2 + 0.05 * okHeads.length / heads.length); await tick(); } catch (e) { console.warn('mood head unusable', h.id, e); try { await idbDel('tgh_' + h.id); await idbDel('tghm_' + h.id); } catch (e2) {} headsMemo = null; } }
+      for (const h of heads) { try { hs.push(await S('tgh_' + h.id)); okHeads.push(h); status('Loading mood models ' + okHeads.length + ' of ' + heads.length + '…'); P(0.2 + 0.05 * okHeads.length / heads.length); await tick(); } catch (e) { console.warn('mood head unusable', h.id, e); try { await idbDel('tgh_' + h.id); await idbDel('tghm_' + h.id); } catch(e2){ if (typeof ppCaught === "function") ppCaught(e2); } headsMemo = null; } }
       const heads0 = heads; heads = okHeads; if (!okHeads.length && heads0.length) r.errors.push('Moods skipped: the mood models would not load (they will be re-downloaded next run).');
+      // Reads a classifier head's answer by its own output shape. If a head hands back one row for the whole batch instead of one per patch
+      // (or fewer values than expected), that row is used for every patch instead of reading past the end and producing NaN.
+      const runHead = async (sess, E, cnt, name) => {
+        const run1 = async t => (await sess.run({ [sess.inputNames[0]]: t }))[sess.outputNames[0]];
+        let o = null, n = 0, per = false, note = '';
+        if (!sess.__rows) {
+          o = await run1(E); n = (o.dims && o.dims[o.dims.length - 1]) || Math.max(1, Math.round(o.data.length / 64));
+          per = o.data.length >= cnt * n;
+          note = 'dims ' + (o.dims ? '[' + Array.from(o.dims).join(',') + ']' : '?') + ', ' + o.data.length + ' values';
+          if (!per && !sess.__broke) sess.__rows = 1;                                    // this model folds the whole batch into one row
+        }
+        if (sess.__rows) {                                               // so feed it one patch at a time to get a real answer per patch
+          try {
+            const em = E.data; let outd = null;
+            for (let i = 0; i < cnt; i++) {
+              const row = em.slice(i * 1280, (i + 1) * 1280); let oi;
+              if (!sess.__rep) { try { oi = await run1(new ort.Tensor('float32', row, [1, 1280])); } catch (e1) { if (i) throw e1; sess.__rep = 1; } }
+              if (sess.__rep) { const rep = new Float32Array(64 * 1280); for (let k = 0; k < 64; k++) rep.set(row, k * 1280); oi = await run1(new ort.Tensor('float32', rep, [64, 1280])); }
+              n = (oi.dims && oi.dims[oi.dims.length - 1]) || oi.data.length;
+              if (!outd) outd = new Float32Array(cnt * n);
+              outd.set(oi.data.subarray(0, n), i * n);
+            }
+            o = { data: outd, dims: [cnt, n] }; per = true; note = (note || 'batch-folding model') + ', run one patch at a time';
+          } catch (e) { sess.__rows = 0; sess.__broke = 1; if (!o) o = await run1(E); note = (note || '') + ', one row for the whole batch'; per = false; }
+        }
+        if (!dg[name]) dg[name] = note;
+        return { n, at: (i, c) => { const v = per ? o.data[i * n + c] : o.data[c]; return Number.isFinite(v) ? v : 0; } };
+      };
       const inst = new Float32Array(40), g400 = new Float32Array(400), embSum = new Float64Array(1280), hacc = heads.map(() => null), pv = [];
-      let voice = 0, rows = 0, gotG = false;
+      let voice = 0, rows = 0, used = 0, gotG = false, styleSrc = hG ? 'genre head' : 'effnet styles', styleLo = Infinity, styleHi = -Infinity, styleBad = 0, styleBadAt = -1; const pg = [];
+      const embAll = new Float32Array(take * 1280), instAll = new Float32Array(take * 40), gAll = new Float32Array(take * 400), hper = heads.map(() => null); let gAny = false;   // per-second records, for the structure pass
       for (let b = 0; b < take; b += 64) {
-        const cnt = Math.min(64, take - b), X = new Float32Array(64 * 128 * 96);      // the graph wants exactly 64 patches
+        const tb0 = performance.now(), cnt = Math.min(64, take - b), X = new Float32Array(64 * 128 * 96);      // the graph wants exactly 64 patches
         for (let i = 0; i < cnt; i++) { const s0 = idx[b + i] * 62 * 96; X.set(mel.subarray(s0, Math.min(mel.length, s0 + 128 * 96)), i * 128 * 96); }
         status('Listening… ' + Math.min(b + 64, take) + ' of ' + take + ' patches'); P(0.25 + 0.6 * b / take); await tick();
         const res = await eff.run({ [eff.inputNames[0]]: new ort.Tensor('float32', X, [64, 128, 96]) });
@@ -802,40 +1568,58 @@
         for (const n of eff.outputNames) { const o = res[n], d = o.dims[o.dims.length - 1]; if (d === 1280) emb = o.data; else if (d === 400) p400 = o.data; }
         if (!emb) throw new Error('embedding output not found');
         const E = new ort.Tensor('float32', emb, [64, 1280]);
-        const yi = (await hI.run({ [hI.inputNames[0]]: E }))[hI.outputNames[0]].data, yv = (await hV.run({ [hV.inputNames[0]]: E }))[hV.outputNames[0]].data;
+        const yi = await runHead(hI, E, cnt, 'instrument head'), yv = await runHead(hV, E, cnt, 'vocal head');
         let yg = hG ? (await hG.run({ [hG.inputNames[0]]: E }))[hG.outputNames[0]].data : p400;
         if (!yg && sNet) {                                              // official Discogs-EffNet: dynamic batch, [n,128,96] in, 400 style activations out
           const rs = await sNet.run({ [sNet.inputNames[0]]: new ort.Tensor('float32', X.subarray(0, cnt * 128 * 96), [cnt, 128, 96]) });
           for (const n of sNet.outputNames) { const o = rs[n]; if (o.dims[o.dims.length - 1] === 400) { yg = new Float32Array(64 * 400); yg.set(o.data.subarray(0, cnt * 400)); break; } }
+          if (!yg && !dg.styleOut) { dg.styleOut = 1; r.errors.push('Styles: the styles model returned no 400-value output (got ' + sNet.outputNames.join(', ') + ')'); }
         }
         for (let j = 0; j < hs.length; j++) {
           if (!hs[j]) continue;
-          let y; try { y = (await hs[j].run({ [hs[j].inputNames[0]]: E }))[hs[j].outputNames[0]].data; } catch (e) { console.warn('mood head failed', heads[j].id, e); hs[j] = null; continue; }
-          const n = y.length / 64;
+          let y; try { y = await runHead(hs[j], E, cnt, 'mood head ' + heads[j].id); } catch (e) { console.warn('mood head failed', heads[j].id, e); hs[j] = null; continue; }
+          const n = y.n;
           if (!hacc[j]) hacc[j] = new Float64Array(n);
-          for (let i = 0; i < cnt; i++) for (let c = 0; c < n; c++) hacc[j][c] += y[i * n + c];
+          for (let i = 0; i < cnt; i++) if (useP[b + i]) for (let c = 0; c < n; c++) hacc[j][c] += y.at(i, c);
+          if (!hper[j]) { hper[j] = new Float32Array(take * n); hper[j].n = n; }
+          for (let i = 0; i < cnt; i++) for (let c = 0; c < n; c++) hper[j][(b + i) * n + c] = y.at(i, c);
         }
         for (let i = 0; i < cnt; i++) {
-          for (let c = 0; c < 40; c++) inst[c] = Math.max(inst[c], yi[i * 40 + c]);
-          voice += yv[i * 2 + 1]; pv.push(yv[i * 2 + 1]);                // classes: instrumental, voice
+          for (let c = 0; c < 40; c++) instAll[(b + i) * 40 + c] = yi.at(i, c);
+          embAll.set(emb.subarray(i * 1280, i * 1280 + 1280), (b + i) * 1280);
+          if (yg) { gAll.set(yg.slice(i * 400, i * 400 + 400), (b + i) * 400); gAny = true; }
+          for (let c = 0; c < 40; c++) inst[c] = Math.max(inst[c], yi.at(i, c));
+          { const vv = yv.at(i, 1); voice += vv; pv.push(vv); }                // classes: instrumental, voice
+          if (!useP[b + i]) continue;
           for (let c = 0; c < 1280; c++) embSum[c] += emb[i * 1280 + c];
-          if (yg) { gotG = true; for (let c = 0; c < 400; c++) g400[c] += yg[i * 400 + c]; }
+          if (yg) { gotG = true; const row = yg.slice(i * 400, i * 400 + 400); for (let c = 0; c < 400; c++) { let v = row[c]; if (!Number.isFinite(v)) { styleBad++; if (styleBadAt < 0) styleBadAt = c; row[c] = v = 0; } if (v < styleLo) styleLo = v; if (v > styleHi) styleHi = v; } pg.push(row); }
+          used++;
         }
         rows += cnt; await tick();
+        await ease(performance.now() - tb0, opt.rest, 'eff', cnt);
       }
       r.voice = voice / rows;
-      r.inst = INST40.map((n, i) => [n, inst[i]]);
-      let nrm = 0; const em = new Float32Array(1280); for (let c = 0; c < 1280; c++) { em[c] = embSum[c] / rows; nrm += em[c] * em[c]; }
+      { let lo = Infinity, hi = -Infinity; for (let i = 0; i < rows * 40 && i < instAll.length; i++) { const v = instAll[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        const raw = lo < -0.01 || hi > 1.01;                          // the instrument head gave raw scores (logits), not 0..1: squash them, or 4.2 shows as 420%
+        r.inst = INST40.map((n, i) => [n, raw ? 1 / (1 + Math.exp(-inst[i])) : Math.max(0, Math.min(1, inst[i]))]); }
+      const ur = Math.max(1, used);                                    // averages over the patches that had sound in them
+      let nrm = 0; const em = new Float32Array(1280); for (let c = 0; c < 1280; c++) { em[c] = embSum[c] / ur; nrm += em[c] * em[c]; }
       nrm = Math.sqrt(nrm) || 1; for (let c = 0; c < 1280; c++) em[c] /= nrm; r.emb = em;
       if (gotG) {
-        let lo = Infinity, hi = -Infinity; for (let c = 0; c < 400; c++) { g400[c] /= rows; lo = Math.min(lo, g400[c]); hi = Math.max(hi, g400[c]); }
-        if (lo < 0 || hi > 1) for (let c = 0; c < 400; c++) g400[c] = 1 / (1 + Math.exp(-g400[c]));       // raw scores -> probabilities
+        const raw = styleLo < 0 || styleHi > 1;                       // raw scores (logits) instead of probabilities
+        const kk = Math.max(1, Math.ceil(pg.length / 2)), col = new Float32Array(pg.length);
+        for (let c = 0; c < 400; c++) {
+          for (let i = 0; i < pg.length; i++) col[i] = raw ? 1 / (1 + Math.exp(-pg[i][c])) : pg[i][c];
+          col.sort(); let sm = 0; for (let i = 0; i < kk; i++) sm += col[pg.length - 1 - i]; g400[c] = sm / kk;
+        }
         r.style = DISCOGS.map((n, i) => [n, g400[i]]);
+        const tp = r.style.slice().sort((a, b) => b[1] - a[1]).slice(0, 3).map(v => v[0] + ' ' + v[1].toFixed(3)).join(', ');
+        r.styleDbg = styleSrc + ', raw ' + styleLo.toFixed(3) + '..' + styleHi.toFixed(3) + (raw ? ' (sigmoid applied)' : '') + ', top ' + tp + (styleBad ? ', NaN values: ' + styleBad + ' of ' + pg.length * 400 + ' (first at ' + DISCOGS[styleBadAt] + ')' : '');
       } else r.errors.push('Styles skipped: the styles model could not be downloaded or has no 400-style output.');
       r.heads = {};
       heads.forEach((h, j) => {
         if (!hacc[j]) return;
-        const p = Array.from(hacc[j], v => v / rows); let lo = Infinity, hi = -Infinity; p.forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+        const p = Array.from(hacc[j], v => v / ur); let lo = Infinity, hi = -Infinity; p.forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
         if (lo < 0 || hi > 1) for (let c = 0; c < p.length; c++) p[c] = 1 / (1 + Math.exp(-p[c]));
         r.heads[h.id] = { label: h.label, kind: h.kind, group: h.group, classes: h.classes, pos: h.pos, p };
       });
@@ -848,28 +1632,45 @@
         if (a >= 0) { r.firstVocal = Math.max(0, tm(a)); r.lastVocal = tm(z) + 2; }
         r.whole = true;
       }
+      try {                                                            // sections, per-section tags, instrument entries/exits
+        const stp = { t: Float32Array.from(idx, q => off / 16000 + q * 62 * 256 / 16000 + 1), emb: embAll, inst: instAll, gen: gAny ? gAll : null, genRaw: styleLo < 0 || styleHi > 1, voice: pv, loud: pLoud, whole: !!whole, dur: r.dur, INST40, DISCOGS,
+          heads: heads.map((h, j) => hper[j] ? { id: h.id, kind: h.kind, group: h.group, classes: h.classes, pos: h.pos, n: hper[j].n, v: hper[j] } : null).filter(Boolean) };
+        const sr = structureFromPatches(stp); if (sr) { r.sections = sr.sections; r.stemEv = sr.events; r.structSpan = [sr.from, sr.to]; r.structWhole = !!whole; }
+      } catch (e) { console.error(e); r.errors.push('Structure: ' + e.message); }
     } catch (e) { console.error(e); r.errors.push('EffNet: ' + e.message); }
     finally { own.forEach(s => s.release && s.release()); own.length = 0; }
     // 2) AudioSet tagger
     try {
       status('Listening (2 of 2)…');
-      let x = await decodeMono(url, 32000);
-      const W = 160000, nW = Math.max(1, Math.min(6, Math.floor(x.length / W))), probs = new Float32Array(527);
+      const wins = tagWins || audiosetWindows(await decodeMono(url, 32000)); tagWins = null;   // normally already cut out during the first pass
+      const W = wins.length ? wins[0].length : 160000, nW = wins.length, probs = new Float32Array(527), per = [];
       const sess = await S('tg_mn10');
       try {
         for (let w = 0; w < nW; w++) {
-          const wav = new Float32Array(W), st = x.length > W ? Math.floor((x.length - W) * (w + 0.5) / nW) : 0;
-          wav.set(x.subarray(st, st + W));
-          const y = (await sess.run({ [sess.inputNames[0]]: new ort.Tensor('float32', wav, [1, W]) }))[sess.outputNames[0]].data;
-          for (let c = 0; c < 527; c++) probs[c] += y[c] / nW;
+          const tw0 = performance.now(), wav = wins[w];
+          const res = await sess.run({ [sess.inputNames[0]]: new ort.Tensor('float32', wav, [1, W]) });
+          // The model can export more than one output (scores + an embedding): take the one with the 527 AudioSet classes.
+          let out = null; for (const n of sess.outputNames) { const o = res[n]; if (o && o.data && o.data.length === 527) { out = o; break; } }
+          if (!out) throw new Error('no 527-class output (' + sess.outputNames.map(n => n + ':' + (res[n] && res[n].data ? res[n].data.length : '?')).join(', ') + ')');
+          const y = Float32Array.from(out.data);
+          let lo = Infinity, hi = -Infinity; for (let c = 0; c < 527; c++) { lo = Math.min(lo, y[c]); hi = Math.max(hi, y[c]); }
+          if (lo < 0 || hi > 1) for (let c = 0; c < 527; c++) y[c] = 1 / (1 + Math.exp(-y[c]));   // raw scores -> probabilities, per window
+          per.push(y);
           status('Listening (2 of 2)… ' + (w + 1) + ' of ' + nW); P(0.85 + 0.15 * (w + 1) / nW); await tick();
+          await ease(performance.now() - tw0, opt.rest, 'mn', 1);
         }
       } finally { own.forEach(s => s.release && s.release()); own.length = 0; }
-      x = null;
+      // A plain average over windows waters a tag down: a genre heard clearly in half the song came out at half its strength,
+      // and quiet intros/outros dragged everything towards zero. Each class takes the mean of its strongest half of the windows.
+      const k = Math.max(1, Math.ceil(per.length / 2));
+      for (let c = 0; c < 527; c++) { const v = per.map(y => y[c]).sort((a, b) => b - a); let sm = 0; for (let i = 0; i < k; i++) sm += v[i]; probs[c] = sm / k; }
       const pick = (lo, hi) => { const o = []; for (let i = lo; i <= hi; i++) o.push([AUDIOSET[i], probs[i]]); return o; };
       r.genre = pick(AS_GENRE[0], AS_GENRE[1]); r.mood = pick(AS_MOOD[0], AS_MOOD[1]); r.music = probs[137];
       r.inst2 = []; for (let i = 140; i <= 213; i++) if (asInst(i)) r.inst2.push([AUDIOSET[i], probs[i]]);
     } catch (e) { console.error(e); r.errors.push('AudioSet: ' + e.message); }
+    if (r.voice != null && !Number.isFinite(r.voice)) { delete r.voice; r.errors.push('Vocal detector gave no usable result' + (dg['vocal head'] ? ' (' + dg['vocal head'] + ')' : '') + '.'); }
+    else if (dg['vocal head'] && /one row/.test(dg['vocal head'])) r.errors.push('Vocal detector: ' + dg['vocal head'] + '.');
+    if (dg['instrument head'] && /one row/.test(dg['instrument head'])) r.errors.push('Instrument model: ' + dg['instrument head'] + '.');
     P(1);
     return r;
   }
@@ -879,13 +1680,27 @@
     const L = [];
     if (r.music != null && r.music < 0.3) L.push('Mostly not music (' + pct(r.music) + ')');
     if (r.bpm || r.key) L.push([r.bpm ? 'Tempo: ' + r.bpm + ' BPM' : '', r.key ? 'Key: ' + r.key + ' (' + r.camelot + ')' : ''].filter(Boolean).join(' · '));
+    if (r.shifts && r.shifts.length) L.push('Shifts (' + mmss(r.shiftSpan[0]) + '-' + mmss(r.shiftSpan[1]) + '): ' + r.shifts.map(x => mmss(x[0]) + ' ' + x[1]).join(' | '));
+    { const cs = compactStruct(r); if (cs) structLines(cs).forEach(x => L.push(x)); }
     if (r.voice != null) L.push((r.voice >= 0.5 ? 'Vocals: yes (' + pct(r.voice) + ')' : 'Instrumental (' + pct(1 - r.voice) + ')') + (r.firstVocal != null ? ' · first vocals at ' + mmss(r.firstVocal) : ''));
-    if (r.style) L.push('Style: ' + top(r.style, 4, 0.05));
-    if (r.genre) L.push('Genre: ' + top(r.genre, 3, 0.08));
-    if (r.mood) L.push('Mood: ' + top(r.mood, 2, 0.08));
-    const hd = Object.values(r.heads || {}), bin = hd.filter(h => h.kind === 'binary').map(h => [h.label, h.p[h.pos]]);
-    if (bin.length) L.push('Feels: ' + top(bin, 5, 0.5));
-    hd.filter(h => h.kind !== 'binary' && h.group !== 'gender').forEach(h => L.push(h.label + ': ' + top(h.p.map((p, i) => [h.classes[i], p]), 4, 0.1)));
+    // Genre and mood come from the music models (Discogs-EffNet and its mood heads), the same ones the saved tags use.
+    // AudioSet is a general sound model: its genre guesses are only an extra hint, and its mood classes are near noise.
+    const parents = {}; (r.style || []).forEach(([n, p]) => { const m = n.match(/\(([^)]*)\)$/), g = m ? m[1] : n; parents[g] = Math.max(parents[g] || 0, p); });
+    const gp = Object.entries(parents).filter(v => v[1] > 0);
+    const topRel = (a, n) => { const m = Math.max(0, ...a.map(v => v[1])); return m > 0 ? top(a, n, m * 0.35) : 'none'; };
+    const gpMax = Math.max(0, ...gp.map(v => v[1])), dOK = gpMax >= 0.15;   // Discogs genres only when they are confident; otherwise the AudioSet genre (the one that worked in the older build)
+    if (dOK) L.push('Genre: ' + topRel(gp, 3));
+    else if (r.genre) { const g = top(r.genre, 3, 0.1); L.push(g === 'none' ? 'Genre (unclear): ' + top(r.genre, 2, 0) : 'Genre: ' + g); }
+    if (r.style && topRel(r.style, 4) !== 'none') L.push('Style: ' + topRel(r.style, 4));
+    if (r.styleDbg) L.push('(styles: ' + r.styleDbg + ')');
+    if (dOK && r.genre) { const g = top(r.genre, 2, 0.15); if (g !== 'none') L.push('Also sounds like: ' + g); }
+    const hd = Object.values(r.heads || {}), MOODS = ['happy', 'sad', 'relaxed', 'aggressive', 'party'];
+    const moods = Object.entries(r.heads || {}).filter(([id, h]) => MOODS.includes(id) && h.kind === 'binary').map(([id, h]) => [h.label, h.p[h.pos]]);
+    if (moods.length >= 3) { const m = top(moods, 3, 0.5); L.push(m === 'none' ? 'Mood (leaning): ' + top(moods, 2, 0) : 'Mood: ' + m); }
+    else if (r.mood) { const m = top(r.mood, 2, 0.1); L.push(m === 'none' ? 'Mood (unclear): ' + top(r.mood, 2, 0) : 'Mood: ' + m); }
+    const bin = Object.entries(r.heads || {}).filter(([id, h]) => h.kind === 'binary' && !(moods.length >= 3 && MOODS.includes(id))).map(([id, h]) => [h.label, h.p[h.pos]]);
+    if (bin.length) { const f5 = top(bin, 5, 0.5); L.push(f5 === 'none' ? 'Feels (leaning): ' + top(bin, 3, 0) : 'Feels: ' + f5); }
+    hd.filter(h => h.kind !== 'binary' && h.group !== 'gender').forEach(h => { const mx = Math.max(0, ...h.p); L.push(h.label + ': ' + top(h.p.map((p, i) => [h.classes[i], p]), h.group === 'theme' ? 5 : 4, h.group === 'theme' ? Math.max(0.05, mx * 0.45) : 0.1)); });
     const g = hd.find(h => h.group === 'gender'); if (g && r.voice >= 0.5) L.push('Voice: ' + top(g.p.map((p, i) => [g.classes[i], p]), 1, 0.5));
     if (r.inst) L.push('Instruments: ' + top(r.inst, 6, 0.4));
     if (r.inst2) L.push('Also heard: ' + top(r.inst2, 6, 0.2));
@@ -896,7 +1711,19 @@
   // ---------- Saved tags (small, in localStorage) ----------
   const TAGS_KEY = 'ppTagsV2';
   let tagStore = null, tagVer = 0;
-  const loadTags = () => { if (tagStore) return tagStore; try { tagStore = JSON.parse(localStorage.getItem(TAGS_KEY)) || {}; } catch (e) { tagStore = {}; } return tagStore; };
+  const loadTags = () => {
+    if (tagStore) return tagStore; try { tagStore = JSON.parse(localStorage.getItem(TAGS_KEY)) || {}; } catch (e) { tagStore = {}; }
+    // Older builds could save instrument scores from raw model output (e.g. 420%). Squash those once, the same way the tagger now does.
+    let fixed = false; const sq = v => Math.round(100 / (1 + Math.exp(-v / 100)));
+    Object.values(tagStore).forEach(c => {
+      if (!c) return;
+      if (Array.isArray(c.in) && c.in.some(x => x && (x[1] > 100 || x[1] < 0))) { c.in = c.in.map(x => [x[0], x[1] > 100 || x[1] < 0 ? sq(x[1]) : x[1]]).sort((a, b) => b[1] - a[1]); fixed = true; }
+      if (c.bpm && (c.bpm < 30 || c.bpm > 300)) { delete c.bpm; fixed = true; }
+      if (c.v != null && (c.v > 100 || c.v < 0)) { c.v = Math.max(0, Math.min(100, c.v)); fixed = true; }
+    });
+    if (fixed) try { localStorage.setItem(TAGS_KEY, JSON.stringify(tagStore)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    return tagStore;
+  };
   const saveTagStore = () => { tagVer++; try { localStorage.setItem(TAGS_KEY, JSON.stringify(tagStore)); return true; } catch (e) { return false; } };
   function compactTags(r) {
     const top = (a, n, min) => (a || []).filter(v => v[1] >= min).sort((u, v) => v[1] - u[1]).slice(0, n).map(v => [v[0], Math.round(v[1] * 100)]);
@@ -905,21 +1732,31 @@
     if (r.music != null) c.mu = Math.round(r.music * 100);
     if (r.bpm) c.bpm = r.bpm;
     if (r.key) { c.key = r.key; c.ck = r.camelot; }
+    if (r.shifts && r.shifts.length) { c.sh = r.shifts; c.shs = r.shiftSpan; }
+    { const cs = compactStruct(r); if (cs) Object.assign(c, cs); }
     if (r.firstVocal != null) { c.fv = Math.round(r.firstVocal); c.lv = Math.round(r.lastVocal); }
     if (r.dur) c.d = Math.round(r.dur);
     if (r.whole) c.w = 1;
     if (r.style) {
       const par = {}; r.style.forEach(([n, p]) => { const m = n.match(/\(([^)]*)\)$/), g = m ? m[1] : n; par[g] = Math.max(par[g] || 0, p); });
-      c.gp = top(Object.entries(par), 3, 0.1); c.st = top(r.style, 5, 0.05);
+      const rel = (a, n) => { const m = Math.max(0, ...a.map(v => v[1])); return m > 0 ? top(a, n, m * 0.35) : []; };
+      c.gp = rel(Object.entries(par), 3); c.st = rel(r.style, 5);   // relative to the strongest style: the absolute level varies a lot between models   // averaged style activations are small by nature, so the cut-offs are low
     }
     c.gn = top(r.genre, 3, 0.08); c.md = top(r.mood, 3, 0.08);
+    if (c.gp && c.gp.length && c.gp[0][1] >= 15) c.gn = c.gp; else if (c.gp) c.gp = [];   // weak Discogs genres: keep the AudioSet genre                              // Discogs-EffNet genres are far stronger than AudioSet's
+    if (r.genre && !c.gn.length) c.gn = top(r.genre, 2, 0); if (r.mood && !c.md.length) c.md = top(r.mood, 2, 0);
     const ins = {}; (r.inst || []).forEach(([n, p]) => { if (p >= 0.4) ins[n] = p; }); (r.inst2 || []).forEach(([n, p]) => { if (p >= 0.2) ins[n] = Math.max(ins[n] || 0, p); });
     c.in = top(Object.entries(ins), 8, 0);
     c.hd = {}; c.hm = {};
     Object.entries(r.heads || {}).forEach(([id, h]) => {
       if (h.kind === 'binary') c.hd[id] = Math.round(h.p[h.pos] * 100);
+      else if (h.group === 'theme') { const a = h.p.map((p, i) => [h.classes[i], p]), mx = Math.max(0, ...h.p); c.hm[id] = mx >= 0.05 ? top(a, 5, mx * 0.45) : []; }
       else c.hm[id] = top(h.p.map((p, i) => [h.classes[i], p]), 5, 0.1);
     });
+    {                                                                  // Mood from the Essentia mood heads when they ran; AudioSet's mood classes are near noise
+      const MOODIDS = ['happy', 'sad', 'relaxed', 'aggressive', 'party'], mm = MOODIDS.filter(id => c.hd[id] != null).map(id => [id, c.hd[id] / 100]).sort((u, v) => v[1] - u[1]);
+      if (mm.length >= 3) { const strong = mm.filter(v => v[1] >= 0.4); c.md = (strong.length ? strong : mm.slice(0, 2)).slice(0, 3).map(v => [v[0], Math.round(v[1] * 100)]); }
+    }
     return c;
   }
   async function persistTags(dbId, r, autoEq) {
@@ -1006,14 +1843,18 @@
       const sig = l1.length + ':' + l2.length;
       if (sig !== txtSig) {
         txtSig = sig; txtLyr.clear();
-        try { const o = JSON.parse(l1) || {}; for (const k in o) txtLyr.set(k, strip(o[k]).toLowerCase().slice(0, 8000)); } catch (e) {}
-        try { const o = JSON.parse(l2) || {}; for (const k in o) { const v = o[k], cues = Array.isArray(v) ? v.map(c => c.text) : (v && v.c ? v.c.map(c => c[2]) : []); txtLyr.set(k, ((txtLyr.get(k) || '') + ' ' + cues.join(' ').toLowerCase()).slice(0, 8000)); } } catch (e) {}
+        try { const o = JSON.parse(l1) || {}; for (const k in o) txtLyr.set(k, strip(o[k]).toLowerCase().slice(0, 8000)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        try { const o = JSON.parse(l2) || {}; for (const k in o) { const v = o[k], cues = Array.isArray(v) ? v.map(c => c.text) : (v && v.c ? v.c.map(c => c[2]) : []); txtLyr.set(k, ((txtLyr.get(k) || '') + ' ' + cues.join(' ').toLowerCase()).slice(0, 8000)); } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       }
       if (txtTagVer !== tagVer) { txtTagVer = tagVer; txtTags.clear(); }
     }
     const k = String(id);
     let t = txtTags.get(k); if (t == null) { const c = loadTags()[k]; t = c ? tagWords(c) : ''; txtTags.set(k, t); }
     return t + ' ' + (txtLyr.get(k) || '');
+  };
+  // Used by the library's Genres view when a file carries no genre tag: the tagger's best genre, or ''.
+  window.__ppTagGenre = id => {
+    try { const c = loadTags()[String(id)], g = c && (c.gn || [])[0]; return g ? String(g[0]).split('---')[0].trim() : ''; } catch (e) { return ''; }
   };
 
   // ---------- "More like this" ----------
@@ -1042,84 +1883,1264 @@
   // ---------- Lyrics / subtitles with Whisper (transformers.js, runs on-device) ----------
   // The library and the model files come from jsDelivr / Hugging Face on first use and are cached by the browser.
   const TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/transformers.min.js';
-  const WH = { tiny: ['Xenova/whisper-tiny', 'Tiny (~40 MB, fastest)'], base: ['Xenova/whisper-base', 'Base (~75 MB, better)'], small: ['Xenova/whisper-small', 'Small (~250 MB, best, slow)'] };
+  // English-only models (".en") are noticeably more accurate than the multilingual ones at the same size. The third item marks them:
+  // en = no language/task options, gpuDec = decoder precision on WebGPU (q4 is smaller but a little less accurate).
+  const WH = {
+    base_en: ['Xenova/whisper-base.en', 'English Base (~75 MB, recommended)', { en: 1, gpuDec: 'fp32' }],
+    parakeet: ['Xenova/whisper-base.en', 'English Parakeet TDT (~650 MB, best accuracy, app only)', { en: 1, pk: 1, big: 650, noGpu: 1 }],
+    distil_en: ['onnx-community/distil-small.en', 'English Distil-Small (~170 MB, near Small accuracy, 2x faster)', { en: 1 }],
+    small_en: ['Xenova/whisper-small.en', 'English Small (~250 MB, most accurate, slow)', { en: 1 }],
+    tiny_en: ['Xenova/whisper-tiny.en', 'English Tiny (~40 MB, fastest)', { en: 1, gpuDec: 'fp32' }],
+    tiny: ['Xenova/whisper-tiny', 'Any language: Tiny (~40 MB)'],
+    base: ['Xenova/whisper-base', 'Any language: Base (~75 MB)'],
+    small: ['Xenova/whisper-small', 'Any language: Small (~250 MB)'],
+    distil_med_en: ['distil-whisper/distil-medium.en', 'English Distil-Medium (~400 MB, very accurate, big phones)', { en: 1, big: 400, noGpu: 1 }],
+    medium_en: ['Xenova/whisper-medium.en', 'English Medium (~750 MB, most accurate, flagship phones, slow)', { en: 1, big: 750, noGpu: 1 }],
+    turbo: ['onnx-community/whisper-large-v3-turbo', 'Any language: Large-v3 Turbo (~1 GB, experimental, flagship phones)', { big: 1000, mel: 128, noGpu: 1 }]
+  };
+  const whEn = k => !!(WH[k] && WH[k][2] && WH[k][2].en);
+  const whPk = k => !!(WH[k] && WH[k][2] && WH[k][2].pk);
+  const whOk = k => !!WH[k] && (!whPk(k) || NATIVE);   // Parakeet only exists in the app
   const LANGS = [['', 'Auto-detect'], ['english', 'English'], ['spanish', 'Spanish'], ['french', 'French'], ['german', 'German'], ['italian', 'Italian'], ['portuguese', 'Portuguese'], ['dutch', 'Dutch'], ['russian', 'Russian'], ['polish', 'Polish'], ['turkish', 'Turkish'], ['arabic', 'Arabic'], ['hindi', 'Hindi'], ['japanese', 'Japanese'], ['korean', 'Korean'], ['chinese', 'Chinese'], ['indonesian', 'Indonesian'], ['swedish', 'Swedish'], ['ukrainian', 'Ukrainian']];
   let tfMod = null, asr = null, asrId = '';
+  // Optional: run Whisper on the phone's GPU (WebGPU). Off unless ticked in the Whisper panel; any failure drops back to the CPU for the rest of the session.
+  let wGpuFailed = false;
+  const wGpu = () => { try { return !wGpuFailed && !!navigator.gpu && localStorage.getItem('ppvWGpu') === '1'; } catch (e) { return false; } };
   async function getAsr(id, status) {
-    if (asr && asrId === id) return asr;
-    if (asr) { try { await asr.dispose(); } catch (e) {} asr = null; asrId = ''; }
+    const ent0 = Object.values(WH).find(v => v[0] === id), dev = wGpu() && !(ent0 && ent0[2] && ent0[2].noGpu) ? 'webgpu' : 'wasm', key = id + '|' + dev;   // the biggest models are too large for the GPU path
+    if (asr && asrId === key) return asr;
+    if (asr) { try { await asr.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } asr = null; asrId = ''; }
     if (!tfMod) { status('Loading Whisper…'); tfMod = await import(TF_URL); }
-    asr = await tfMod.pipeline('automatic-speech-recognition', id, {
-      progress_callback: p => { if (p && p.status === 'progress' && p.file) status('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); else if (p && p.status === 'ready') status('Whisper ready.'); }
-    });
-    asrId = id; return asr;
+    const cb = p => { if (p && p.status === 'progress' && p.file) status('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); else if (p && p.status === 'ready') status('Whisper ready.'); };
+    if (dev === 'webgpu') {
+      try {
+        const ent = Object.values(WH).find(v => v[0] === id), dd = (ent && ent[2] && ent[2].gpuDec) || 'q4';
+        asr = await tfMod.pipeline('automatic-speech-recognition', id, { device: 'webgpu', dtype: { encoder_model: 'fp32', decoder_model_merged: dd }, progress_callback: cb });
+        asrId = key; return asr;
+      } catch (e) { console.warn('Whisper on the GPU failed, using the CPU', e); wGpuFailed = true; status('GPU not available here, using the CPU…'); }
+    }
+    asr = await tfMod.pipeline('automatic-speech-recognition', id, { progress_callback: cb });
+    asrId = id + '|wasm'; return asr;
   }
   const pad2 = n => String(n).padStart(2, '0');
-  const toLrc = cues => cues.map(c => '[' + pad2(Math.floor(c.start / 60)) + ':' + (c.start % 60).toFixed(2).padStart(5, '0') + ']' + c.text).join('\n');
+  const lrcT = v => { v = Math.max(0, v); const m = Math.floor(v / 60); return pad2(m) + ':' + (v - m * 60).toFixed(2).padStart(5, '0'); };
+  // A line whose words were each heard (Parakeet) gets their times as <mm:ss.xx> tags, so the sing-along highlight follows the real singing.
+  const toLrc = cues => cues.map(c => {
+    const ws = String(c.text).split(' ');
+    if (c.w && c.w.length === ws.length && ws.length > 1) return '[' + lrcT(c.start) + ']' + ws.map((x, i) => '<' + lrcT(c.w[i].s) + '>' + x).join(' ') + ' <' + lrcT(c.w[ws.length - 1].e) + '>';
+    return '[' + lrcT(c.start) + ']' + c.text;
+  }).join('\n');
   const srtT = s => { const ms = Math.round(s * 1000); return pad2(Math.floor(ms / 3600000)) + ':' + pad2(Math.floor(ms / 60000) % 60) + ':' + pad2(Math.floor(ms / 1000) % 60) + ',' + String(ms % 1000).padStart(3, '0'); };
   const toSrt = cues => cues.map((c, i) => (i + 1) + '\n' + srtT(c.start) + ' --> ' + srtT(c.end) + '\n' + c.text + '\n').join('\n');
   // Whisper invents text over silence and music. Drop the usual junk and runs of the same line.
-  function cleanCues(raw, dur) {
+  function cleanCues(raw, dur, xx) {
     const out = [];
     for (const c of raw) {
       let t = String(c.text || '').replace(/[♪♫]+/g, ' ').replace(/\[[^\]]*(music|silence|applause|laughter)[^\]]*\]|\([^)]*(music|silence|applause|laughter)[^)]*\)/gi, ' ').replace(/\s+/g, ' ').trim();
       if (t.length < 2 || /^(thanks for watching|thank you\.?$|subtitles by|subtitle by|amara\.org|please subscribe)/i.test(t)) continue;
-      out.push({ start: c.start, end: c.end, text: t });
+      const o2 = { start: c.start, end: c.end, text: t };
+      if (c.w && c.w.length === t.split(' ').length && t === String(c.text).replace(/\s+/g, ' ').trim()) o2.w = c.w;   // word times survive only if no word was removed
+      out.push(o2);
     }
-    const res = []; let run = 0;
+    // A line sung 3+ times in a row is real in a lot of songs ("hey, hey, hey"). It is only dropped when it looks like Whisper looping over
+    // silence: the audio under it is quiet, the lines overlap in time, or the run is very long.
+    const res = [], ref = xx ? rpRef(xx) : 0; let run = 0;
     for (let i = 0; i < out.length; i++) {
       run = i && out[i].text.toLowerCase() === out[i - 1].text.toLowerCase() ? run + 1 : 1;
-      if (run >= 3) continue;
+      if (run >= 3) {
+        const c = out[i], pv = out[i - 1], e = c.end > c.start ? c.end : c.start + 3, pe = pv.end > pv.start ? pv.end : pv.start + 3;
+        const sung = xx && ref > 0 ? rpRms(xx, c.start, e) >= ref * 0.2 : e - c.start >= 0.4;
+        if (!(run <= 10 && c.start >= pe - 0.15 && sung)) continue;
+      }
       res.push(out[i]);
     }
     res.forEach((c, i) => { const nx = res[i + 1]; if (!(c.end > c.start)) c.end = nx ? Math.min(nx.start, c.start + 6) : c.start + 3; if (dur) c.end = Math.min(c.end, dur); });
     return res;
   }
   // o: {size, lang, task, clean, model, strength, lv}. Returns [{start,end,text}].
-  async function transcribe(t, o, status) {
-    const pipe = await getAsr(WH[o.size][0], status);
-    let x;
-    if (o.clean) {                                                    // pull the vocals out first: far fewer made-up lines on songs
-      await downloadModel(o.model, status, !!(o.lv && o.lv.blob));
-      status('Decoding audio…'); let pcm = await decode(t.url);
-      const res = await run(o.model, pcm, ['Vocals'], { strength: o.strength, gpu: false, lv: o.lv, quality: 1, gate: 0 }, status, f => status('Separating vocals… ' + Math.round(f * 100) + '%'));
-      pcm = null; const e = res.Vocals.blob ? res.Vocals : encode(res.Vocals);
-      const u = URL.createObjectURL(e.blob); try { x = await decodeMono(u, 16000); } finally { URL.revokeObjectURL(u); }
-    } else { status('Decoding audio…'); x = await decodeMono(t.url, 16000); }
-    const dur = x.length / 16000, SL = 300 * 16000, raw = [];
-    for (let off = 0; off < x.length; off += SL) {
-      status('Transcribing… ' + Math.round(off / x.length * 100) + '%'); await tick();
-      const kw = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5, task: o.task || 'transcribe' };
-      if (o.lang) kw.language = o.lang;
-      const out = await pipe(x.subarray(off, Math.min(x.length, off + SL)), kw);
-      for (const c of (out.chunks || [])) {
-        const a = c.timestamp && c.timestamp[0] != null ? c.timestamp[0] : 0, b = c.timestamp && c.timestamp[1] != null ? c.timestamp[1] : null;
-        raw.push({ start: a + off / 16000, end: b == null ? 0 : b + off / 16000, text: c.text });
+  // ---------- Native Whisper (Android app) ----------
+  // int8 Whisper on the phone's CPU cores through native ONNX Runtime, with KV-cache decoding in Java, instead of single-threaded WebAssembly.
+  // JavaScript only prepares the log-mel features, walks the audio window by window and turns token ids back into text.
+  // Any failure drops back to the web version for the rest of the session. To switch it off: localStorage.ppvWNative = '0'.
+  const WHN = { tiny: 'wh_tiny', base: 'wh_base', small: 'wh_small', tiny_en: 'wh_tiny_en', distil_med_en: 'wh_distil_med_en', medium_en: 'wh_medium_en', turbo: 'wh_turbo', base_en: 'wh_base_en', small_en: 'wh_small_en', distil_en: 'wh_distil_en' };
+  const WH_CODE = { english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it', portuguese: 'pt', dutch: 'nl', russian: 'ru', polish: 'pl', turkish: 'tr', arabic: 'ar', hindi: 'hi', japanese: 'ja', korean: 'ko', chinese: 'zh', indonesian: 'id', swedish: 'sv', ukrainian: 'uk' };
+  let wNativeFailed = false;
+  const whNativeOn = () => { try { return !!NATIVE && !wNativeFailed && localStorage.getItem('ppvWNative') !== '0'; } catch (e) { return !!NATIVE && !wNativeFailed; } };
+  // Phone GPU/NPU for subtitles (app only): the encoder (the heavy part) can run through NNAPI. It needs the float encoder file, not the int8 one.
+  const whNativeGpu = size => { try { return !!NATIVE && localStorage.getItem('ppvWGpu') === '1' && !(WH[size] && WH[size][2] && (WH[size][2].noGpu || WH[size][2].pk)); } catch (e) { return false; } };
+  async function whNativeFiles(size, status, gpu) {
+    const base = 'https://huggingface.co/' + WH[size][0] + '/resolve/main/onnx/';
+    for (const [k, f] of [[WHN[size] + '_enc', 'encoder_model_quantized.onnx'], [WHN[size] + '_dec', 'decoder_model_merged_quantized.onnx']].concat(gpu ? [[WHN[size] + '_encf', 'encoder_model.onnx']] : [])) {
+      if ((await NP.exists({ id: k })).ready) continue;
+      status('Downloading ' + f + '…'); await nativeFetch(k, base + f, status);
+    }
+  }
+  const whCfg = {};
+  async function whConfig(size) {                                       // token ids come from the model's own generation_config.json
+    if (whCfg[size]) return whCfg[size];
+    const g = await (await fetch('https://huggingface.co/' + WH[size][0] + '/resolve/main/generation_config.json')).json();
+    const c = { sot: g.decoder_start_token_id, eot: g.eos_token_id, noTs: g.no_timestamps_token_id, suppress: g.suppress_tokens || [], beginSuppress: g.begin_suppress_tokens || [], lang: g.lang_to_id || null, task: g.task_to_id || null };
+    if (!(c.sot > 0 && c.eot > 0 && c.noTs > 0)) throw new Error('unusable generation_config');
+    c.tsBegin = c.noTs + 1;
+    return (whCfg[size] = c);
+  }
+  let whTok = null, whTokId = '';
+  async function whTokenizer(repo, status) {
+    if (whTok && whTokId === repo) return whTok;
+    if (!tfMod) { status('Loading text tools…'); tfMod = await import(TF_URL); }
+    whTok = await tfMod.AutoTokenizer.from_pretrained(repo); whTokId = repo; return whTok;
+  }
+  let whBankCache = null, whFft = null, whWin = null;
+  function whBank(nMel) {                                               // Slaney mel filters, exactly as Whisper's feature extractor builds them
+    if (whBankCache && whBankCache.n === nMel) return whBankCache;
+    const sr = 16000, nF = 201, f2m = f => f < 1000 ? 3 * f / 200 : 15 + Math.log(f / 1000) * 27 / Math.log(6.4);
+    const m2f = m => m < 15 ? 200 * m / 3 : 1000 * Math.exp(Math.log(6.4) / 27 * (m - 15));
+    const m0 = f2m(0), m1 = f2m(sr / 2), fr = new Float64Array(nMel + 2);
+    for (let i = 0; i < nMel + 2; i++) fr[i] = m2f(m0 + (m1 - m0) * i / (nMel + 1));
+    const w = new Float32Array(nMel * nF), lo = new Int32Array(nMel), hi = new Int32Array(nMel);
+    for (let m = 0; m < nMel; m++) {
+      const d1 = fr[m + 1] - fr[m], d2 = fr[m + 2] - fr[m + 1], en = 2 / (fr[m + 2] - fr[m]); let l = nF, h = -1;
+      for (let k = 0; k < nF; k++) {
+        const f = k * (sr / 2) / (nF - 1), v = Math.max(0, Math.min((f - fr[m]) / d1, (fr[m + 2] - f) / d2)) * en;
+        w[m * nF + k] = v; if (v > 0) { if (k < l) l = k; h = k; }
+      }
+      lo[m] = l; hi[m] = h;
+    }
+    return (whBankCache = { n: nMel, w, lo, hi });
+  }
+  function whMel(x, start, end, nMel) {                                 // log-mel [nMel, 3000] of the 30 s that start at sample `start` (zero-padded)
+    const N = 480000, M = 400, H = 160, NFR = 3000, K = 201, bk = whBank(nMel);
+    if (!whFft) { whFft = makeFFT(M); whWin = new Float64Array(M); for (let i = 0; i < M; i++) whWin[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / M); }
+    const a = new Float32Array(N), e = Math.min(end, start + N, x.length); if (e > start) a.set(x.subarray(start, e));
+    const at = j => a[j < 0 ? -j : j >= N ? 2 * (N - 1) - j : j];       // reflect padding, like torch.stft(center=True)
+    const re = new Float64Array(M), im = new Float64Array(M), pw = new Float64Array(K), out = new Float32Array(nMel * NFR);
+    let mx = -Infinity;
+    for (let f = 0; f < NFR; f++) {
+      const b0 = f * H - M / 2;
+      for (let j = 0; j < M; j++) { re[j] = at(b0 + j) * whWin[j]; im[j] = 0; }
+      whFft(re, im);
+      for (let k = 0; k < K; k++) pw[k] = re[k] * re[k] + im[k] * im[k];
+      for (let m = 0; m < nMel; m++) {
+        let sum = 0; const o = m * K, h = bk.hi[m];
+        for (let k = bk.lo[m]; k <= h; k++) sum += bk.w[o + k] * pw[k];
+        const v = Math.log10(Math.max(sum, 1e-10)); out[m * NFR + f] = v; if (v > mx) mx = v;
       }
     }
-    return cleanCues(raw, dur);
+    const fl = mx - 8;
+    for (let i = 0; i < out.length; i++) { const v = out[i] < fl ? fl : out[i]; out[i] = (v + 4) / 4; }
+    return out;
+  }
+  function whParse(toks, tsB) {                                         // token ids -> [{s, e, ids}] (e is null if the window ended mid-line)
+    const segs = []; let s = null, ids = [];
+    for (const t of toks) {
+      if (t >= tsB) {
+        const ts = (t - tsB) * 0.02;
+        if (s === null) { s = ts; ids = []; }
+        else if (ids.length) { segs.push({ s, e: ts, ids }); s = null; ids = []; }
+        else s = ts;
+      } else { if (s === null) s = segs.length ? segs[segs.length - 1].e : 0; ids.push(t); }
+    }
+    if (s !== null && ids.length) segs.push({ s, e: null, ids });
+    return segs;
+  }
+  async function whisperNative(x, regs, o, status) {
+    const size = o.size, k = WHN[size], nMel = (WH[size][2] && WH[size][2].mel) || 80;   // Large-v3 uses 128 mel bins, the rest 80
+    status('Preparing native Whisper…');
+    const [c, tok] = await Promise.all([whConfig(size), whTokenizer(WH[size][0], status)]);
+    const gpuOn = whNativeGpu(size);
+    try { await whNativeFiles(size, status, gpuOn); } catch (e) { if (!gpuOn) throw e; console.warn('float encoder download failed, using the CPU', e); await whNativeFiles(size, status, false); }
+    const hasF = gpuOn && (await NP.exists({ id: k + '_encf' })).ready;
+    const code = o.lang ? WH_CODE[o.lang] : '';
+    let langId = c.lang && code ? (c.lang['<|' + code + '|>'] || 0) : 0;   // 0 = let the model detect it on the first window, then keep it
+    const langIds = c.lang ? Object.values(c.lang) : [], taskId = c.task ? (o.task === 'translate' ? c.task.translate : c.task.transcribe) : 0;
+    const total = regs.reduce((n, r) => n + r[1] - r[0], 0) || 1, raw = []; let done = 0, gpuNote = '';
+    for (const [ra, rb] of regs) {
+      let seek = ra;
+      while (seek < rb - 0.3) {
+        const t0 = performance.now(), wl = Math.min(30, rb - seek);
+        status('Transcribing… ' + Math.round((done + seek - ra) / total * 100) + '%'); await tick();
+        const mel = whMel(x, Math.floor(seek * 16000), Math.floor((seek + wl) * 16000), nMel);
+        const r = await NP.whisperRun({ enc: k + '_enc', dec: k + '_dec', mel: await toB64(mel), dims: [1, nMel, 3000], sot: c.sot, eot: c.eot, noTs: c.noTs, tsBegin: c.tsBegin, useLang: !!c.lang, lang: langId, langIds: langId ? [] : langIds, task: taskId, suppress: c.suppress, beginSuppress: c.beginSuppress, timestamps: true, maxTokens: 224, encFloat: hasF ? k + '_encf' : undefined });
+        if (r.lang) langId = r.lang;
+        if (hasF && !gpuNote) {                                          // first window tells us where the encoder really ran
+          gpuNote = r.accel === 'GPU' ? 'Subtitles: encoder is running on the phone GPU/NPU.' : 'The phone GPU was not faster than the CPU here, so the CPU is used. The GPU option was turned off.';
+          if (r.accel !== 'GPU') { try { localStorage.setItem('ppvWGpu', '0'); const cb = document.getElementById('ppv-wgpu'); if (cb) cb.checked = false; await NP.remove({ id: k + '_encf' }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+          status(gpuNote); await tick();
+        }
+        const segs = whParse(r.tokens || [], c.tsBegin), complete = segs.filter(g => g.e != null);
+        let adv = wl;                                                   // next window starts where the last finished line ended, so no line is cut in half
+        if (complete.length) { const le = complete[complete.length - 1].e; if (le >= 1 && le < wl - 0.5) adv = le; }
+        for (const g of (adv < wl ? complete : segs)) {
+          const text = tok.decode(g.ids, { skip_special_tokens: true });
+          if (text && text.trim()) raw.push({ start: seek + g.s, end: g.e == null ? 0 : seek + g.e, text });
+        }
+        seek += adv;
+        if (!o.quick) await ease(performance.now() - t0, 0, 'whn', wl);   // quick: one spoken sentence for Bloopy, no rest needed
+      }
+      done += rb - ra;
+    }
+    return raw;
   }
 
+  // ---------- Parakeet TDT 0.6B (Android app): native preprocessor + encoder + token-and-duration decoder ----------
+  // Model files: istupakov/parakeet-tdt-0.6b-v2-onnx (the onnx-asr export). Native side: ParakeetNative.java. One encoder frame = 80 ms.
+  const PK_BASE = 'https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/';
+  const PK_FILES = [['pk_pre', 'nemo128.onnx'], ['pk_enc', 'encoder-model.int8.onnx'], ['pk_dec', 'decoder_joint-model.int8.onnx']];
+  let pkVoc = null;
+  async function pkVocab() {                                           // vocab.txt lines look like "▁the 42"; saved after the first download so it works offline
+    if (pkVoc) return pkVoc;
+    let txt = ''; try { txt = localStorage.getItem('ppvPkVocab') || ''; } catch (e) {}
+    if (!txt) { txt = await (await fetch(PK_BASE + 'vocab.txt')).text(); try { localStorage.setItem('ppvPkVocab', txt); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+    const toks = []; let blank = -1;
+    for (const line of txt.split('\n')) {
+      const l = line.replace(/\r$/, ''); if (!l) continue;
+      const i = l.lastIndexOf(' '), id = +l.slice(i + 1), tk = l.slice(0, i);
+      if (!(id >= 0)) continue; toks[id] = tk; if (tk === '<blk>') blank = id;
+    }
+    if (!toks.length) throw new Error('empty Parakeet vocabulary');
+    if (blank < 0) blank = toks.length - 1;
+    return (pkVoc = { toks, blank, V: toks.length });
+  }
+  async function pkFiles(status) {
+    for (const [k, f] of PK_FILES) if (!(await NP.exists({ id: k })).ready) { status('Downloading ' + f + '…'); await nativeFetch(k, PK_BASE + f, status); }
+  }
+  function pkCues(words) {                                             // words -> subtitle lines: sentence ends, pauses, and a length cap
+    const cues = []; let cur = null;
+    const flush = () => { if (cur) { cues.push({ start: cur.s, end: cur.e, text: cur.t.join(' '), w: cur.w }); cur = null; } };   // w: when each word was heard, for the sing-along highlight
+    for (const w of words) {
+      if (cur) { const len = cur.t.join(' ').length; if (w.s - cur.e > 0.9 || w.e - cur.s > 8 || len + w.text.length > 84) flush(); }
+      if (!cur) cur = { s: w.s, e: w.e, t: [], w: [] };
+      cur.t.push(w.text); cur.w.push({ s: w.s, e: w.e }); cur.e = Math.max(cur.e, w.e);
+      const len = cur.t.join(' ').length;
+      if ((/[.!?]["')\]]?$/.test(w.text) && len >= 24) || (/[,;:]$/.test(w.text) && len >= 60)) flush();
+    }
+    flush(); return cues;
+  }
+  async function parakeetNative(x, regs, o, status) { return pkCues(await parakeetWords(x, regs, o, status)); }
+  async function parakeetWords(x, regs, o, status) {   // every heard word with its start and end: [{ s, e, text }]
+    status('Preparing Parakeet…');
+    const vo = await pkVocab();
+    await pkFiles(status);
+    const OWN = 30, OV = 3, FR = 0.08, pieces = [], words = [];
+    for (const [ra, rb] of regs) for (let q = ra; q < rb - 0.01; q += OWN) pieces.push({ own0: q, own1: Math.min(rb, q + OWN), ra, rb });
+    const total = pieces.reduce((n, p) => n + p.own1 - p.own0, 0) || 1; let doneS = 0;
+    for (const p of pieces) {
+      const t0 = performance.now();
+      status('Transcribing… ' + Math.round(doneS / total * 100) + '%'); await tick();
+      const s0 = Math.max(p.ra, p.own0 - OV), s1 = Math.min(p.rb, p.own1 + OV), last = p.own1 >= p.rb - 1e-6;
+      const pcm = x.subarray(Math.floor(s0 * 16000), Math.min(x.length, Math.ceil(s1 * 16000)));
+      if (pcm.length >= 3200) {
+        const r = await NP.parakeetRun({ pre: 'pk_pre', enc: 'pk_enc', dec: 'pk_dec', pcm: await toB64(pcm), n: pcm.length, vocab: vo.V, blank: vo.blank });
+        const tk = r.tokens || [], fr = r.frames || [], du = r.durs || []; let w = null;
+        const push = () => { if (w && w.text) { const st = s0 + w.f0 * FR; if (!(st < p.own0 - 1e-3 || (!last && st >= p.own1))) words.push({ s: st, e: s0 + w.f1 * FR, text: w.text }); } w = null; };
+        for (let i = 0; i < tk.length; i++) {
+          const pc = vo.toks[tk[i]]; if (pc == null || /^<.*>$/.test(pc)) continue;
+          const startsWord = pc.charAt(0) === '\u2581', txt = pc.replace(/\u2581/g, '');
+          if (startsWord || !w) { push(); w = { f0: fr[i], f1: fr[i] + Math.max(1, du[i] || 1), text: '' }; }
+          w.text += txt; w.f1 = Math.max(w.f1, fr[i] + Math.max(1, du[i] || 1));
+        }
+        push();
+      }
+      doneS += p.own1 - p.own0;
+      await ease(performance.now() - t0, 0, 'whn', s1 - s0);
+    }
+    words.sort((a, b) => a.s - b.s);
+    for (let i = 0; i + 1 < words.length; i++) if (words[i].e > words[i + 1].s) words[i].e = Math.max(words[i].s + 0.04, words[i + 1].s);
+    return words;
+  }
+
+  // ---------- Repeat tracker: finds lines that were sung more than once, votes on the wording, aligns known lyrics ----------
+  const rpNorm = s => String(s).toLowerCase().replace(/[’‘`]/g, "'").replace(/[^a-z0-9\u00c0-\uffff' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const rpLev = (a, b) => {
+    if (a === b) return 0; const n = a.length, m = b.length; if (!n) return m; if (!m) return n;
+    let p = new Array(m + 1), c = new Array(m + 1); for (let j = 0; j <= m; j++) p[j] = j;
+    for (let i = 1; i <= n; i++) { c[0] = i; for (let j = 1; j <= m; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1)); const t = p; p = c; c = t; }
+    return p[m];
+  };
+  const rpSim = (a, b) => { a = rpNorm(a); b = rpNorm(b); const L = Math.max(a.length, b.length); return L ? 1 - rpLev(a, b) / L : 1; };
+  // ---------- Word timings for lyrics a song already has (the "Time the words" button). The text is never changed. ----------
+  const WT_RE = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g, WT_TAG = /<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>/g;
+  const wtSec = m => +m[1] * 60 + +m[2] + (m[3] ? +m[3].padEnd(3, '0').slice(0, 3) / 1000 : 0);
+  const wtNorm = w => String(w).toLowerCase().replace(/[’‘`']/g, '').replace(/[^a-z0-9À-￿]+/g, '');
+  // The lines that can be timed: one time stamp and some words. s/next are song times (the file's offset and the per-song timing applied).
+  function wtLines(raw, sync) {
+    const rows = String(raw).split(/\r?\n/), lines = [], starts = []; let off = 0;
+    rows.forEach((r, ri) => {
+      const om = r.match(/^\s*\[offset:\s*([-+]?\d+)\s*\]/i); if (om) { off = parseInt(om[1], 10) / 1000; return; }
+      const st = []; let m, last = 0; WT_RE.lastIndex = 0;
+      while ((m = WT_RE.exec(r))) { st.push(wtSec(m) - off + sync); last = WT_RE.lastIndex; }
+      if (!st.length) return; st.forEach(x => starts.push(x));
+      const words = r.slice(last).replace(WT_TAG, '').match(/\S+/g) || [];
+      if (st.length === 1 && words.length) lines.push({ ri, s: st[0], words, off, head: r.slice(0, last) });
+    });
+    starts.sort((a, b) => a - b);
+    lines.forEach(l => { const n = starts.find(x => x > l.s + 1e-3); l.next = n != null ? n : l.s + 8; });
+    return { rows, lines };
+  }
+  // Lines the lyric words up with the heard words, in order (like a diff). A heard word only counts for a lyric word if it is
+  // the same word (or nearly) and was sung near that line's time. Words in between are spread out; a line where too few
+  // words were heard is left alone. Returns the lyrics with a <mm:ss.xx> tag before each word.
+  function wtApply(raw, plan, heard, sync) {
+    const L = [], H = heard.map(w => ({ s: w.s, e: w.e, n: wtNorm(w.text) })).filter(w => w.n && isFinite(w.s));
+    plan.lines.forEach((l, li) => l.words.forEach((w, k) => L.push({ li, k, n: wtNorm(w) })));
+    const n = L.length, m = H.length, W = 4, C = m + 1;
+    if (!n || !m || n * m > 6e6) return { text: raw, timed: 0 };
+    const sim = (i, j) => {
+      const a = L[i].n, b = H[j].n, l = plan.lines[L[i].li];
+      if (!a || H[j].s < l.s - W || H[j].s > l.next + W) return 0;
+      if (a === b) return 1;
+      const mx = Math.max(a.length, b.length); if (mx < 3) return 0;
+      const r = 1 - rpLev(a, b) / mx; return r >= 0.6 ? r * 0.8 : 0;
+    };
+    const S = new Float32Array((n + 1) * C), D = new Uint8Array((n + 1) * C);
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+      let best = S[(i - 1) * C + j], d = 1; const lf = S[i * C + j - 1]; if (lf > best) { best = lf; d = 2; }
+      const q = sim(i - 1, j - 1); if (q > 0 && S[(i - 1) * C + j - 1] + q > best) { best = S[(i - 1) * C + j - 1] + q; d = 3; }
+      S[i * C + j] = best; D[i * C + j] = d;
+    }
+    const T = plan.lines.map(l => l.words.map(() => null)), E = plan.lines.map(l => l.words.map(() => null));
+    for (let i = n, j = m; i > 0 && j > 0;) { const d = D[i * C + j]; if (d === 3) { const x = L[i - 1]; T[x.li][x.k] = H[j - 1].s; E[x.li][x.k] = H[j - 1].e; i--; j--; } else if (d === 1) i--; else j--; }
+    const rows = plan.rows.slice(), fmt = v => { v = Math.max(0, v); const mm = Math.floor(v / 60); return '<' + pad2(mm) + ':' + (v - mm * 60).toFixed(2).padStart(5, '0') + '>'; };
+    let timed = 0;
+    plan.lines.forEach((l, li) => {
+      const t = T[li], K = t.length, idx = []; t.forEach((v, k) => { if (v != null) idx.push(k); });
+      if (idx.length < Math.max(1, Math.ceil(K * 0.4))) return;
+      const f = idx[0], z = idx[idx.length - 1];
+      for (let k = 0; k < f; k++) { const lo = Math.min(l.s, t[f] - 0.25 * f); t[k] = lo + (t[f] - lo) * k / f; }
+      for (let a = 0; a + 1 < idx.length; a++) { const p = idx[a], q = idx[a + 1]; for (let k = p + 1; k < q; k++) t[k] = t[p] + (t[q] - t[p]) * (k - p) / (q - p); }
+      const ez = E[li][z] != null ? E[li][z] : t[z] + 0.3;
+      if (z < K - 1) { const hi = Math.max(t[z], Math.min(l.next - 0.05, ez + 0.35 * (K - 1 - z))); for (let k = z + 1; k < K; k++) t[k] = t[z] + (hi - t[z]) * (k - z) / (K - z); }
+      for (let k = 1; k < K; k++) if (t[k] < t[k - 1]) t[k] = t[k - 1];
+      const end = z === K - 1 ? Math.min(ez, l.next) : null, lrc = v => v - sync + l.off;   // back into the file's own time
+      rows[l.ri] = l.head + l.words.map((w, k) => fmt(lrc(t[k])) + w).join(' ') + (end != null && end > t[K - 1] ? ' ' + fmt(lrc(end)) : '');
+      timed++;
+    });
+    return { text: rows.join('\n'), timed };
+  }
+  // small speech features (12 MFCC-like numbers every 40 ms) so two sung lines can be compared by sound, not only by the words Whisper guessed
+  let rpFB = null;
+  const rpInit = () => {
+    if (rpFB) return rpFB;
+    const NF = 512, NM = 24, sr = 16000, mel = f => 2595 * Math.log10(1 + f / 700), imel = m => 700 * (Math.pow(10, m / 2595) - 1), lo = mel(80), hi = mel(7600), pts = [];
+    for (let i = 0; i < NM + 2; i++) pts.push(Math.floor((NF + 1) * imel(lo + (hi - lo) * i / (NM + 1)) / sr));
+    const fb = []; for (let m = 1; m <= NM; m++) { const f = new Float32Array(NF / 2 + 1); for (let k = pts[m - 1]; k < pts[m]; k++) f[k] = (k - pts[m - 1]) / Math.max(1, pts[m] - pts[m - 1]); for (let k = pts[m]; k < pts[m + 1]; k++) f[k] = (pts[m + 1] - k) / Math.max(1, pts[m + 1] - pts[m]); fb.push(f); }
+    const win = new Float32Array(400); for (let i = 0; i < 400; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / 399);
+    const dct = []; for (let c = 1; c <= 12; c++) { const r = new Float32Array(NM); for (let m = 0; m < NM; m++) r[m] = Math.cos(Math.PI * c * (m + 0.5) / NM); dct.push(r); }
+    const cos = new Float32Array(NF / 2), sin = new Float32Array(NF / 2); for (let i = 0; i < NF / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / NF); sin[i] = -Math.sin(2 * Math.PI * i / NF); }
+    const rev = new Uint16Array(NF); for (let i = 0; i < NF; i++) { let r = 0, v = i; for (let b = 0; b < 9; b++) { r = (r << 1) | (v & 1); v >>= 1; } rev[i] = r; }
+    return (rpFB = { NF, NM, fb, win, dct, cos, sin, rev });
+  };
+  const rpFft = (re, im, T) => {
+    const n = T.NF;
+    for (let i = 0; i < n; i++) { const j = T.rev[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let len = 2; len <= n; len <<= 1) { const h = len >> 1, st = n / len; for (let i = 0; i < n; i += len) for (let k = 0; k < h; k++) { const wr = T.cos[k * st], wi = T.sin[k * st], a = i + k, b = a + h, xr = re[b] * wr - im[b] * wi, xi = re[b] * wi + im[b] * wr; re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi; } }
+  };
+  const rpFeat = (x, s, e) => {
+    const T = rpInit(), a = Math.max(0, Math.floor(s * 16000)), b = Math.min(x.length, Math.floor(Math.min(e, s + 8) * 16000)), out = [];
+    const re = new Float32Array(T.NF), im = new Float32Array(T.NF), pw = new Float32Array(T.NF / 2 + 1), me = new Float32Array(T.NM);
+    for (let p = a; p + 400 <= b; p += 640) {
+      re.fill(0); im.fill(0); let pre = 0; for (let i = 0; i < 400; i++) { const v = x[p + i]; re[i] = (v - pre * 0.97) * T.win[i]; pre = v; }
+      rpFft(re, im, T); for (let k = 0; k <= T.NF / 2; k++) pw[k] = re[k] * re[k] + im[k] * im[k];
+      for (let m = 0; m < T.NM; m++) { let sum = 0; const f = T.fb[m]; for (let k = 0; k <= T.NF / 2; k++) sum += f[k] * pw[k]; me[m] = Math.log(sum + 1e-6); }
+      const c = new Float32Array(12); for (let d = 0; d < 12; d++) { let sum = 0; for (let m = 0; m < T.NM; m++) sum += T.dct[d][m] * me[m]; c[d] = sum; } out.push(c);
+    }
+    if (out.length < 5) return null;
+    const mu = new Float32Array(12); out.forEach(c => { for (let d = 0; d < 12; d++) mu[d] += c[d] / out.length; });
+    out.forEach(c => { let n2 = 0; for (let d = 0; d < 12; d++) { c[d] -= mu[d]; n2 += c[d] * c[d]; } n2 = Math.sqrt(n2) || 1; for (let d = 0; d < 12; d++) c[d] /= n2; });
+    return out;
+  };
+  const rpDtw = (A, B) => {
+    const n = A.length, m = B.length, INF = 1e9; let prev = new Float32Array(m + 1).fill(INF), cur = new Float32Array(m + 1); prev[0] = 0;
+    for (let i = 1; i <= n; i++) { cur[0] = INF; const a = A[i - 1]; for (let j = 1; j <= m; j++) { const b = B[j - 1]; let d = 0; for (let k = 0; k < 12; k++) d += a[k] * b[k]; cur[j] = (1 - d) + Math.min(prev[j], cur[j - 1], prev[j - 1]); } const t = prev; prev = cur; cur = t; }
+    return prev[m] / (n + m);
+  };
+  // cues: [{s, e, text}]. Returns groups of cue indexes that are the same line sung again. With audio x (16 kHz mono) it also
+  // links lines that sound alike even when Whisper wrote them differently (the text still has to share a little with the other line).
+  async function rpFind(cues, x) {
+    const n = cues.length, par = Array.from({ length: n }, (_, i) => i);
+    const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; }, uni = (a, b) => { a = find(a); b = find(b); if (a !== b) par[b] = a; };
+    const nt = cues.map(c => rpNorm(c.text)), du = cues.map(c => Math.max(0.1, c.e - c.s)), memo = new Map();
+    const S = (i, j) => { const k = i * n + j; let v = memo.get(k); if (v === undefined) { v = 1 - rpLev(nt[i], nt[j]) / Math.max(nt[i].length, nt[j].length, 1); memo.set(k, v); } return v; };
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (nt[i] && nt[j] && Math.abs(nt[i].length - nt[j].length) <= 0.5 * Math.max(nt[i].length, nt[j].length) && S(i, j) >= 0.72) uni(i, j);
+    if (x && n > 2) {
+      const feats = new Array(n), F = i => (feats[i] === undefined ? (feats[i] = rpFeat(x, cues[i].s, cues[i].e)) : feats[i]), okDur = (i, j) => { const r = du[i] / du[j]; return r >= 0.6 && r <= 1.67; };
+      const cand = [], base = [], stride = Math.max(1, Math.floor(n * n / 2 / 70)); let q = 0;
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { if (!okDur(i, j) || !nt[i] || !nt[j]) continue; if ((q++ % stride) === 0) base.push([i, j]); if (find(i) !== find(j) && S(i, j) >= 0.3) cand.push([i, j, S(i, j)]); }
+      cand.sort((a, b) => b[2] - a[2]); if (cand.length > 2500) cand.length = 2500;
+      const dist = async (i, j) => { const a = F(i), b = F(j); return a && b ? rpDtw(a, b) : 9; };
+      const bd = []; for (const [i, j] of base.slice(0, 70)) bd.push(await dist(i, j)); await tick();
+      bd.sort((a, b) => a - b); const med = bd.length ? bd[bd.length >> 1] : 0.5, thr = Math.max(0.12, Math.min(0.45, med * 0.62));   // "much closer than a typical pair of lines"
+      let k = 0; for (const [i, j] of cand) { if (find(i) !== find(j) && (await dist(i, j)) <= thr) uni(i, j); if (++k % 40 === 0) await tick(); }
+    }
+    const g = new Map(); for (let i = 0; i < n; i++) { if (!nt[i]) continue; const r = find(i); if (!g.has(r)) g.set(r, []); g.get(r).push(i); }
+    return [...g.values()].filter(a => a.length >= 2);
+  }
+  // Votes on the best wording for a group. Each member offers its own text plus any alternatives from other passes (alternatives count a little less).
+  const rpVote = ms => {
+    const cand = new Map(), offers = m => [m.text].concat(m.alts || []);
+    ms.forEach(m => offers(m).forEach(t => { const k = rpNorm(t); if (k && !cand.has(k)) cand.set(k, t); }));
+    let best = null;
+    cand.forEach((t, k) => {
+      let sc = 0, sup = 0;
+      ms.forEach(m => { let b = 0; offers(m).forEach((u, ui) => { const v = rpSim(t, u) * (ui ? 0.85 : 1); if (v > b) b = v; }); sc += b; if (rpNorm(m.text) === k) sup++; });
+      if (!best || sc > best.sc + 1e-9 || (Math.abs(sc - best.sc) < 1e-9 && sup > best.sup)) best = { text: t, sc, sup };
+    });
+    return best;
+  };
+  // Lines up known lyrics (array of strings) with timed lines that Whisper heard (src: [{s, e, text}]). Returns start times per lyric line.
+  function rpAlign(src, lines) {
+    const A = [], B = [];
+    src.forEach(r => { const w = rpNorm(r.text).split(' ').filter(Boolean), tot = w.reduce((a, x) => a + x.length + 1, 0) || 1; let acc = 0; w.forEach(x => { A.push({ w: x, t: r.s + (r.e - r.s) * acc / tot }); acc += x.length + 1; }); });
+    lines.forEach((l, li) => rpNorm(l).split(' ').filter(Boolean).forEach(w => B.push({ w, li })));
+    const n = A.length, m = B.length, W = m + 1, H = new Int16Array((n + 1) * W), TR = new Uint8Array((n + 1) * W);
+    if (!n || !m) return { starts: lines.map(() => 0), anchored: lines.map(() => false), ratio: 0 };
+    const ms = (a, b) => a === b ? 2 : (a.length >= 4 && b.length >= 4 && Math.abs(a.length - b.length) <= 2 && rpLev(a, b) <= (a.length >= 7 ? 2 : 1)) ? 1 : -1;
+    for (let i = 1; i <= n; i++) { H[i * W] = -i; TR[i * W] = 1; }
+    for (let j = 1; j <= m; j++) { H[j] = -j; TR[j] = 2; }
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+      const d = H[(i - 1) * W + j - 1] + ms(A[i - 1].w, B[j - 1].w), u = H[(i - 1) * W + j] - 1, l = H[i * W + j - 1] - 1; let v = d, t = 0;
+      if (u > v) { v = u; t = 1; } if (l > v) { v = l; t = 2; } H[i * W + j] = v; TR[i * W + j] = t;
+    }
+    const T = new Array(m).fill(null); let i = n, j = m, hit = 0;
+    while (i > 0 || j > 0) { const t = TR[i * W + j]; if (i > 0 && j > 0 && t === 0) { if (ms(A[i - 1].w, B[j - 1].w) > 0) { T[j - 1] = A[i - 1].t; hit++; } i--; j--; } else if (i > 0 && (t === 1 || j === 0)) i--; else j--; }
+    const nl = lines.length, first = new Array(nl).fill(-1), cnt = new Array(nl).fill(0); B.forEach((b, k) => { if (first[b.li] < 0) first[b.li] = k; cnt[b.li]++; });
+    const starts = new Array(nl).fill(null), anchored = new Array(nl).fill(false);
+    for (let li = 0; li < nl; li++) { for (let k = 0; k < cnt[li]; k++) { const t = T[first[li] + k]; if (t != null) { starts[li] = Math.max(0, t - k * 0.3); anchored[li] = true; break; } } }
+    const ids = starts.map((s, k) => s != null ? k : -1).filter(k => k >= 0);
+    if (!ids.length) return { starts: lines.map((_, k) => k * 4), anchored, ratio: 0 };
+    const wc = k => Math.max(1, cnt[k]);
+    for (let k = 0; k < nl; k++) {
+      if (starts[k] != null) continue;
+      let p = k - 1; while (p >= 0 && starts[p] == null) p--; let q = k + 1; while (q < nl && starts[q] == null) q++;
+      if (p >= 0 && q < nl) { let tot = 0, up = 0; for (let z = p; z < q; z++) { tot += wc(z); if (z < k) up += wc(z); } starts[k] = starts[p] + (starts[q] - starts[p]) * up / tot; }
+      else if (p >= 0) { let up = 0; for (let z = p; z < k; z++) up += wc(z); starts[k] = starts[p] + up * 0.4; }
+      else { let dn = 0; for (let z = k; z < q; z++) dn += wc(z); starts[k] = Math.max(0, starts[q] - dn * 0.4); }
+    }
+    for (let k = 1; k < nl; k++) if (starts[k] < starts[k - 1] + 0.2) starts[k] = starts[k - 1] + 0.2;
+    return { starts, anchored, ratio: hit / m };
+  }
+  const rpAltsLoad = id => { try { return (JSON.parse(localStorage.getItem('ppvAlts') || '{}')[id]) || []; } catch (e) { return []; } };
+  const rpAltsSave = (id, items) => {
+    try { const all = JSON.parse(localStorage.getItem('ppvAlts') || '{}'), list = items.filter(c => c.alts && c.alts.length).map(c => [Math.round((c.s != null ? c.s : c.start) * 100) / 100, c.alts.slice(0, 3)]); if (list.length) all[id] = list; else delete all[id]; localStorage.setItem('ppvAlts', JSON.stringify(all)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+  };
+  // Merge extra passes into alternatives, find repeated lines, and unify the wording when most repeats agree.
+  async function rpFinish(passes, x) {
+    const main = passes[0].map(c => ({ start: c.start, end: c.end, text: c.text, alts: [], w: c.w }));
+    for (let k = 1; k < passes.length; k++) for (const m of main) {
+      const part = passes[k].filter(c => { const mid = (c.start + c.end) / 2; return mid >= m.start - 0.3 && mid <= m.end + 0.3; });
+      if (!part.length) continue;
+      const t = part.map(c => c.text).join(' ').replace(/\s+/g, ' ').trim();
+      if (t && rpSim(t, m.text) < 0.97 && !m.alts.some(a => rpSim(a, t) >= 0.97)) m.alts.push(t);
+    }
+    const rep = window.__ppvRep = { fixed: 0, unsure: 0 };
+    try {
+      const groups = await rpFind(main.map(c => ({ s: c.start, e: c.end, text: c.text })), x);
+      for (const ix of groups) {
+        const ms = ix.map(i => main[i]), vs = new Set(ms.map(c => rpNorm(c.text)));
+        if (vs.size < 2 && !ms.some(c => c.alts.length)) continue;
+        const v = rpVote(ms); if (!v) continue;
+        if (vs.size > 1 && ms.length >= 3 && v.sup >= 2 && v.sc / ms.length >= 0.8) { ms.forEach(c => { if (rpNorm(c.text) !== rpNorm(v.text)) { c.alts.unshift(c.text); c.text = v.text; c.w = null; rep.fixed++; } }); }
+        else if (vs.size > 1) rep.unsure++;
+      }
+    } catch (e) { console.warn('repeat check failed', e); }
+    main.forEach(c => { c.alts = c.alts.slice(0, 3); });
+    return main;
+  }
+  const rpRms = (x, s, e) => { const a = Math.max(0, Math.floor(s * 16000)), b = Math.min(x.length, Math.max(a + 1, Math.floor(e * 16000))); let q = 0; for (let i = a; i < b; i++) q += x[i] * x[i]; return Math.sqrt(q / (b - a)); };
+  const rpRef = x => { const F = 8000, n = Math.floor(x.length / F); if (n < 4) return 0; const r = new Float32Array(n); for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < F; j++) { const v = x[i * F + j]; s += v * v; } r[i] = Math.sqrt(s / F); } return Array.from(r).sort((u, v) => u - v)[Math.floor(n * 0.9)]; };
+
+  // A song that was already split keeps its stems in the library. Find the vocals one so lyrics can reuse it instead of splitting again.
+  const isVocalsStem = x => !!x && !!x.stem && (/\(\s*vocals?\s*\)\s*$/i.test(x.title || '') || (typeof x.stem === 'string' && /vocal/i.test(x.stem)));
+  const findVocalsStem = (list, t) => {
+    if (!t || t.stem) return null; const id = String(t.dbId), title = String(t.title || '');
+    return (list || []).find(x => isVocalsStem(x) && x.dbId !== t.dbId && ((x.stemOf != null && String(x.stemOf) === id) || (!x.stemOf && x.stemSrc && x.stemSrc === title))) || null;
+  };
+  let heavyJob = false;                                               // stem split or Whisper running: two at once runs out of memory
+  async function transcribe(t, o, status) {
+    if (heavyJob) throw new Error('Another split or transcription is still running. Wait for it to finish.');
+    heavyJob = true; let wl = null;
+    if (NATIVE) NP.keepAlive({ on: true }).catch(() => {});
+    try {
+      if (o.lv && o.lv.wake && navigator.wakeLock) { try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
+      const cues = await transcribeRun(t, o, status);
+      try { rpAltsSave(t.dbId, cues); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }                  // alternative wordings live beside the subtitles, for the editor's Repeats tab
+      return cues.map(c => c.w ? { start: c.start, end: c.end, text: c.text, w: c.w } : { start: c.start, end: c.end, text: c.text });
+    } finally { if (NATIVE) NP.keepAlive({ on: false }).catch(() => {}); wl && wl.release().catch(() => {}); heavyJob = false; }
+  }
+  // The song as 16 kHz mono for speech models. With o.clean the music is removed first (or previously split vocals are reused).
+  async function whAudio(t, o, status) {
+    let x; window.__ppvSaved = false;
+    if (o.clean) {                                                    // pull the vocals out first: far fewer made-up lines on songs
+      const A0 = window.__ppApi, vs = findVocalsStem(A0 && A0.tracks(), t);
+      if (vs || isVocalsStem(t)) {                                    // already split (or this IS the vocals): never split again
+        status(vs ? 'Using the previously split vocals…' : 'This is already a vocals track…'); x = await decodeMono((vs || t).url, 16000);
+      } else {
+      const SPM = 'spleeter2';                                        // the music-removal step always uses Spleeter (Fast 2 stems), whatever model is picked for splitting
+      await downloadModel(SPM, status, !!(o.lv && o.lv.blob));
+      // In the app the whole separation runs natively (no JavaScript copy of the song, no JavaScript FFTs); elsewhere it runs in the page.
+      const nat = NATIVE;
+      status('Decoding audio…'); let pcm = nat ? null : await decode(t.url);
+      const res = await run(SPM, pcm, ['Vocals'], { strength: o.strength, gpu: false, lv: o.lv, quality: 1, gate: 0, track: t, nnapi: NATIVE ? wantNnapi(SPM) : false, pathOnly: nat }, status, f => status('Separating vocals… ' + Math.round(f * 100) + '%'));
+      pcm = null; const v = res.Vocals; status('Reading vocals…');
+      let eb = null, eext = v.ext || 'wav';
+      if (v.path) {                                                   // app: the vocals sit in a temp file; read it once so it can be decoded AND kept
+        try { eb = await (await fetch(window.Capacitor.convertFileSrc(v.path))).blob(); } catch (e) { console.warn('Could not read the vocals file', e); }
+        try { if (eb) { const u = URL.createObjectURL(eb); try { x = await decodeMono(u, 16000); } finally { URL.revokeObjectURL(u); } } else x = await decodeMono(window.Capacitor.convertFileSrc(v.path), 16000); }
+        finally { NP.deleteFiles({ paths: [v.path] }).catch(() => {}); }
+      } else {
+        const e = v.blob ? v : encode(v); eb = e.blob; eext = e.ext || eext; const u = URL.createObjectURL(e.blob); try { x = await decodeMono(u, 16000); } finally { URL.revokeObjectURL(u); }
+      }
+      // Keep the vocals as a split track, exactly like a normal split, so the next transcription (or a split) reuses them.
+      if (eb && !t.stem) {
+        try {
+          if (eext === 'wav') { try { const mp = await wavToMp3(eb, f => status('Saving the vocals… ' + Math.round(f * 100) + '%')); if (mp) { eb = mp; eext = 'mp3'; } } catch (e) { console.warn('WAV to MP3 failed, keeping the WAV', e); } }
+          const mk = ls0('ppvMkPl') === '1';
+          addSplit([new File([eb], t.title + ' (Vocals).' + eext, { type: eb.type || 'audio/wav' })], { srcId: t.dbId, srcTitle: t.title, makePlaylist: mk, showInTab: mk && ls0('ppvPlTab') === '1' });
+          window.__ppvSaved = true; status('Saved the vocals to Split tracks.');
+        } catch (e) { console.warn('Could not save the vocals', e); }
+      }
+      eb = null;
+      }
+    } else { status('Decoding audio…'); x = await decodeMono(t.url, 16000); }
+    return x;
+  }
+  // Word timings for the sing-along highlight: listens to the song and returns every heard word with its time, [{ s, e, text }].
+  // Parakeet gives word times by itself. Whisper needs a model exported with its attention weights; if the chosen one was not, a
+  // Whisper Base built for word timings is used instead. Native Whisper only times whole lines, so the web version is used here.
+  async function transcribeWords(t, o, status) {
+    if (heavyJob) throw new Error('Another split or transcription is still running. Wait for it to finish.');
+    heavyJob = true; let wl = null;
+    if (NATIVE) NP.keepAlive({ on: true }).catch(() => {});
+    try {
+      if (o.lv && o.lv.wake && navigator.wakeLock) { try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
+      const x = await whAudio(t, o, status), regs = speechRegions(x, 16000);
+      if (whPk(o.size) && NATIVE) {
+        try { return await parakeetWords(x, regs, o, status); }
+        catch (e) { console.warn('Parakeet failed', e); status('Parakeet failed: ' + errText(e) + ' Using Whisper instead…'); }
+        finally { NP.parakeetUnload().catch(() => {}); }
+      }
+      const ids = [whPk(o.size) || !WH[o.size] ? WH.base_en[0] : WH[o.size][0], 'onnx-community/whisper-base_timestamped'];
+      let err = null;
+      for (const id of ids) {
+        try { return await whWordsWith(id, x, regs, o, status); }
+        catch (e) { console.warn('Word timings failed with ' + id, e); err = e; if (id !== ids[ids.length - 1]) status('This model cannot time single words. Trying Whisper Base for word timings…'); }
+      }
+      throw err;
+    } finally { if (NATIVE) NP.keepAlive({ on: false }).catch(() => {}); wl && wl.release().catch(() => {}); heavyJob = false; }
+  }
+  async function whWordsWith(id, x, regs, o, status) {
+    const pipe = await getAsr(id, status), SL = 26, OV = 2, words = [], pieces = [];
+    const en = Object.values(WH).some(v => v[0] === id && v[2] && v[2].en);
+    for (const [ra, rb] of regs) for (let q = ra; q < rb - 0.01; q += SL) pieces.push({ own0: q, own1: Math.min(rb, q + SL), ra, rb });
+    const total = pieces.reduce((n, p) => n + p.own1 - p.own0, 0) || 1; let doneS = 0;
+    for (const p of pieces) {
+      const t0 = performance.now();
+      status('Listening for each word… ' + Math.round(doneS / total * 100) + '%'); await tick();
+      const s0 = Math.max(p.ra, p.own0 - OV), s1 = Math.min(p.rb, p.own1 + OV), last = p.own1 >= p.rb - 1e-6;
+      const kw = { return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5 };
+      if (!en) { kw.task = 'transcribe'; if (o.lang) kw.language = o.lang; }
+      const out = await pipe(x.subarray(Math.floor(s0 * 16000), Math.min(x.length, Math.ceil(s1 * 16000))), kw);
+      for (const c of (out && out.chunks) || []) {                    // a word belongs to the piece it starts in, so none is counted twice
+        const ts = c.timestamp || [], a = s0 + (+ts[0] || 0), txt = String(c.text || '').trim();
+        if (!txt || !isFinite(a) || a < p.own0 - 1e-3 || (!last && a >= p.own1)) continue;
+        words.push({ s: a, e: ts[1] != null && isFinite(+ts[1]) ? s0 + +ts[1] : a + 0.3, text: txt });
+      }
+      doneS += p.own1 - p.own0;
+      await ease(performance.now() - t0, 0, 'whn', s1 - s0);
+    }
+    return words.sort((a, b) => a.s - b.s);
+  }
+  // Whisper often skips sung passages it is unsure of (and never goes back), so whole verses can go missing.
+  // After the main pass, every stretch of at least 2.5 s where the (vocal) audio is clearly loud but no line covers it is decoded again on
+  // its own, and the lines heard there are added. Returns the stretches as [[start, end], ...].
+  function holesIn(cues, x) {
+    const sr = 16000, F = sr / 2, n = Math.floor(x.length / F); if (n < 8) return [];
+    const rms = new Float32Array(n); for (let i = 0; i < n; i++) { let q = 0; const a = i * F; for (let j = 0; j < F; j++) { const v = x[a + j]; q += v * v; } rms[i] = Math.sqrt(q / F); }
+    const ref = Array.from(rms).sort((u, v) => u - v)[Math.floor(n * 0.9)]; if (!(ref > 0.002)) return [];
+    const cov = new Uint8Array(n);
+    for (const c of cues) { const e = c.end > c.start ? c.end : c.start + 3; for (let i = Math.max(0, Math.floor((c.start - 0.4) * 2)); i < Math.min(n, Math.ceil((e + 0.4) * 2)); i++) cov[i] = 1; }
+    const out = []; let a = -1, last = -1;
+    for (let i = 0; i <= n; i++) {
+      const on = i < n && !cov[i] && rms[i] > ref * 0.12;
+      if (on) { if (a < 0) a = i; last = i; }
+      else if (a >= 0 && (i >= n || cov[i] || i - last > 2)) { if (last - a + 1 >= 5) out.push([Math.max(0, a / 2 - 0.6), Math.min(x.length / sr, (last + 1) / 2 + 0.6)]); a = -1; }
+    }
+    return out.slice(0, 60);
+  }
+  async function fillHoles(cues, x, decode, status) {
+    const holes = holesIn(cues, x); if (!holes.length) return cues;
+    const add = [];
+    for (let i = 0; i < holes.length; i++) {
+      status('Listening again to parts with singing but no words (' + (i + 1) + ' of ' + holes.length + ')…'); await tick();
+      const [hs, he] = holes[i];
+      let got = []; try { got = await decode([[hs, he]]); } catch (e) { console.warn('second listen failed', e); continue; }
+      for (const c of got) { const mid = (c.start + (c.end > c.start ? c.end : c.start + 2)) / 2; if (mid >= hs && mid <= he && !cues.some(q => c.start < (q.end || q.start + 2) - 0.2 && (c.end || c.start + 2) > q.start + 0.2)) add.push(c); }
+    }
+    return add.length ? cues.concat(add).sort((u, v) => u.start - v.start) : cues;
+  }
+  async function transcribeRun(t, o, status) {
+    let pipe = null;
+    if (o.task === 'translate' && whEn(o.size)) { o = Object.assign({}, o, { size: 'base' }); status('Translating needs the multilingual Base model…'); }
+    const x = await whAudio(t, o, status);
+    const dur = x.length / 16000, acc = Math.max(0, Math.min(2, Math.round(+o.acc || 0)));
+    // Only the parts with speech or singing go to Whisper. Each part is cut into 90 s pieces that overlap by 4 s, and a line belongs to the
+    // piece it starts in, so nothing is cut at a seam. Between pieces it can rest if the phone is hot.
+    // Accuracy 1/2 decodes the song 2/3 times with the piece boundaries moved, so every line is heard from a different angle. The versions are
+    // compared, the repeated lines (choruses) are voted on, and the other wordings are kept as alternatives for the editor's Repeats tab.
+    const regs = speechRegions(x, 16000);
+    window.__ppvRep = null;
+    if (whPk(o.size)) {
+      try {
+        if (!NATIVE) throw new Error('Parakeet only runs in the Android app');
+        let pc = cleanCues(await parakeetNative(x, regs, o, status), dur, x);
+        pc = await fillHoles(pc, x, async rg => cleanCues(await parakeetNative(x, rg, o, () => {}), dur, x), status);
+        return await rpFinish([pc], x);
+      }
+      catch (e) { console.warn('Parakeet failed', e); status('Parakeet failed: ' + errText(e) + ' Using English Base instead…'); o = Object.assign({}, o, { size: 'base_en' }); }
+      finally { if (NATIVE) NP.parakeetUnload().catch(() => {}); }          // give the memory back
+    }
+    const decodeOnce = async (xx, rg, oo, st, k) => {
+      const d2 = xx.length / 16000, SL = 90, OV = 4, raw = [];
+      if (whNativeOn()) {                                                // Android app: native Whisper first
+        try { return cleanCues(await whisperNative(xx, rg, oo, st), d2, xx); }
+        catch (e) { console.warn('Native Whisper failed, using the web version', e); wNativeFailed = true; st('Native Whisper unavailable, using the web version…'); }
+      }
+      let pipe = await getAsr(WH[oo.size][0], st);
+      const pieces = [];
+      for (const [ra, rb] of rg) for (let q = ra; q < rb - 0.01; q += SL) pieces.push({ own0: q, own1: Math.min(rb, q + SL), ra, rb });
+      const total = pieces.reduce((n, p) => n + p.own1 - p.own0, 0) || 1; let doneS = 0;
+      for (const p of pieces) {
+        const t0 = performance.now();
+        st('Transcribing… ' + Math.round(doneS / total * 100) + '%'); await tick();
+        const s0 = Math.max(p.ra, p.own0 - OV), s1 = Math.min(p.rb, p.own1 + OV), last = p.own1 >= p.rb - 1e-6;
+        const kw = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+        if (acc > 0 && k === 0) kw.num_beams = 4;                       // beam search: weighs several wordings before choosing one (slower)
+        if (acc > 1 && k === 2) { kw.do_sample = true; kw.temperature = 0.3; }   // a slightly different roll of the dice for the third opinion
+        if (!whEn(oo.size)) { kw.task = oo.task || 'transcribe'; if (oo.lang) kw.language = oo.lang; }
+        const part = xx.subarray(Math.floor(s0 * 16000), Math.min(xx.length, Math.ceil(s1 * 16000)));
+        let out;
+        try { out = await pipe(part, kw); }
+        catch (e) {
+          if (kw.num_beams || kw.do_sample) { console.warn('Beam search / sampling failed, using normal decoding', e); delete kw.num_beams; delete kw.do_sample; delete kw.temperature; try { out = await pipe(part, kw); } catch (e2) { e = e2; } }
+          if (!out) {                                                   // the GPU path broke mid-run: finish on the CPU instead of failing
+            if (!/webgpu$/.test(asrId)) throw e;
+            console.warn('Whisper GPU run failed, retrying on the CPU', e); wGpuFailed = true; pipe = await getAsr(WH[oo.size][0], st); out = await pipe(part, kw);
+          }
+        }
+        for (const c of (out.chunks || [])) {
+          const a = c.timestamp && c.timestamp[0] != null ? c.timestamp[0] : 0, b = c.timestamp && c.timestamp[1] != null ? c.timestamp[1] : null, stt = a + s0;
+          if (stt < p.own0 - 1e-3 || (!last && stt >= p.own1)) continue;   // that line sits in the overlap and the neighbouring piece owns it
+          raw.push({ start: stt, end: b == null ? 0 : b + s0, text: c.text });
+        }
+        doneS += p.own1 - p.own0;
+        await ease(performance.now() - t0, 0, 'wh', s1 - s0);
+      }
+      return cleanCues(raw, d2, xx);
+    };
+    const offs = [0, 15, 7].slice(0, 1 + acc), passes = [];
+    for (let k = 0; k < offs.length; k++) {
+      const off = offs[k], xx = off ? x.subarray(Math.floor(off * 16000)) : x, rg = off ? regs.map(r => [Math.max(0, r[0] - off), r[1] - off]).filter(r => r[1] - r[0] > 0.5) : regs;
+      const st = offs.length > 1 ? (m => status('Pass ' + (k + 1) + ' of ' + offs.length + ': ' + m)) : status;
+      let c; try { c = await decodeOnce(xx, rg, o, st, k); } catch (e) { if (!k) throw e; console.warn('Extra pass failed, keeping what we have', e); break; }
+      if (!k) c = await fillHoles(c, x, rg2 => decodeOnce(x, rg2, o, () => {}, 0), st);
+      passes.push(off ? c.map(q => ({ start: q.start + off, end: q.end + off, text: q.text })) : c);
+    }
+    status(passes.length > 1 ? 'Comparing the passes and the repeated lines…' : 'Checking repeated lines…'); await tick();
+    return await rpFinish(passes, x);
+  }
+
+  // ---------- Free lyrics sites, language guess, translation, background fetch ----------
+  const LY_LANGS = [['', 'Any language'], ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['tr', 'Turkish'], ['id', 'Indonesian'], ['sv', 'Swedish'], ['pl', 'Polish'], ['ru', 'Russian'], ['uk', 'Ukrainian'], ['ar', 'Arabic'], ['hi', 'Hindi'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'], ['th', 'Thai'], ['he', 'Hebrew'], ['el', 'Greek']];
+  const lyName = c => { const l = LY_LANGS.find(x => x[0] === c); return l ? l[1] : c; };
+  const LY_STOP = {
+    en: "the you and to it me my is in of that on we be this for with your are i'm don't just like love", es: 'que el los una por con para te mi tu es lo las pero como yo si muy más está',
+    fr: 'le les des une est pas que je tu il nous vous dans pour mon ma qui avec', de: 'der die das und ich du nicht ist ein eine mit den von zu sie wir auf mir dir',
+    it: 'che non per con sono una gli il mi ti ma più come anche', pt: 'que não uma para com você os as do da em eu meu minha mas está',
+    nl: 'de het een en ik je niet van dat is op te zijn maar', tr: 'bir ve ben sen bu da de ne için çok ama gibi',
+    id: 'yang dan aku kamu di ini itu tidak untuk dengan ada', sv: 'och jag du det är en som på inte att med', pl: 'nie to się na że jestem ty ja w z jak tak'
+  };
+  const LY_STOPSET = {}; for (const k in LY_STOP) LY_STOPSET[k] = new Set(LY_STOP[k].split(' '));
+  const LY_CHARS = { es: /[ñ¿¡]/, pt: /[ãõ]/, de: /[ßäöü]/, tr: /[şğı]/, pl: /[łąęż]/, sv: /[åäö]/, fr: /[èêçœ]/ };
+  // Rough guess from the text alone: script first (kana, hangul, cyrillic...), then common words. Returns '' when unsure.
+  function guessLang(txt) {
+    txt = String(txt || '').slice(0, 4000).toLowerCase(); const letters = (txt.match(/\p{L}/gu) || []).length; if (letters < 12) return '';
+    const cnt = re => (txt.match(re) || []).length;
+    const sc = { ja: cnt(/[\u3040-\u30ff]/g), ko: cnt(/[\uac00-\ud7af]/g), zh: cnt(/[\u4e00-\u9fff]/g), ru: cnt(/[\u0400-\u04ff]/g), ar: cnt(/[\u0600-\u06ff]/g), hi: cnt(/[\u0900-\u097f]/g), th: cnt(/[\u0e00-\u0e7f]/g), he: cnt(/[\u0590-\u05ff]/g), el: cnt(/[\u0370-\u03ff]/g) };
+    if (sc.ja >= 3 && (sc.ja + sc.zh) / letters > 0.3) return 'ja';
+    for (const k of ['ko', 'zh', 'ru', 'ar', 'hi', 'th', 'he', 'el']) if (sc[k] / letters > 0.3) return k === 'ru' && /[іїєґ]/.test(txt) ? 'uk' : k;
+    const words = txt.match(/[\p{L}']+/gu) || [], score = {};
+    for (const k in LY_STOPSET) { let n = 0; for (const w of words) if (LY_STOPSET[k].has(w)) n++; if (LY_CHARS[k] && LY_CHARS[k].test(txt)) n += 3; score[k] = n; }
+    const top = Object.keys(score).sort((a, b) => score[b] - score[a]);
+    return score[top[0]] >= 3 && score[top[0]] >= score[top[1]] * 1.3 ? top[0] : '';
+  }
+  const lyLines = txt => String(txt).split(/\r?\n/).map(l => l.replace(/^\s*(\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]\s*)+/, '').trim()).filter(l => l && !/^\[[^\]]*\]$/.test(l));
+  const lyText = it => lyLines(it.syncedLyrics || it.plainLyrics || '').slice(0, 60).join('\n');
+  const lyLrcLine = (sec, text) => '[' + String(Math.floor(sec / 60)).padStart(2, '0') + ':' + (sec % 60).toFixed(2).padStart(5, '0') + ']' + text;
+  const lyNorm = s => String(s || '').toLowerCase().replace(/\.(mp3|m4a|wav|flac|ogg|mp4|mkv|webm)$/i, '').replace(/\s*[\(\[][^\)\]]*[\)\]]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const lyArtistOk = a => !!a && !/^(Unknown artist|Video|Stream)$/i.test(a);
+  // Is the artist already a separate part of the title, e.g. "Adele - Hello", "Hello by Adele", "Blinding Lights (The Weeknd)",
+  // or a near spelling ("Beyonce" for "Beyoncé", "ACDC" for "AC/DC")? A title that only happens to share a word ("Queen of Hearts"
+  // by Queen, "Blurred Lines" by Blur) does not count. Returns null, or { br: true if the artist was in brackets, rest: title without it }.
+  const lyWords = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
+  function lyEdits(a, b, max) {                                       // Levenshtein distance, stops early once it is over max
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let best = i;
+      for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); best = Math.min(best, cur[j]); }
+      if (best > max) return max + 1; prev = cur;
+    }
+    return prev[b.length];
+  }
+  const lyClose = (x, y) => { if (x === y) return true; if (Math.min(x.length, y.length) < 4) return false; const m = x.length >= 8 ? 2 : 1; return lyEdits(x, y, m) <= m; };
+  function lyArtistPart(t) {
+    if (!lyArtistOk(t.artist) || !t.title) return null;
+    const aw = lyWords(t.artist).filter(w => w !== 'the'); if (!aw.length) return null;
+    const isArtist = seg => {                                         // the segment is the artist, maybe with a little extra ("feat. X", "official")
+      const sw = lyWords(seg).filter(w => w !== 'the'); if (!sw.length || sw.length > aw.length + 3) return false;
+      if (sw.join('') === aw.join('') || sw.slice(0, aw.length + 1).join('').startsWith(aw.join(''))) return true;
+      return aw.filter(w => sw.some(v => lyClose(w, v))).length / aw.length >= 0.75;
+    };
+    const raw = String(t.title).replace(/\.(mp3|m4a|wav|flac|ogg|mp4|mkv|webm)$/i, '');
+    const br = [...raw.matchAll(/[\(\[\{]([^\)\]\}]*)[\)\]\}]/g)].map(m => m[1]);
+    const main = raw.replace(/[\(\[\{][^\)\]\}]*[\)\]\}]/g, ' ').split(/\s+[-\u2013\u2014~|:]\s+|\s*[\u2013\u2014|]\s*|\s+by\s+/i).map(x => x.trim()).filter(Boolean);
+    if (main.length >= 2) { const i = main.findIndex(isArtist); if (i >= 0) return { br: false, rest: lyNorm(main.filter((_, k) => k !== i).join(' ')) }; }
+    if (br.some(isArtist)) return { br: true, rest: lyNorm(raw) };
+    return null;
+  }
+  const lyArtistInTitle = t => !!lyArtistPart(t);
+  const lyTitleNoArtist = t => { const p = lyArtistPart(t); return p ? p.rest : ''; };
+  // Bracketed parts are dropped from the search text, so an artist found only in brackets is still added in front.
+  // Videos (and files) often have no real artist but a title like "Adele - Hello (Official Video)": take the artist from the title.
+  function lySong(t) {
+    if (lyArtistOk(t.artist) || !t.title) return t;
+    const parts = String(t.title).split(/\s+[-\u2013\u2014|]\s+/);
+    if (parts.length < 2 || !parts[0].trim() || !parts.slice(1).join(' ').trim()) return t;
+    return Object.assign({}, t, { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() });
+  }
+  // Second try after a miss: strip what video uploads add to titles (1080p, 4K, 16:9, 60fps, HDR, "Official Music Video",
+  // "Remastered 2011", "Lyrics"...) and channel names ("AdeleVEVO", "Adele - Topic"). Not used on the first try,
+  // so a song that really is called "Audio" or "Lyrics" is still found under its own name.
+  const LY_JUNK = [
+    /\b\d{3,4}\s?[pi]\b/gi,                                            // 720p, 1080p, 2160p, 1080i
+    /\b\d{3,4}\s?[x\u00d7]\s?\d{3,4}\b/gi,                               // 1920x1080
+    /(?<![\d.])(16\s?:\s?9|9\s?:\s?16|4\s?:\s?3|3\s?:\s?4|21\s?:\s?9|32\s?:\s?9|1\s?:\s?1|2\.35\s?:\s?1|2\.39\s?:\s?1|1\.85\s?:\s?1)(?![\d.])/g,   // aspect ratios
+    /\b(8k|4k|2k|uhd|fhd|qhd|full\s?hd|hd|hq|sd|hdr10\+?|hdr|sdr|dolby\s?(vision|atmos)|\d{2,3}\s?fps|imax)\b/gi,
+    /\b(\d{4}\s+)?(digitally\s+)?remaster(ed)?(\s+(version|\d{4}))?\b/gi,
+    /\b(official\s+)?((music|lyrics?|hd|4k|audio)\s+)?(video|visuali[sz]er|audio|mv|clip)\b/gi,
+    /\b(with\s+)?lyrics?\b|\b(explicit|clean)(\s+version)?\b/gi
+  ];
+  function lyStrip(t) {
+    let ti = String(t.title || '').replace(/\.(mp3|m4a|wav|flac|ogg|mp4|mkv|webm)$/i, '').replace(/[\(\[\{][^\)\]\}]*[\)\]\}]/g, ' ');
+    for (const re of LY_JUNK) ti = ti.replace(re, ' ');
+    ti = ti.replace(/(\s*[-\u2013\u2014|:~]\s*)+$/, '').replace(/^(\s*[-\u2013\u2014|:~]\s*)+/, '').replace(/(\s+[-\u2013\u2014|:~])(\s+[-\u2013\u2014|:~])+/g, '$1').replace(/\s+/g, ' ').trim();
+    const ar = String(t.artist || '').replace(/\s*-\s*topic$/i, '').replace(/(?<=\S)\s*vevo$/i, '').replace(/\s+official$/i, '').trim();
+    return Object.assign({}, t, { title: ti, artist: ar || t.artist });
+  }
+  const lyQuery = t0 => { const t = lySong(t0), p = lyArtistPart(t); return ((lyArtistOk(t.artist) && (!p || p.br) ? t.artist + ' ' : '') + lyNorm(t.title)).trim(); };
+  // Every source returns [{src, trackName, artistName, duration, syncedLyrics?, plainLyrics?, load?}]. load() fills plainLyrics for sources that need a second request.
+  const LY_SRC = {
+    lrclib: { name: 'LRCLIB', auto: 1, async find(q) {
+      const r = await fetch('https://lrclib.net/api/search?q=' + encodeURIComponent(q)); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json();
+      return (Array.isArray(j) ? j : []).filter(it => it.plainLyrics || it.syncedLyrics).map(it => ({ src: 'LRCLIB', trackName: it.trackName, artistName: it.artistName, duration: it.duration, syncedLyrics: it.syncedLyrics, plainLyrics: it.plainLyrics }));
+    } },
+    ovh: { name: 'Lyrics.ovh', auto: 1, async find(q) {
+      const r = await fetch('https://api.lyrics.ovh/suggest/' + encodeURIComponent(q)); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json();
+      return (j.data || []).slice(0, 6).map(d => { const it = { src: 'Lyrics.ovh', trackName: d.title_short || d.title, artistName: d.artist && d.artist.name, duration: d.duration };
+        it.load = async () => { const x = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(it.artistName || '') + '/' + encodeURIComponent(it.trackName || '')); if (!x.ok) throw new Error('HTTP ' + x.status); const k = await x.json(); it.plainLyrics = String(k.lyrics || '').replace(/\r/g, '').replace(/^Paroles de la chanson[^\n]*\n/i, '').trim(); };
+        return it; });
+    } },
+    textyl: { name: 'Textyl', auto: 0, async find(q) {   // timed lyrics, no title in the reply, so it is only used when the person searches by hand
+      const r = await fetch('https://api.textyl.co/api/lyrics?q=' + encodeURIComponent(q)); if (r.status === 404) return []; if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json();
+      return Array.isArray(j) && j.length ? [{ src: 'Textyl', trackName: q, artistName: '', syncedLyrics: j.map(x => lyLrcLine(+x.seconds || 0, String(x.lyrics || ''))).join('\n') }] : [];
+    } }
+  };
+  async function lyEnsure(it) { if (it.load) { const f = it.load; it.load = null; try { await f(); } catch (e) { it.plainLyrics = ''; throw e; } } }
+  async function lySearch(q, keys) {
+    const rs = await Promise.allSettled(keys.map(k => LY_SRC[k].find(q))), items = [], failed = [];
+    rs.forEach((r, i) => { if (r.status === 'fulfilled') items.push(...r.value); else failed.push(LY_SRC[keys[i]].name); });
+    return { items, failed };
+  }
+  // Translation. Both return an array the same length as lines (a line that could not be translated stays as it was).
+  const lyChunks = (lines, max) => { const out = []; let cur = [], n = 0; lines.forEach((l, i) => { if (cur.length && n + l.length > max) { out.push(cur); cur = []; n = 0; } cur.push(i); n += l.length + 1; }); if (cur.length) out.push(cur); return out; };
+  const lyWait = ms => new Promise(r => setTimeout(r, ms));
+  async function lyTrNative(NT, lines, from, to, prog, alive) {
+    const out = lines.slice();
+    for (let a = 0; a < lines.length; a += 12) {
+      if (!alive()) return null; prog(a, lines.length);
+      const r = await NT.translate({ lines: lines.slice(a, a + 12), from: from || '', to });
+      (r.lines || []).forEach((l, k) => { if (l && String(l).trim()) out[a + k] = String(l).trim(); });
+    }
+    return out;
+  }
+  async function lyTrAi(lines, to, ask, say, prog, alive) {
+    const out = lines.slice(), sys = 'You translate song lyrics into ' + lyName(to) + '. The user sends numbered lines. Reply with the same numbered lines translated, one per line, same numbers. Keep the meaning and the feel. No notes, no extra text.';
+    let done = 0;
+    for (let a = 0; a < lines.length; a += 8) {
+      if (!alive()) return null; prog(done, lines.length);
+      const idx = lines.slice(a, a + 8).map((_, k) => a + k), r = await ask([{ role: 'system', content: sys }, { role: 'user', content: idx.map((i, k) => (k + 1) + '. ' + lines[i]).join('\n') }], { max_new_tokens: 420, do_sample: false, repetition_penalty: 1.05 }, say);
+      String(r).split(/\r?\n/).forEach(l => { const m = /^\s*(\d+)[.)]\s*(.+)$/.exec(l); if (m && +m[1] >= 1 && +m[1] <= idx.length) out[idx[+m[1] - 1]] = m[2].trim(); });
+      done += idx.length;
+    }
+    return out;
+  }
+  // Background fetch: while online, quietly saves lyrics for songs that have none, so they are there offline. Only a near-exact title (and artist or length) match is accepted.
+  const lyParseLrc = txt => { const out = [], re = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g; String(txt).split(/\r?\n/).forEach(raw => { const st = []; let m, last = 0; re.lastIndex = 0; while ((m = re.exec(raw))) { st.push(+m[1] * 60 + +m[2] + (m[3] ? +m[3].padEnd(3, '0').slice(0, 3) / 1000 : 0)); last = re.lastIndex; } const tx = raw.slice(last).trim(); if (st.length && tx) st.forEach(s => out.push({ start: s, text: tx })); }); out.sort((a, b) => a.start - b.start); return out.map((c, i) => ({ start: c.start, end: out[i + 1] ? out[i + 1].start : c.start + 4, text: c.text })); };
+  // lyTried: dbId -> the title that was looked up this session (a miss is retried once the title changes, or after the app reloads).
+  // ppvLyAutoTitles (saved): dbId -> the title that lyrics were downloaded for. When the title changes, those lyrics are looked up again
+  // and replaced if the new title finds a match. Lyrics from Whisper, files or the user's own search are never touched.
+  let lyRunning = false, lyAgain = false; const lyTried = {};
+  const lyKey = t => lyNorm(t.title);
+  // Not 'ppvLyAuto': that key is the on/off switch for this feature.
+  const lyAutoGet = () => { try { const m = JSON.parse(localStorage.getItem('ppvLyAutoTitles')); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } };
+  const lyAutoPut = m => { try { localStorage.setItem('ppvLyAutoTitles', JSON.stringify(m)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+  async function lyPrefetch(enabled) {
+    if (lyRunning) { lyAgain = true; return; }
+    if (!enabled() || !navigator.onLine) return; const A = window.__ppApi, lyr = window.__ppLyrics; if (!A || !lyr || !A.tracks) return;
+    lyRunning = true; lyAgain = false;
+    try {
+      let subs = {}; try { subs = JSON.parse(localStorage.getItem('playerSubtitles') || '{}') || {}; } catch (e) {}
+      const tags = loadTags(), keys = Object.keys(LY_SRC).filter(k => LY_SRC[k].auto), auto = lyAutoGet();
+      const todo = A.tracks().filter(t => {
+        if (t.stem || t.dbId == null || !t.title || lyTried[t.dbId] === lyKey(t)) return false;
+        if (!lyr.has(t.dbId) && !subs[t.dbId]) return true;                                    // no lyrics yet
+        return auto[t.dbId] != null && auto[t.dbId] !== lyKey(t);                                // downloaded for an older title
+      });
+      for (const t of todo) {
+        if (!enabled() || !navigator.onLine) break;
+        // Videos: only with an artist (own or from the title), so a random clip never gets song lyrics. A music video is often longer
+        // than the song (intro, outro), so a length mismatch is allowed for videos, but then only plain lyrics are saved:
+        // synced lines would be shifted against the video.
+        const q = lySong(t), vid = t.kind === 'video';
+        const dur = tags[t.dbId] && tags[t.dbId].d || t.duration || 0, art = lyArtistOk(q.artist);
+        if (!art && (vid || !dur)) { lyTried[t.dbId] = lyKey(t); continue; }   // title alone is too vague to trust
+        const durOk = it => !dur || !it.duration || Math.abs(it.duration - dur) <= 4;
+        const qs = [q], qc = lyStrip(q);                                // a miss is tried again with the junk taken out of the title
+        if (lyNorm(qc.title) && (lyNorm(qc.title) !== lyNorm(q.title) || lyNorm(qc.artist) !== lyNorm(q.artist))) qs.push(qc);
+        let got = null, offline = false;
+        for (const q of qs) {
+        const { items, failed } = await lySearch(lyQuery(q), keys); if (failed.length === keys.length) { offline = true; break; }   // offline or blocked: try again next time
+        const tt = lyNorm(q.title), ta = lyNorm(q.artist), tt2 = lyArtistInTitle(q) ? lyTitleNoArtist(q) : '';
+        const ok = items.filter(it => (lyNorm(it.trackName) === tt || (tt2 && lyNorm(it.trackName) === tt2)) && (!art || (() => { const a = lyNorm(it.artistName).replace(/ /g, ''), b = ta.replace(/ /g, ''); return !!a && (a === b || a.includes(b) || b.includes(a)); })()) && (durOk(it) || (vid && art)));
+        const rank = it => (it.syncedLyrics && durOk(it) ? 2 : 0) + (durOk(it) ? 1 : 0);
+        ok.sort((a, b) => rank(b) - rank(a));
+        for (const it of ok) { try { await lyEnsure(it); } catch (e) { continue; } if (lyLines(it.syncedLyrics || it.plainLyrics || '').length >= 4) { got = it; break; } }
+        if (got) break;
+        }
+        if (offline) break;
+        lyTried[t.dbId] = lyKey(t);
+        if (got) { try { if (got.syncedLyrics && durOk(got)) { const cues = lyParseLrc(got.syncedLyrics); lyr.set(t.dbId, got.syncedLyrics); if (cues.length) { try { A.setSubtitles(t.dbId, cues, 'Online.lrc'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } } else lyr.set(t.dbId, got.plainLyrics || lyLines(got.syncedLyrics || '').join('\n')); const m = lyAutoGet(); m[t.dbId] = lyKey(t); lyAutoPut(m); } catch (e) { console.warn('lyrics save failed', e); } }
+        await lyWait(1500);
+      }
+    } catch (e) { console.warn('lyrics background fetch', e); }
+    lyRunning = false;
+    if (lyAgain) setTimeout(() => lyPrefetch(enabled), 1000);             // a title changed while this run was busy
+  }
+  // Every library save: if a title changed, remember what the old lyrics were downloaded for, then look the track up again.
+  let lySeen = null;
+  function lyTitlesChanged(enabled) {
+    const A = window.__ppApi; if (!A || !A.tracks) return;
+    const now = {}; A.tracks().forEach(t => { if (t.dbId != null) now[t.dbId] = lyKey(t); });
+    if (!lySeen) { lySeen = now; return; }
+    const changed = Object.keys(now).filter(id => lySeen[id] != null && lySeen[id] !== now[id]); lySeen = now;
+    if (!changed.length) return;
+    let subs = {}; try { subs = JSON.parse(localStorage.getItem('playerSubtitles') || '{}') || {}; } catch (e) {}
+    const auto = lyAutoGet(); let upd = false;
+    for (const id of changed) {                                         // lyrics downloaded before this was tracked are known by their 'Online.lrc' name
+      const e = subs[id]; if (auto[id] == null && e && !Array.isArray(e) && e.n === 'Online.lrc') { auto[id] = '\u0000old'; upd = true; }
+    }
+    if (upd) lyAutoPut(auto);
+    clearTimeout(lyTitlesChanged.tm); lyTitlesChanged.tm = setTimeout(() => lyPrefetch(enabled), 2500);   // wait for a batch rename to finish
+  }
+  let lyStarted = false;
+  function lyStart(enabled) { if (lyStarted) return; lyStarted = true;
+    lyTitlesChanged(enabled); window.addEventListener('pp-library-saved', () => lyTitlesChanged(enabled)); setTimeout(() => lyPrefetch(enabled), 20000); window.addEventListener('online', () => setTimeout(() => lyPrefetch(enabled), 4000)); }
+
   // ---------- Panel: library tools + lyrics ----------
+  // ---------- AI summary: the tags say what it SOUNDS like, the lyrics/subtitles say what it is ABOUT ----------
+  const SUM_KEY = 'ppSummaryV1';
+  // Summaries live in their own IndexedDB (one record per track), not in localStorage: localStorage is one small shared budget
+  // (about 5 MB for lyrics, subtitles, tags and settings too) and a full one used to make a save fail without a word.
+  // sumLoad() stays instant: it returns an in-memory copy that is filled from the database at start-up.
+  // The old localStorage blob is read once, copied into the database, and only then removed.
+  let sumCache = (() => { try { return JSON.parse(localStorage.getItem(SUM_KEY)) || {}; } catch (e) { return {}; } })(), sumDbP = null;
+  const sumDb = () => sumDbP || (sumDbP = new Promise((res, rej) => {
+    try { const r = indexedDB.open('ppSummariesDB', 1); r.onupgradeneeded = () => r.result.createObjectStore('sums', { keyPath: 'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); }
+  }).catch(e => { sumDbP = null; throw e; }));
+  const sumTx = async (mode, fn) => {
+    const db = await sumDb();
+    return new Promise((res, rej) => { const tx = db.transaction('sums', mode); let out; fn(tx.objectStore('sums'), v => { out = v; }); tx.oncomplete = () => res(out); tx.onerror = tx.onabort = () => rej(tx.error); });
+  };
+  const sumLoad = () => sumCache;
+  const sumPing = () => { try { document.dispatchEvent(new Event('ppv-sums')); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+  async function sumInit() {
+    try {
+      const rows = await sumTx('readonly', (st, set) => { const q = st.getAll(); q.onsuccess = () => set(q.result || []); });
+      const have = new Set(rows.map(r => String(r.id)));
+      rows.forEach(r => { if (r && r.id != null && r.v && (!sumCache[r.id] || (r.v.ts || 0) >= (sumCache[r.id].ts || 0))) sumCache[r.id] = r.v; });
+      let legacy = null; try { legacy = JSON.parse(localStorage.getItem(SUM_KEY) || 'null'); } catch (e) {}
+      if (legacy && typeof legacy === 'object') {
+        const mv = Object.entries(legacy).filter(([id, v]) => v && v.t && !have.has(String(id)));
+        if (mv.length) await sumTx('readwrite', st => { mv.forEach(([id, v]) => st.put({ id: String(id), v })); });
+        try { localStorage.removeItem(SUM_KEY); } catch (e) {}                 // only after every record is safely in the database
+      }
+    } catch (e) { console.warn('summary store unavailable, using localStorage', e); }
+    sumPing();
+  }
+  async function sumSave(id, v) {                                      // resolves true when the summary is safely stored on the device
+    sumCache[id] = v; let ok = false;
+    try { await sumTx('readwrite', st => { st.put({ id: String(id), v }); }); ok = true; } catch (e) { console.warn('summary save failed', e); }
+    if (!ok) { try { localStorage.setItem(SUM_KEY, JSON.stringify(sumCache)); ok = true; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }   // database unavailable: fall back to the old place
+    try { if (ok && navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }   // ask the browser not to clear it when space is low
+    sumPing(); return ok;
+  }
+  async function sumDelete(id) {
+    delete sumCache[id];
+    try { await sumTx('readwrite', st => { st.delete(String(id)); }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    try { const o = JSON.parse(localStorage.getItem(SUM_KEY) || 'null'); if (o && id in o) { delete o[id]; localStorage.setItem(SUM_KEY, JSON.stringify(o)); } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    sumPing();
+  }
+  sumInit();
+  const andJoin = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+  function getTranscript(dbId) {                                       // subtitle cues first, else the saved lyrics; repeated lines (choruses, "yeah") counted once
+    let lines = [];
+    try { const e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[dbId]; if (e && e.c) lines = e.c.map(c => String(c[2] || '').trim()); } catch (x) {}
+    if (!lines.length) { try { const l = (JSON.parse(localStorage.getItem('playerLyricsV1')) || {})[dbId]; if (l) lines = String(l).split('\n').map(q => q.replace(/\[[^\]]*\]/g, '').trim()); } catch (x) {} }
+    const seen = new Set(), out = [];
+    for (const q of lines) { const k = q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); if (!k || seen.has(k)) continue; seen.add(k); out.push(q); }
+    return { lines: out, words: out.join(' ').split(/\s+/).filter(Boolean).length };
+  }
+  // ---------- Number guard for AI replies ----------
+  // Small models garble numbers they copy ("98 BPM" + "78%" came out as "9878 BPM"). Fix what is clearly wrong:
+  // a tempo that does not match the real one (allowing half/double time) becomes the real one, an impossible one is dropped,
+  // and percentages over 100 are removed.
+  function fixNums(text, bpms) {
+    const known = (bpms || []).filter(b => b > 0);
+    let out = String(text || '').replace(/\b(\d[\d,]*(?:\.\d+)?)\s*(BPM|bpm|beats per minute)\b/g, (all, num, unit) => {
+      const raw = num.replace(/,/g, ''), n = +raw;
+      const near = b => [b, b / 2, b * 2].some(x => Math.abs(n - x) <= 3);
+      if (known.some(near)) return all;
+      const inside = known.find(b => raw.includes(String(b)));
+      if (inside) return inside + ' ' + unit;
+      if (known.length === 1) return known[0] + ' ' + unit;
+      if (n >= 40 && n <= 250 && !known.length) return all;
+      return 'an unclear tempo';
+    });
+    out = out.replace(/\s*\(\s*(\d+(?:\.\d+)?)\s*%\s*\)/g, (all, n) => +n > 100 ? '' : all)
+      .replace(/\b(\d+(?:\.\d+)?)\s*%/g, (all, n) => +n > 100 ? '' : all)
+      .replace(/\b([Aa])bout an unclear tempo/g, '$1n unclear tempo').replace(/[ \t]{2,}/g, ' ').replace(/ ([,.;:])/g, '$1');
+    return out;
+  }
+  // ---------- Song map: where the song changes (intro, verse, chorus, bridge, outro), from the lyrics AND the sound ----------
+  // Lyrics (timed subtitle cues, else LRC, else plain stanzas) are cut into blocks at pauses and at the sound-section edges.
+  // Blocks whose lines come back are the chorus; a one-off block after the second chorus is the bridge; the rest are verses.
+  // Stretches with no singing keep the sound analysis label (Intro, Outro, Instrumental, Breakdown, Drop...).
+  // Used by the AI summary (lyrics laid out by section), Song Talk and the tag view.
+  function songMap(dbId, c) {
+    c = c || loadTags()[dbId];
+    const sc = c && c.sc && c.sc.length ? c.sc : null;
+    let cues = [], timed = true;
+    try { const e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[dbId]; if (e && e.c) cues = e.c.map(q => [+q[0], +q[1], String(q[2] || '').trim()]).filter(q => q[2] && isFinite(q[0])); } catch (x) {}
+    if (cues.length < 6) {
+      let raw = ''; try { raw = String((JSON.parse(localStorage.getItem('playerLyricsV1')) || {})[dbId] || ''); } catch (x) {}
+      const re = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g, lrc = [];
+      raw.split(/\r?\n/).forEach(l => { const ts = []; let m; re.lastIndex = 0; while ((m = re.exec(l))) ts.push(+m[1] * 60 + +m[2] + (m[3] ? +('0.' + m[3]) : 0)); const tx = l.replace(re, '').trim(); if (tx && !/^\[[a-z]+:/i.test(l)) ts.forEach(t => lrc.push([t, NaN, tx])); });
+      if (lrc.length >= 6) cues = lrc.sort((a, b) => a[0] - b[0]);
+      else if (raw.trim()) {                                              // plain lyrics: stanzas (blank lines) are the blocks, no times
+        timed = false; let k = 0; cues = [];
+        raw.replace(/\[[^\]]*\]/g, '').split(/\r?\n/).forEach(l => { l = l.trim(); if (!l) { k++; return; } cues.push([k, NaN, l]); });
+      }
+    }
+    cues.forEach((q, i) => { if (!isFinite(q[1]) || q[1] <= q[0]) q[1] = timed ? (cues[i + 1] ? Math.min(cues[i + 1][0], q[0] + 6) : q[0] + 4) : q[0]; });
+    if (cues.length < 6 && !sc) return null;
+    const nz = q => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const secAt = t => sc ? sc.findIndex(x => t >= x[0] - 0.5 && t < x[1]) : -1;
+    const lc = new Map(); cues.forEach(q => { const k = nz(q[2]); if (k.length >= 4) lc.set(k, (lc.get(k) || 0) + 1); });
+    const rp = i => cues[i] && lc.get(nz(cues[i][2])) >= 2;
+    const flip = i => i > 0 && rp(i) !== rp(i - 1) && rp(i) === rp(i + 1) && rp(i - 1) === rp(i - 2);   // repeated lines start or stop (two lines either side agree)
+    const blocks = []; let cur = null;
+    cues.forEach((q, i) => {
+      const si = timed ? secAt(q[0]) : -1, brk = !cur || (timed ? q[0] - cues[i - 1][1] > 3.5 || (sc && si !== cur.si && cur.lines.length >= 2) || (cur.lines.length >= 2 && flip(i)) : q[0] !== cues[i - 1][0]) || cur.lines.length >= 12;
+      if (brk) { cur = { t0: q[0], t1: q[1], si, lines: [] }; blocks.push(cur); }
+      cur.lines.push(q[2]); cur.t1 = q[1];
+    });
+    // repeats: how often each line is sung, and which blocks are (nearly) the same block again
+    blocks.forEach(b => { b.keys = new Set(b.lines.map(nz).filter(k => k.length >= 4)); b.rep = b.keys.size ? [...b.keys].filter(k => lc.get(k) >= 2).length / b.keys.size : 0; });
+    const jac = (a, b) => { let n = 0; a.keys.forEach(k => { if (b.keys.has(k)) n++; }); const u = a.keys.size + b.keys.size - n; return u ? n / u : 0; };
+    const grp = []; blocks.forEach(b => { if (b.rep < 0.5) return; let g = grp.find(g => g.some(x => jac(x, b) >= 0.34)); if (!g) grp.push(g = []); g.push(b); });
+    grp.sort((a, b) => b.length - a.length || b.reduce((n, x) => n + x.lines.length, 0) - a.reduce((n, x) => n + x.lines.length, 0));
+    const chorus = new Set(grp[0] && grp[0].length >= 2 ? grp[0] : []), refrain = new Set(grp.slice(1).filter(g => g.length >= 2).flat());
+    const audioLab = b => b.si >= 0 && sc ? String(sc[b.si][2]).replace(/\s+\d+$/, '') : '';
+    let seenCh = 0;
+    blocks.forEach((b, i) => {
+      if (chorus.has(b)) { b.lab = 'Chorus'; seenCh++; return; }
+      if (refrain.has(b)) { b.lab = 'Refrain'; return; }
+      const laterCh = blocks.slice(i + 1).some(x => chorus.has(x)), al = audioLab(b);
+      if (chorus.size && seenCh >= 2 && (laterCh || i >= blocks.length - 2) && !blocks.slice(i + 1).some(x => x.lab === 'Bridge') && !blocks.some(x => x.lab === 'Bridge')) b.lab = 'Bridge';
+      else if (!chorus.size && /^(Chorus|Bridge|Drop)$/.test(al)) b.lab = al === 'Drop' ? 'Chorus' : al;
+      else b.lab = 'Verse';
+    });
+    // a verse that runs straight into a chorus with no pause and is short is a pre-chorus
+    blocks.forEach((b, i) => { const nx = blocks[i + 1]; if (b.lab === 'Verse' && nx && nx.lab === 'Chorus' && b.lines.length <= 3 && i > 0 && blocks[i - 1].lab === 'Verse' && timed && nx.t0 - b.t1 < 2) b.lab = 'Pre-chorus'; });
+    // merge neighbours with the same label (a verse cut by a breath)
+    const parts = [];
+    blocks.forEach(b => { const p = parts[parts.length - 1]; if (p && p.lab === b.lab && b.lab === 'Verse' && p.lines.length + b.lines.length <= 14 && (!timed || b.t0 - p.t1 < 6)) { p.lines.push(...b.lines); p.t1 = b.t1; } else parts.push({ t0: b.t0, t1: b.t1, lab: b.lab, lines: b.lines.slice(), sung: true }); });
+    // stretches with no singing, from the sound analysis
+    if (sc && timed && blocks.length) sc.forEach(x => {
+      const a = x[0], z = x[1]; if (z - a < 6) return;
+      if (parts.some(p => p.sung && p.t0 < z - 2 && p.t1 > a + 2)) return;
+      const lab = String(x[2]).replace(/\s+\d+$/, ''); parts.push({ t0: a, t1: z, lab: /^(Verse|Chorus|Bridge)$/.test(lab) ? 'Instrumental' : lab, lines: [], sung: false });
+    });
+    if (!blocks.length && sc) sc.forEach(x => parts.push({ t0: x[0], t1: x[1], lab: String(x[2]).replace(/\s+\d+$/, ''), lines: [], sung: false, audio: true }));
+    if (timed) parts.sort((a, b) => a.t0 - b.t0);
+    if (timed && parts.length && !parts[0].sung && parts[0].lab === 'Instrumental') parts[0].lab = 'Intro';
+    if (timed && parts.length > 1 && !parts[parts.length - 1].sung && parts[parts.length - 1].lab === 'Instrumental') parts[parts.length - 1].lab = 'Outro';
+    const tot = {}, n = {}; parts.forEach(p => { tot[p.lab] = (tot[p.lab] || 0) + 1; });
+    parts.forEach(p => { if (/^(Verse|Instrumental|Breakdown|Interlude)$/.test(p.lab) && tot[p.lab] > 1) { n[p.lab] = (n[p.lab] || 0) + 1; p.name = p.lab + ' ' + n[p.lab]; } else p.name = p.lab; });
+    if (!parts.length) return null;
+    // what each part sounds like (from the sound sections it overlaps) and what changes from the part before
+    if (sc && timed) {
+      const ie = (c && c.ie) || [], nrg = e => e >= 66 ? 'loud' : e >= 33 ? 'medium' : 'quiet', vlev = v => v >= 50 ? 2 : v >= 20 ? 1 : 0;
+      const and = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+      parts.forEach(p => {
+        const t1 = Math.max(p.t1, p.t0 + 1); let w = 0, voc = 0, en = 0; const ins = {}, vg = {};
+        sc.forEach(x => {
+          const ov = Math.min(t1, x[1]) - Math.max(p.t0, x[0]); if (ov <= 0) return;
+          w += ov; voc += x[3] * ov; en += x[4] * ov;
+          String(x[5] || '').split('+').filter(n => n && n !== 'vocals').forEach(n => { ins[n] = (ins[n] || 0) + ov; });
+          if (x[8]) { const g = String(x[8]).split(':')[0]; vg[g] = (vg[g] || 0) + ov; }
+        });
+        if (!w) return;
+        const gv = Object.entries(vg).sort((a, b) => b[1] - a[1])[0];
+        p.snd = { voc: voc / w, en: en / w, inst: Object.keys(ins).filter(n => ins[n] >= 0.5 * w), voice: gv && gv[1] >= 0.5 * w ? gv[0] : '' };
+        p.inside = ie.filter(e => e[0] > p.t0 + 4 && e[0] < t1 - 2).slice(0, 3).map(e => { const many = String(e[1]).includes('+'); return String(e[1]).split('+').join(' and ') + (e[2] ? (many ? ' come in' : ' comes in') : (many ? ' drop out' : ' drops out')) + ' at ' + mmss(e[0]); });
+      });
+      let prev = null, prevSung = null, mainV = '';
+      parts.forEach(p => {
+        const d = p.snd; if (!d) return;
+        const ch = [];
+        if (!prev) ch.push(nrg(d.en) + ' start' + (d.inst.length ? ' with ' + and(d.inst) : ''));
+        else {
+          const q = prev.snd, de = d.en - q.en;
+          if (de >= 35) ch.push('much louder'); else if (de >= 15) ch.push('louder'); else if (de <= -35) ch.push('much quieter'); else if (de <= -15) ch.push('quieter');
+          const inn = d.inst.filter(n => !q.inst.includes(n)), out = q.inst.filter(n => !d.inst.includes(n));
+          if (inn.length) ch.push(and(inn) + (inn.length > 1 ? ' come' : ' comes') + ' in');
+          if (out.length) ch.push(and(out) + (out.length > 1 ? ' drop' : ' drops') + ' out');
+          const a = vlev(q.voc), b = vlev(d.voc);
+          if (a === 0 && b > 0) ch.push('singing starts'); else if (a > 0 && b === 0) ch.push('singing stops'); else if (b > a) ch.push('more singing'); else if (b < a) ch.push('less singing');
+          if (!ch.length) ch.push('much the same sound');
+        }
+        if (d.voice && !mainV) mainV = d.voice;
+        if (d.voice && prevSung && prevSung.snd.voice && d.voice !== prevSung.snd.voice) ch.push(d.voice === mainV ? 'back to the ' + d.voice + ' voice' : 'a ' + d.voice + ' voice takes over (maybe a second singer)');
+        if (p.inside.length) ch.push('then ' + p.inside.join(', '));
+        p.change = ch.join('; ');
+        p.sound = [nrg(d.en), d.inst.length ? and(d.inst) : '', vlev(d.voc) === 2 ? 'full vocals' : vlev(d.voc) === 1 ? 'some vocals' : 'no vocals', d.voice ? d.voice + ' voice' : ''].filter(Boolean).join(', ');
+        prev = p; if (vlev(d.voc) > 0) prevSung = p;
+      });
+      if (new Set(parts.filter(p => p.snd && p.snd.voice).map(p => p.snd.voice)).size > 1) parts.duet = true;
+    }
+    const form = parts.map(p => p.name).join(', ');
+    return { parts, form, text: songMap.fmt(parts, timed), timed, lyrics: blocks.length > 0, chorus: chorus.size, duet: !!parts.duet };
+  }
+  songMap.fmt = (parts, timed) => {
+    const nz = q => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); let firstCh = null;
+    return parts.map(p => {
+      const note = p.change ? ' \u2014 ' + p.change : '';
+      if (!p.sung) return '[' + p.name + (timed ? ' ' + mmss(p.t0) + '-' + mmss(p.t1) : '') + (p.audio ? '' : ', no singing') + note + ']';
+      const key = p.lines.map(nz).join('|'), same = p.lab === 'Chorus' && firstCh === key;
+      if (p.lab === 'Chorus' && !firstCh) firstCh = key;
+      return '[' + p.name + (timed ? ' ' + mmss(p.t0) : '') + note + ']\n' + (same ? '(same words as the first chorus)' : p.lines.join('\n'));
+    }).join('\n\n');
+  };
+  // one line for the tag view / Song Talk: "Intro 0:00 · Verse 1 0:14 · Chorus 0:48 ..."
+  const songMapLine = m => m ? m.parts.slice(0, 16).map(p => p.name + (m.timed ? ' ' + mmss(p.t0) : '')).join(' · ') : '';
+  // one row per part with what changes: "1:54 Bridge: quieter; drums drop out; piano comes in"
+  const songMapRows = m => m ? m.parts.slice(0, 16).map(p => '  ' + (m.timed ? mmss(p.t0) + ' ' : '') + p.name + (p.change ? ': ' + p.change : '')) : [];
+  function soundProfile(c, kind) {                                     // plain-language description straight from the saved tags, no AI involved
+    if (!c) return { line: '', hint: '' };
+    const nm = q => String(q).replace(/\s*\([^)]*\)$/, '').replace(/ music$/i, '').toLowerCase();
+    const INSTN = { acousticguitar: 'acoustic guitar', electricguitar: 'electric guitar', classicalguitar: 'classical guitar', acousticbassguitar: 'acoustic bass', electricpiano: 'electric piano', drummachine: 'drum machine', pipeorgan: 'pipe organ', doublebass: 'double bass' };
+    if (c.mu != null && c.mu < 30) { const q = 'Mostly speech or non-musical sound (' + c.mu + '% music).'; return { line: q, hint: q }; }
+    const bpm = c.bpm, tempo = !bpm ? '' : bpm < 70 ? 'slow' : bpm < 100 ? 'mid-tempo' : bpm < 128 ? 'upbeat' : 'fast';
+    const genres = ((c.st && c.st.length ? c.st : c.gn) || []).slice(0, 2).map(v => nm(v[0]));
+    const feel = Object.entries(c.hd || {}).filter(e => e[1] >= 50 && ['happy', 'sad', 'relaxed', 'aggressive', 'party', 'danceable'].includes(e[0])).sort((u, v) => v[1] - u[1]).slice(0, 3).map(e => e[0]);
+    const moods = feel.length ? feel : (c.md || []).slice(0, 2).map(v => nm(v[0]));
+    const inst = (c.in || []).filter(v => v[0] !== 'voice').slice(0, 3).map(v => INSTN[v[0]] || v[0]);
+    const voc = c.v == null ? '' : c.v >= 50 ? 'with vocals' : 'mostly instrumental';
+    let head = [tempo, genres.join(' / '), kind === 'video' ? 'video soundtrack' : 'track'].filter(Boolean).join(' '); head = head.charAt(0).toUpperCase() + head.slice(1);
+    const tail = [bpm ? 'about ' + bpm + ' BPM' : '', c.key ? 'key of ' + c.key : '', voc].filter(Boolean);
+    let line = head + (tail.length ? ', ' + tail.join(', ') : '') + '.';
+    if (moods.length) line += ' Feels ' + andJoin(moods) + '.';
+    if (inst.length) line += ' Instruments heard: ' + inst.join(', ') + '.';
+    { const ss = structSentence(c); if (ss) line += ' ' + ss; }
+    return { line, hint: line };
+  }
+  const sumOk = r => { const L = (r.match(/\p{L}/gu) || []).length, W = (r.match(/\p{L}{2,}/gu) || []).length; return r.length >= 20 && L / r.length >= 0.6 && W >= 4; };
+  // Long videos are read in pieces (each piece summarized, then the pieces combined). At most 5 pieces, spread over the whole thing, so it stays quick.
+  // Summary length choices: how much to ask for (words), how many tokens the reply may use (tok), for long videos how long each piece summary may be (part),
+  // and the hard caps that are enforced afterwards: max words (max) and, for the bullet style, max bullets (nb).
+  const SUM_LENS = {
+    short:    { label: 'Short (2 to 3 sentences, max 70 words)', words: '2 or 3 sentences', adj: 'short', tok: 150, part: 80, max: 70, nb: 3 },
+    medium:   { label: 'Medium (one paragraph, max 130 words)', words: 'one paragraph of 4 to 6 sentences', adj: 'medium-length', tok: 260, part: 110, max: 130, nb: 5 },
+    detailed: { label: 'Two paragraphs (max 250 words, default)', words: 'exactly two paragraphs separated by a blank line. Paragraph one: what the song is about, the story or situation and who is speaking. Paragraph two: its message, themes and significance, and why it hits people the way it does', adj: 'two-paragraph', tok: 480, part: 160, paras: 2, max: 250, nb: 8 },
+    long:     { label: 'Long (three paragraphs, max 360 words)', words: 'three paragraphs separated by blank lines: what it is about, its message and themes, then its significance and context', adj: 'detailed', tok: 680, part: 180, paras: 3, max: 360, nb: 10 }
+  };
+  const sumLenKey = () => { try { const k = localStorage.getItem('ppvSumLen'); return SUM_LENS[k] ? k : 'detailed'; } catch (e) { return 'detailed'; } };
+  // ---------- Reply length + reply style menus ----------
+  // Chat menus (ppvChatLen / ppvChatStyle) shape regular chat and Song Talk. Summary menus (ppvSumLen / ppvSumStyle) shape the AI summaries.
+  // Each menu exists in the Assistant settings, and the summary ones also under Lyrics & subtitles: a change in one is copied to the others.
+  const ppvLs = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  // The user's favourite topics (assistant setting, or learned from "my favourite topics are ..."), so Bloopy chats about them too.
+  const favTopics = () => String(ppvLs('ppvTopics') || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const setFavTopics = v => { try { localStorage.setItem('ppvTopics', String(v || '').replace(/\s+/g, ' ').trim().slice(0, 200)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } document.querySelectorAll('#ppv-topics').forEach(x => { x.value = favTopics(); }); };
+  const CHAT_LENS = {
+    short:  { label: 'Short (one sentence)', say: 'in one short plain sentence', bul: 'in two short bullet points', talk: 'in one short paragraph of two or three sentences', mul: 0.5 },
+    normal: { label: 'Normal (one or two sentences, default)', say: 'in one or two short plain sentences', bul: 'in three short bullet points', talk: 'in one to three short paragraphs', mul: 1 },
+    medium: { label: 'Medium (a short paragraph)', say: 'in one short paragraph of three to five sentences', bul: 'in four or five bullet points', talk: 'in two or three paragraphs', mul: 1.4 },
+    long:   { label: 'Long (two paragraphs)', say: 'in two short paragraphs separated by a blank line', bul: 'in six to eight bullet points', talk: 'in three or four paragraphs with detail', mul: 1.9 }
+  };
+  const CHAT_STYLES = {
+    bloop:   { label: 'Bloopy (playful, default)', persona: true, intro: ' You are friendly, playful and a little silly.', fmt: 'No lists, no markdown, no emoji.', talk: '' },
+    plain:   { label: 'Plain and factual', intro: ' You are calm, clear and to the point.', fmt: 'No jokes, no puns, no exclamation marks, no lists, no markdown, no emoji.', talk: 'Keep a calm, factual tone with no jokes.' },
+    simple:  { label: 'Simple (easy words)', intro: ' You explain things simply, as if to a curious ten-year-old.', fmt: 'Use short, easy words and short sentences, no jargon, no lists, no markdown, no emoji.', talk: 'Use short, easy words and explain any technical term.' },
+    deep:    { label: 'Thoughtful (gives the reason)', intro: ' You are thoughtful and like to explain why.', fmt: 'Give the answer first, then briefly say why. No lists, no markdown, no emoji.', talk: 'After each answer, briefly say why.' },
+    bullets: { label: 'Bullet points', bul: true, intro: ' You are organized and to the point.', fmt: 'Write the reply as a list with one point per line, each line starting with "- ". No other markdown, no emoji.', talk: 'Write the answer as short bullet points, each line starting with "- ".' }
+  };
+  const SUM_STYLES = {
+    plain:    { label: 'Plain (default)', say: 'Plain English, no lists, no headings.' },
+    simple:   { label: 'Simple (easy words)', say: 'Use short, easy words and short sentences, as if explaining to a curious ten-year-old. No lists, no headings.' },
+    casual:   { label: 'Casual (like telling a friend)', say: 'Write in a relaxed, conversational voice, like telling a friend about it. No lists, no headings.' },
+    analytic: { label: 'Analytical (themes and imagery)', say: 'Write like a thoughtful critic: name the themes, the imagery and symbols, and how the wording supports the message. No lists, no headings.' },
+    bullets:  { label: 'Bullet points', say: 'Write only bullet points, one per line, each starting with "- " and holding one short sentence. No headings and no other formatting.',
+                bul: { short: 'three bullet points', medium: 'five bullet points', detailed: 'six to eight bullet points', long: 'eight to ten bullet points' } }
+  };
+  const chatLenKey = () => { const k = ppvLs('ppvChatLen'); return CHAT_LENS[k] ? k : 'normal'; };
+  const chatStyleKey = () => { const k = ppvLs('ppvChatStyle'); return CHAT_STYLES[k] ? k : 'bloop'; };
+  const sumStyleKey = () => { const k = ppvLs('ppvSumStyle'); return SUM_STYLES[k] ? k : 'plain'; };
+  // Enforces a length choice: cut back to the whole sentences (or whole bullets) that fit the word cap w and bullet cap nb.
+  const sumCap = (r, w, nb) => {
+    r = String(r || '').trim(); if (!w) return r;
+    const wc = x => (x.replace(/^\s*[-•*]\s+/gm, '').match(/\S+/g) || []).length, isB = l => /^\s*[-•*]\s/.test(l);
+    const lines = r.split('\n');
+    if (lines.filter(isB).length >= 2) {                                 // bullets: keep whole bullets that fit both caps
+      const out = []; let n = 0, b = 0;
+      for (const l of lines) { if (!l.trim()) continue; const k = wc(l); if (out.length && (n + k > w || (nb && b >= nb))) break; out.push(l); n += k; b += isB(l) ? 1 : 0; }
+      return out.join('\n').trim();
+    }
+    if (wc(r) <= w) return r;
+    const re = /[^.!?…]+[.!?…]+["'”’)]*\s*/g; let m, out = '', n = 0;   // prose: keep whole sentences that fit, paragraph breaks included
+    while ((m = re.exec(r))) { const k = wc(m[0]); if (n + k > w) break; out += m[0]; n += k; }
+    out = out.trim();
+    if (wc(out) >= Math.min(8, w)) return out;
+    return r.split(/\s+/).slice(0, w).join(' ').replace(/[\s,;:\-]+$/, '') + '…'; // one very long sentence: cut by words
+  };
+  const menuOpts = o => Object.keys(o).map(k => '<option value="' + k + '">' + o[k].label + '</option>').join('');
+  document.addEventListener('change', e => {                          // keep copies of the same menu in step, and save the choice
+    const sel = e.target; if (!sel || !sel.dataset || !sel.dataset.sync) return;
+    try { localStorage.setItem(sel.dataset.sync, sel.value); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); }
+    document.querySelectorAll('select[data-sync="' + sel.dataset.sync + '"]').forEach(o => { if (o !== sel) o.value = sel.value; });
+  });
+  // A summary that hit the token cap ends mid-sentence: cut back to the last full sentence.
+  const sumTrim = r => {
+    r = String(r).trim(); if (!r || /[.!?…)"'”’]$/.test(r)) return r;
+    let end = -1, m; const re = /[.!?…](?=["'”’)]*(?:\s|$))/g; while ((m = re.exec(r))) end = m.index + 1;
+    return end >= 20 && end >= r.length * 0.4 ? r.slice(0, end) : r.replace(/[\s,;:\-]+$/, '') + '…';
+  };
+  // Small models often ignore "two paragraphs": split at the sentence boundaries nearest the even cut points.
+  const sumParas = (r, n) => {
+    r = String(r).replace(/^\s*(?:paragraph \d[:.]?|\*\*[^*]+\*\*)\s*/gim, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!n || n < 2 || r.split(/\n\s*\n/).length >= n) return r;
+    const flat = r.replace(/\s*\n\s*/g, ' '), ends = []; let m; const re = /[.!?…]["'”’)]*\s+(?=[A-Z“"'])/g;
+    while ((m = re.exec(flat))) ends.push(m.index + m[0].length);
+    if (ends.length < n - 1) return r;
+    const cuts = []; for (let k = 1; k < n; k++) { const want = flat.length * k / n; cuts.push(ends.reduce((a, e) => Math.abs(e - want) < Math.abs(a - want) ? e : a, ends[0])); }
+    const uniq = [...new Set(cuts)].sort((x, y) => x - y), out = []; let st = 0;
+    uniq.forEach(c => { out.push(flat.slice(st, c).trim()); st = c; }); out.push(flat.slice(st).trim());
+    return out.filter(Boolean).join('\n\n');
+  };
+  // Writes what a song (or video) MEANS: story, message, themes, significance. The sound is deliberately left out: the tags
+  // line under it covers that, and feeding tempo/instruments to a small model made it describe the sound instead.
+  // With no lyrics it may still answer from what it reliably knows about a well-known song; if it doesn't know it, it says UNKNOWN.
+  async function aiSummary(t, c, tr, ask, say, lenKey, ctx) {
+    const kind = t.kind === 'video' ? 'video' : 'song', LN = SUM_LENS[lenKey] || SUM_LENS.detailed, ST = SUM_STYLES[sumStyleKey()] || SUM_STYLES.plain;
+    const wd = (ST.bul ? ST.bul[SUM_LENS[lenKey] ? lenKey : 'detailed'] : LN.words) +          // how much to write: the length menu, worded for the chosen style
+      '. Never go over ' + LN.max + ' words in total; stop as soon as the point is made';   // the cap is also enforced after writing (sumCap)
+    const who = t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? t.artist : '';
+    const sys = kind === 'song'
+      ? 'You explain songs for a music app. Write about what the song MEANS: the story or situation, who is speaking and to whom, the feelings, the message and themes, and why it matters to people. ' +
+        'Do NOT describe how it sounds: no tempo, genre, instruments, production or vocal style. ' +
+        'Base it on the lyrics you are given. You may add what you reliably know about this specific song and artist (what it is widely understood to be about, the story behind it), but never invent facts; when unsure, stay with the lyrics. ' +
+        'Describe the lyrics in your own words instead of quoting them. ' +
+        'When the lyrics are marked by section ([Verse 1], [Chorus], [Bridge] ...), use that: the chorus usually carries the main message, the verses build the story, and a bridge often brings a turn, a doubt or a new angle. Explain how the meaning develops through the song, but do not list the sections or give timestamps. ' +
+        'A FEEL line may give the mood and themes the audio analysis heard, and a note after a section name may say how the music changes there (louder, quieter, instruments in or out, another voice). Use these only as hints for the meaning, for example a stripped-back bridge as a vulnerable moment or a second voice as the other person answering, and never describe the sound itself. ' + ST.say + ' Write ' + wd + '.'
+      : 'You summarize videos for a media app. Write about what the video is about: its subject, main points or story, and why it matters. Do not describe the audio. ' +
+        'Use only the transcript you are given; never invent names or events. ' + ST.say + ' Write ' + wd + '.';
+    const opt = { max_new_tokens: LN.tok, do_sample: true, temperature: 0.4, top_p: 0.9, repetition_penalty: 1.08 };
+    let feel = '';
+    if (kind === 'song' && c) {                                        // hints from the audio tags that help with MEANING (themes, voice), not with the sound
+      const th = ((c.hm || {}).theme || []).map(x => String(x[0]).replace(/_/g, ' ')), gv = ((c.hm || {}).gender || [])[0];
+      const md = (c.md || []).map(x => String(x[0])).filter(x => !th.includes(x));
+      const bits = th.concat(md).slice(0, 6);
+      feel = (bits.length ? 'mood and themes: ' + bits.join(', ') : '') + (gv && gv[1] >= 65 && (c.v == null || c.v >= 50) ? (bits.length ? '; ' : '') + 'the lead singer sounds ' + gv[0] : '');
+    }
+    let head = 'Title: ' + t.title + (who ? '\nArtist: ' + who : '') + '\nType: ' + kind + (feel ? '\nFEEL (audio analysis, a hint only): ' + feel : '');
+    const map = kind === 'song' && t.dbId != null ? (() => { try { return songMap(t.dbId, c); } catch (e) { console.warn('song map', e); return null; } })() : null;
+    if (map && map.duet) head += (feel ? '' : '\nFEEL (audio analysis, a hint only): ') + (feel ? '; ' : '') + 'the voice changes between parts, so there may be two singers';
+    let user;
+    if (tr.words < 12) {
+      if (kind !== 'song' || !who) return '';
+      user = head + '\nNo lyrics are saved for this song.\n\nIf you genuinely know this exact song, explain what it is about and what it means in ' + wd + '. If you do not know it, reply with only the word UNKNOWN.';
+    } else if (tr.words <= 600) {
+      // Fit the lyrics to the model's context instead of shrinking the answer: keep the reply budget, drop lyric lines from the end.
+      const room = ctx ? Math.floor(ctx * 0.92) - opt.max_new_tokens - Math.ceil((sys.length + head.length + 160) / 3) : Infinity;
+      if (map && map.lyrics && map.chorus) {                           // lyrics laid out by section (verse / chorus / bridge), so the model sees how the song is built
+        let ps = map.parts.slice(), txt = map.text, cut = false;
+        while (ps.length > 3 && Math.ceil(txt.length / 3) > room) { ps.pop(); cut = true; txt = songMap.fmt(ps, map.timed); }
+        user = head + '\nSong form: ' + map.form + '\nLyrics by section (automatic, may contain mistakes' + (cut ? ', shortened' : '') + '):\n' + txt + '\n\nExplain what this ' + kind + ' is about and what it means.';
+      } else {
+        let lines = tr.lines.slice();
+        while (lines.length > 6 && Math.ceil(lines.join('\n').length / 3) > room) lines.pop();
+        user = head + (map && map.form ? '\nSong form: ' + map.form : '') + '\nLyrics (automatic transcript, may contain mistakes' + (lines.length < tr.lines.length ? ', shortened' : '') + '):\n' + lines.join('\n') + '\n\nExplain what this ' + kind + ' is about and what it means.';
+      }
+    } else {
+      let chunks = [], cur = [], n = 0;
+      for (const q of tr.lines) { cur.push(q); n += q.split(/\s+/).length; if (n >= 320) { chunks.push(cur.join('\n')); cur = []; n = 0; } }
+      if (cur.length) chunks.push(cur.join('\n'));
+      const sampled = chunks.length > 5; if (sampled) chunks = [0, 1, 2, 3, 4].map(i => chunks[Math.round(i * (chunks.length - 1) / 4)]);
+      const parts = [];
+      for (let i = 0; i < chunks.length; i++) {
+        say('Reading part ' + (i + 1) + ' of ' + chunks.length + '…');
+        const r = await ask([{ role: 'system', content: sys }, { role: 'user', content: 'Part ' + (i + 1) + ' of ' + chunks.length + ' of a ' + kind + ' transcript (automatic, may contain mistakes):\n' + chunks[i] + '\n\nIn one or two sentences, what happens or is said in this part?' }], Object.assign({}, opt, { max_new_tokens: LN.part }), say);
+        if (sumOk(r)) parts.push(r.replace(/\s+/g, ' '));
+      }
+      if (!parts.length) return '';
+      say('Putting it together…');
+      user = head + '\nWhat each ' + (sampled ? 'sampled ' : '') + 'part says, in order:\n- ' + parts.join('\n- ') + '\n\nExplain what the whole ' + kind + ' is about and what it means.';
+    }
+    say('Writing the summary…');
+    const out = String(await ask([{ role: 'system', content: sys }, { role: 'user', content: user }], opt, say) || '').trim();
+    if (/^\W*unknown\W*$/i.test(out) || /^(?:i(?:'m| am) not (?:familiar|sure)|i don'?t know)/i.test(out)) return '';
+    return sumOk(out) ? sumCap(fixNums(sumParas(sumTrim(out), ST.bul ? 0 : LN.paras || 0), c && c.bpm ? [c.bpm] : []), LN.max, ST.bul ? LN.nb : 0) : '';
+  }
   function smartUI(p, h) {
     const css = document.createElement('style');
-    css.textContent = '#ppv-panel details,.ppv-scope details{margin-top:10px;border-top:1px solid #333;padding-top:8px}#ppv-panel summary,.ppv-scope summary{cursor:pointer;font-weight:600;padding:2px 0}#ppv-panel input[type=text],.ppv-scope input[type=text]{width:100%;box-sizing:border-box;margin-top:6px;padding:7px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444}#ppv-panel .ppv-note,.ppv-scope .ppv-note{opacity:.6;font-size:11px;margin-top:4px}#ppv-panel .ppv-out,.ppv-scope .ppv-out{margin-top:6px;font-size:12px;white-space:pre-wrap}#ppv-panel .ppv-row,.ppv-scope .ppv-row{display:flex;gap:6px}#ppv-panel .ppv-row button,.ppv-scope .ppv-row button{margin-top:8px}#ppv-panel .ppv-grid label,.ppv-scope .ppv-grid label{display:block;margin:4px 0}.ppv-scope{color:var(--text,#eee);font:13px system-ui,sans-serif;margin:8px 0;padding:0 2px}.ppv-scope button{width:100%;margin-top:8px;padding:9px;border-radius:8px;border:0;background:var(--accent,#7c3aed);color:#fff;font:600 13px system-ui}.ppv-scope button:disabled{opacity:.5}.ppv-scope button.ppv-sec{background:transparent;border:1px solid var(--line,#555);color:inherit;font-weight:500;font-size:12px;padding:6px}.ppv-scope select{width:100%;margin-top:6px;padding:7px;border-radius:8px;background:var(--bg,#2a2b31);color:inherit;border:1px solid var(--line,#444)}.ppv-scope label.ppv-c{display:inline-block;margin:6px 10px 0 0}.ppv-scope details{border-top-color:var(--line,#333)}.ppv-pbar{height:6px;background:var(--line,#333);border-radius:3px;margin-top:8px}.ppv-pbar i{display:block;height:100%;width:0;background:var(--accent,#7c3aed);border-radius:3px}';
+    css.textContent = '#ppv-panel details,.ppv-scope details{margin-top:10px;border-top:1px solid #333;padding-top:8px}#ppv-panel summary,.ppv-scope summary{cursor:pointer;font-weight:600;padding:2px 0}#ppv-panel input[type=text],.ppv-scope input[type=text]{width:100%;box-sizing:border-box;margin-top:6px;padding:7px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444}#ppv-panel .ppv-note,.ppv-scope .ppv-note{opacity:.6;font-size:11px;margin-top:4px}#ppv-panel .ppv-out,.ppv-scope .ppv-out{margin-top:6px;font-size:12px;white-space:pre-wrap}#ppv-panel .ppv-row,.ppv-scope .ppv-row{display:flex;gap:6px}#ppv-panel .ppv-row button,.ppv-scope .ppv-row button{margin-top:8px}#ppv-panel .ppv-grid label,.ppv-scope .ppv-grid label{display:block;margin:4px 0}.ppv-scope{color:var(--text,#eee);font:13px system-ui,sans-serif;margin:8px 0;padding:0 2px}.ppv-scope button{width:100%;margin-top:8px;padding:9px;border-radius:8px;border:0;background:var(--accent,#7c3aed);color:#fff;font:600 13px system-ui}.ppv-scope button:disabled{opacity:.5}.ppv-scope button.ppv-sec{background:transparent;border:1px solid var(--line,#555);color:inherit;font-weight:500;font-size:12px;padding:6px}.ppv-scope select{width:100%;margin-top:6px;padding:7px;border-radius:8px;background:var(--bg,#2a2b31);color:inherit;border:1px solid var(--line,#444)}.ppv-scope label.ppv-c{display:inline-block;margin:6px 10px 0 0}.ppv-scope details{border-top-color:var(--line,#333)}#ppv-edrows .er{display:flex;gap:4px;align-items:center;margin-top:5px}#ppv-edrows .er input{margin:0!important;padding:6px!important}#ppv-edrows .et{width:74px!important;flex:none;text-align:center}#ppv-edrows .er button{width:auto;margin:0;padding:5px 8px;flex:none}#ppv-edrows .er.on input{border-color:var(--accent,#7c3aed)}.ppv-pbar{height:6px;background:var(--line,#333);border-radius:3px;margin-top:8px}.ppv-pbar i{display:block;height:100%;width:0;background:var(--accent,#7c3aed);border-radius:3px}';
     document.head.appendChild(css);
     const d1 = document.createElement('details'), d2 = document.createElement('details');
     d1.innerHTML = '<summary>Library tools (tags)</summary>' +
       '<div id="ppv-count" class="ppv-note"></div>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-deep"> Scan the whole track (slower, finds first vocals)</label>' +
-      '<label class="ppv-c"><input type="checkbox" id="ppv-moods"> Mood models (8 tiny files, ~4 MB, downloaded once)</label>' +
+      '<label class="ppv-c"><input type="checkbox" id="ppv-moods"> Mood &amp; theme models (13 tiny files, ~6 MB, downloaded once)</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-aeq"> Auto-EQ from genre when tagging</label>' +
       '<label class="ppv-c"><input type="checkbox" id="ppv-askip"> Skip long intros (needs whole-track tags)</label>' +
 '<details id="ppv-bgd"><summary>Background tagging &amp; surprise playlists</summary>' +
-      '<div class="ppv-note">Runs only while this page is open and you are away.</div>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bg"> Tag untagged tracks while I am away</label>' +
+      '<div class="ppv-note">Runs only while this page is open and idle.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bg"> Tag untagged tracks while idle</label>' +
       '<select id="ppv-bgidle"><option value="1">Away = 1 minute idle</option><option value="5">Away = 5 minutes idle</option><option value="15">Away = 15 minutes idle</option></select>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-bgplay"> Also while music is playing</label>' +
       '<label class="ppv-c" id="ppv-bgchl" style="display:block"><input type="checkbox" id="ppv-bgchg"> Only while charging</label>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-live"> Keep smart playlists up to date as tracks get tagged</label>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-lmix"> Auto mixes: For You, Ones You May Like, Your Pattern (they change as you listen)</label>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-lmix"> Auto mixes: For You, Ones You May Like, Your Pattern (they change with listening)</label>' +
       '<button id="ppv-lmixblk" class="ppv-sec">Block current track from auto mixes</button><div id="ppv-lmixlist" class="ppv-note"></div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-surp"> Assemble surprise playlists</label>' +
       '<select id="ppv-surpev"><option value="6">New surprise every 6 hours</option><option value="24">New surprise every day</option><option value="72">New surprise every 3 days</option><option value="168">New surprise every week</option></select>' +
@@ -1135,16 +3156,30 @@
       '<button id="ppv-eqall" class="ppv-sec">Apply auto-EQ to all tagged tracks</button><button id="ppv-heads" class="ppv-sec">Refresh mood models</button>' +
       '<div id="ppv-lib" class="ppv-out"></div>';
     d2.innerHTML = '<summary>Lyrics &amp; subtitles (Whisper)</summary>' +
-      '<select id="ppv-wsize">' + Object.entries(WH).map(([k, v]) => '<option value="' + k + '">' + v[1] + '</option>').join('') + '</select>' +
+      '<select id="ppv-wsize">' + Object.entries(WH).filter(e => whOk(e[0])).map(([k, v]) => '<option value="' + k + '">' + v[1] + '</option>').join('') + '</select>' +
       '<select id="ppv-wlang">' + LANGS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select>' +
       '<select id="ppv-wtask"><option value="transcribe">Write what is said</option><option value="translate">Translate to English</option></select>' +
-      '<label class="ppv-c"><input type="checkbox" id="ppv-wclean"> Remove the music first (better for songs, much slower)</label>' +
-      '<div class="ppv-note">Songs get synced lyrics, videos get subtitles. The music-removal step uses the model chosen at the top of this panel.</div>' +
-      '<button id="ppv-wgo">Transcribe current track</button><button id="ppv-wsrt" class="ppv-sec" style="display:none">Download .srt</button><button id="ppv-wfree" class="ppv-sec">Free up Whisper download</button>' +
-      '<div id="ppv-wout" class="ppv-out"></div>';
+      '<select id="ppv-wacc"><option value="0">Accuracy: Standard (1 pass, fastest)</option><option value="1">Accuracy: Careful (2 passes + beam search, ~2x slower)</option><option value="2">Accuracy: Max (3 passes, ~3x slower)</option></select>' +
+      '<div class="ppv-note">Careful and Max pass over the song more than once and compare repeated lines such as choruses. Other wordings are kept for choosing in the editor.</div>' +
+      '<label class="ppv-c"><input type="checkbox" id="ppv-wclean"> Remove the music first (uses Spleeter, or previously split vocals; on by default for songs)</label>' +
+      '<label class="ppv-c" id="ppv-wgpu-l"><input type="checkbox" id="ppv-wgpu"> Use the GPU (experimental, much faster on supported devices)</label>' +
+      '<div class="ppv-note">Songs get synced lyrics (Lyrics tab), videos get subtitles. Both can be exported as .srt or .lrc from the editor below. The music-removal step always uses Spleeter. If the song was already split, its saved vocals are reused and nothing is split again.</div>' +
+      '<button id="ppv-wgo">Transcribe current track</button><button id="ppv-wtime" class="ppv-sec">Time the words for sing-along</button>' +
+      '<div class="ppv-note">Time the words keeps the lyrics this song already has, word for word. It only listens for when each word is sung, so the sing-along highlight can follow it exactly. Parakeet (if picked above) is the most precise; otherwise Whisper is used. Editing the lines in the lyrics editor afterwards drops the word timings again.</div>' +
+      '<button id="ppv-wsrt" class="ppv-sec" style="display:none">Download .srt</button><button id="ppv-wfree" class="ppv-sec">Free up Whisper download</button>' +
+      '<div id="ppv-wout" class="ppv-out"></div>' +
+      '<label class="ppv-c" style="display:block;margin-top:10px">Summary length: <select id="ppv-sumlen" data-sync="ppvSumLen" style="width:100%;display:block">' + Object.keys(SUM_LENS).map(k => '<option value="' + k + '">' + SUM_LENS[k].label + '</option>').join('') + '</select></label>' +
+      '<label class="ppv-c" style="display:block;margin-top:10px">Summary style: <select id="ppv-sumstyle" data-sync="ppvSumStyle" style="width:100%;display:block">' + menuOpts(SUM_STYLES) + '</select></label>' +
+      '<button id="ppv-sumgo" class="ppv-sec" style="margin-top:10px">Summarize current track (AI)</button>' +
+      '<div class="ppv-note">Combines the track\u2019s tags (tempo, key, genre, mood, instruments) with its lyrics or subtitles, so it knows both how it sounds and what it is about. Tags are made first if missing. The written part uses the Bloopy AI brain (one-time download). Without lyrics or subtitles you get the sound summary only.</div>' +
+      '<div id="ppv-sumout" class="ppv-out"></div>' +
+      '<button id="ppv-sumtalk" class="ppv-sec" style="display:none;margin-top:8px">\ud83d\udcac Talk about this song in chat</button>' +
+      '<details id="ppv-sumlist"><summary id="ppv-sumlist-h">Saved summaries</summary><div id="ppv-sumlist-b"></div></details>' +
+      '<button id="ppv-lyfix" class="ppv-sec" style="margin-top:8px">\u270e Fix this song\u2019s lyrics with AI (in chat)</button>' +
+      '<button id="ppv-edopen" class="ppv-sec" style="margin-top:12px;padding:10px;font-size:13px">✎ Open full-screen editor (lyrics &amp; timestamps)</button>';
     // AI tools no longer live in the one panel: tagging + smart playlists go to the Library tab, Whisper goes to captions (video) or Lyrics (songs)
     d1.querySelector('summary').textContent = 'AI tagging & smart playlists';
-    d1.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-tag"><i></i></div><select id="ppv-scope"><option value="cur">Tag: current track</option><option value="pick">Tag: a track I choose</option><option value="all">Tag: all tracks</option></select><select id="ppv-pick" style="display:none"></select><label class="ppv-c" id="ppv-redo-l" style="display:none"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label><div class="ppv-row"><button id="ppv-tag">Tag current track</button><button id="ppv-stop" class="ppv-sec" style="display:none;width:auto;padding:6px 14px" data-keep="1">Stop</button></div><div id="ppv-tags" class="ppv-out"></div><details id="ppv-saved" open><summary>Tagged tracks <span id="ppv-scount" style="opacity:.6;font-weight:400"></span></summary><input type="text" id="ppv-ss" placeholder="Filter by title, artist or tag (e.g. piano, 120 bpm)"><select id="ppv-sf"><option value="all">Everything tagged</option><option value="audio">Songs</option><option value="video">Videos</option></select><div id="ppv-slist" class="ppv-note"></div></details>');
+    d1.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-tag"><i></i></div><select id="ppv-scope"><option value="cur">Tag: current track</option><option value="pick">Tag: a chosen track</option><option value="all">Tag: all tracks</option></select><select id="ppv-pick" style="display:none"></select><label class="ppv-c" id="ppv-redo-l" style="display:none"><input type="checkbox" id="ppv-redo"> Also redo tracks that already have tags</label><div class="ppv-row"><button id="ppv-tag">Tag current track</button><button id="ppv-stop" class="ppv-sec" style="display:none;width:auto;padding:6px 14px" data-keep="1">Stop</button></div><div id="ppv-tags" class="ppv-out"></div><details id="ppv-saved" open><summary>Tagged tracks <span id="ppv-scount" style="opacity:.6;font-weight:400"></span></summary><input type="text" id="ppv-ss" placeholder="Filter by title, artist or tag (e.g. piano, 120 bpm)"><select id="ppv-sf"><option value="all">Everything tagged</option><option value="audio">Songs</option><option value="video">Videos</option></select><div id="ppv-slist" class="ppv-note"></div></details>');
     d2.insertAdjacentHTML('afterbegin', '<div class="ppv-stx ppv-note">Ready</div><div class="ppv-pbar ppv-bar-wh"><i></i></div>');
     d2.style.borderTop = '0'; d2.style.marginTop = '4px';
     const libHost = document.createElement('div'); libHost.className = 'ppv-scope'; libHost.id = 'ppv-libhost'; libHost.appendChild(d1);
@@ -1159,8 +3194,10 @@
     libHost.after(savedHost);
     const capDrop = document.getElementById('subtitle-dropdown'), lyPane = document.querySelector('#extras-panel .pp-pane[data-pp="ly"]');
     // the Whisper block sits in whichever place fits the current track: captions menu for video, Lyrics tab for songs
+    let audPanel = null;
     const placeWhisper = where => {
       if (where === 'cap' && capDrop) { if (whHost.parentNode !== capDrop) { capDrop.appendChild(document.createElement('hr')); capDrop.appendChild(whHost); } }
+      else if (where === 'aud' && audPanel) { if (whHost.parentNode !== audPanel) audPanel.appendChild(whHost); }
       else if (where === 'ly' && lyPane) { if (whHost.parentNode !== lyPane) lyPane.appendChild(whHost); }
     };
     const curKind = () => { const a = window.__ppApi, t = a && a.tracks()[a.currentIndex()]; return t ? t.kind : null; };
@@ -1170,7 +3207,7 @@
     if (sb) sb.addEventListener('click', () => placeWhisper('cap'), true);
     if (eb) eb.addEventListener('click', () => { if (curKind() !== 'video') placeWhisper('ly'); }, true);
     const $ = s => document.querySelector(s), A = () => window.__ppApi, cur = () => { const a = A(); return a && a.tracks()[a.currentIndex()]; };
-    const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
+    const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     let isBusy = false;
     const busy = on => { isBusy = on; document.querySelectorAll('#ppv-panel button, .ppv-scope button').forEach(b => { if (!b.dataset.keep && !b.classList.contains('ppv-x')) b.disabled = on; }); };
     const deep = $('#ppv-deep'), aeq = $('#ppv-aeq'), ask = $('#ppv-askip'), lib = $('#ppv-lib'), cnt = $('#ppv-count');
@@ -1181,13 +3218,15 @@
     const fmtStored = c => {                                           // saved (compact) tags -> readable lines
       const L = [];
       if (c.bpm || c.key) L.push([c.bpm ? 'Tempo: ' + c.bpm + ' BPM' : '', c.key ? 'Key: ' + c.key + (c.ck ? ' (' + c.ck + ')' : '') : ''].filter(Boolean).join(' · '));
+      structLines(c).forEach(x => L.push(x));
+      if (c.sh && c.sh.length) L.push('Shifts' + (c.shs ? ' (' + mmss(c.shs[0]) + '-' + mmss(c.shs[1]) + ')' : '') + ': ' + c.sh.map(x => mmss(x[0]) + ' ' + x[1]).join(' | '));
       if (c.v != null) L.push((c.v >= 50 ? 'Vocals: yes (' + c.v + '%)' : 'Instrumental (' + (100 - c.v) + '%)') + (c.fv != null ? ' · first vocals at ' + mmss(c.fv) : ''));
       if (c.gp && c.gp.length) L.push('Genre: ' + lst(c.gp));
       if (c.st && c.st.length) L.push('Style: ' + lst(c.st));
       if (c.gn && c.gn.length) L.push('Also sounds like: ' + lst(c.gn));
       if (c.md && c.md.length) L.push('Mood: ' + lst(c.md));
       const feels = Object.entries(c.hd || {}).filter(e => e[1] >= 50).sort((u, v) => v[1] - u[1]).map(e => [e[0].replace(/^mood_/, '').replace(/_/g, ' '), e[1]]);
-      if (feels.length) L.push('Feels: ' + lst(feels.slice(0, 6)));
+      if (feels.length) L.push('Feels: ' + lst(feels.slice(0, 6))); else { const w = Object.entries(c.hd || {}).sort((u, v) => v[1] - u[1]).slice(0, 3).map(e => [e[0].replace(/^mood_/, '').replace(/_/g, ' '), e[1]]); if (w.length) L.push('Feels (leaning): ' + lst(w)); }
       if (c.in && c.in.length) L.push('Instruments: ' + lst(c.in));
       Object.entries(c.hm || {}).forEach(([id, a]) => { if (a && a.length) L.push(id.replace(/_/g, ' ') + ': ' + lst(a)); });
       if (c.d) L.push('Length: ' + mmss(c.d) + (c.w ? ' (whole track scanned)' : ''));
@@ -1209,7 +3248,7 @@
         head.innerHTML = '<b></b><div style="opacity:.7;font-size:11px"></div>';
         head.firstChild.textContent = (t.kind === 'video' ? '🎬 ' : '🎵 ') + (t.artist && !/^(Unknown artist|Video|Stream)$/.test(t.artist) ? t.artist + ' – ' : '') + t.title;
         head.lastChild.textContent = [c.bpm ? c.bpm + ' BPM' : '', c.key || '', c.gp && c.gp[0] ? c.gp[0][0] : '', c.st && c.st[0] ? c.st[0][0].replace(/ \(.*\)$/, '') : '', c.md && c.md[0] ? c.md[0][0] : '', c.v != null ? (c.v >= 50 ? 'vocals' : 'instrumental') : ''].filter(Boolean).join(' · ') || 'tagged';
-        body.style.cssText = 'display:none;white-space:pre-wrap;font-size:12px;margin-top:6px'; body.textContent = fmtStored(c);
+        body.style.cssText = 'display:none;white-space:pre-wrap;font-size:12px;margin-top:6px'; body.textContent = fmtStored(c) + (() => { if (t.kind === 'video') return ''; try { const m = songMap(t.dbId, c); return m && m.lyrics ? '\nSong map (lyrics + sound):\n' + songMapRows(m).join('\n') : ''; } catch (e) { return ''; } })();
         const play = document.createElement('button'); play.className = 'ppv-sec'; play.textContent = 'Play this track'; play.style.display = 'none';
         play.onclick = ev => { ev.stopPropagation(); const i = a.tracks().indexOf(t); if (i >= 0) a.play(i, a.tracks().map((_, k) => k)); };
         row.onclick = () => { const open = body.style.display === 'none'; body.style.display = open ? 'block' : 'none'; play.style.display = open ? 'block' : 'none'; };
@@ -1217,7 +3256,7 @@
       });
       if (rows.length > savedLimit) { const m = document.createElement('button'); m.className = 'ppv-sec'; m.textContent = 'Show more (' + (rows.length - savedLimit) + ' left)'; m.onclick = () => { savedLimit += 100; renderSaved(); }; box.appendChild(m); }
     };
-    const refreshCount = () => { const a = A(); if (!a) return; try { syncSmartLive(); } catch (e) {} const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch (e) {} };
+    const refreshCount = () => { const a = A(); if (!a) return; try { syncSmartLive(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } const tg = loadTags(), n = a.tracks().filter(t => tg[t.dbId]).length; cnt.textContent = n + ' of ' + a.tracks().length + ' tracks tagged'; renderSmart(); try { renderSaved(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     function renderSmart() {
       const a = A(), tg = loadTags(), box = $('#ppv-smart'); if (!a) return;
       const ticked = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
@@ -1225,7 +3264,9 @@
       box.innerHTML = SMART.map(s => '<label><input type="checkbox" value="' + s.id + '"' + (ticked.has(s.id) ? ' checked' : '') + '> ' + s.name + ' <span style="opacity:.6">(' + rows.filter(r => s.test(r[0], r[1])).length + ')</span></label>').join('');
     }
     d1.addEventListener('toggle', () => { if (d1.open) refreshCount(); });
-    $('#ppv-saved').addEventListener('toggle', () => { if ($('#ppv-saved').open) renderSaved(); }); $('#ppv-sf').onchange = () => { savedLimit = 100; renderSaved(); }; $('#ppv-ss').oninput = () => { savedLimit = 100; renderSaved(); };
+    // remember open/closed across launches; with nothing tagged yet it starts closed, so it does not push the track list down
+    try { const pref = localStorage.getItem('ppvSavedOpen'); if (pref === '0' || (pref == null && !Object.keys(loadTags() || {}).length)) savedEl.open = false; } catch (e) {}
+    savedEl.addEventListener('toggle', () => { try { localStorage.setItem('ppvSavedOpen', savedEl.open ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } if (savedEl.open) renderSaved(); }); $('#ppv-sf').onchange = () => { savedLimit = 100; renderSaved(); }; $('#ppv-ss').oninput = () => { savedLimit = 100; renderSaved(); };
     $('#ppv-heads').onclick = async () => { await resetHeads(); h.status('Mood models will be downloaded again on the next tagging run.'); };
 
     // single track tagging (replaces the old button behaviour so results are kept)
@@ -1276,13 +3317,13 @@
         for (let i = 0; i < list.length && !stopFlag; i++) {
           const t = list[i];
           if (!$('#ppv-redo').checked && loadTags()[t.dbId]) { skip++; continue; }
-          h.status('Tagging ' + (i + 1) + ' of ' + list.length + ': ' + t.title);
+          const tt0 = performance.now(); h.status('Tagging ' + (i + 1) + ' of ' + list.length + ': ' + t.title);
           try {
             const r = await tagTrack(t.url, s => h.status('(' + (i + 1) + '/' + list.length + ') ' + s), lv, { deep: deep.checked, cache, progress: f => h.prog((i + f) / list.length) });
             if (!r.emb && !r.genre) throw new Error(r.errors.join('; ') || 'nothing detected');
             await persistTags(t.dbId, r, aeq.checked); done++;
           } catch (e) { console.warn('tag failed', t.title, e); fail++; }
-          await tick();
+          await tick(); await ease(performance.now() - tt0, 0, 'track');
         }
       } finally { if (cache) Object.values(cache).forEach(s => s && s.release && s.release()); wl && wl.release().catch(() => {}); }
       h.status((stopFlag ? 'Stopped. ' : 'Done. ') + done + ' tagged' + (skip ? ', ' + skip + ' already had tags' : '') + (fail ? ', ' + fail + ' failed' : '') + '.');
@@ -1346,9 +3387,9 @@
         const o = tagged[rnd(tagged.length)], order = await similarTo(o.i, 'sound');
         const l = [o.t.dbId].concat(order.map(i => tr[i]).filter(t => t && !t.stem).slice(0, 19).map(t => t.dbId));
         if (l.length >= 8) themes.push({ key: 's:' + o.t.dbId, name: 'More like ' + o.t.title, ids: l });
-      } catch (e) {}
+      } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       if (!themes.length) return null;
-      let recent = []; try { recent = JSON.parse(ls('ppvSurpRecent')) || []; } catch (e) {}
+      let recent = []; try { recent = JSON.parse(ls('ppvSurpRecent')) || []; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       const pool = themes.filter(t => !recent.includes(t.key)), th = (pool.length ? pool : themes)[rnd((pool.length ? pool : themes).length)];
       recent.push(th.key); ls('ppvSurpRecent', JSON.stringify(recent.slice(-8)));
       return th;
@@ -1404,14 +3445,16 @@
     async function isAway() {
       if (isBusy) return false;
       if (Date.now() - lastInput < parseInt(ls('ppvBgIdle') || '5', 10) * 60000) return false;
-      if (ls('ppvBgPlay') !== '1' && mediaPlaying()) return false;
-      if (ls('ppvBgChg') === '1' && navigator.getBattery) { try { const b = await navigator.getBattery(); if (!b.charging) return false; } catch (e) {} }
+      if (ls('ppLiteMode') === '1') return false;                     // Lite: no background AI work at all
+      const focus = ls('ppFocusMode') === '1';                         // Focus mode: background AI work waits for the charger and for silence
+      if ((ls('ppvBgPlay') !== '1' || focus) && mediaPlaying()) return false;
+      if ((ls('ppvBgChg') === '1' || focus) && navigator.getBattery) { try { const b = await navigator.getBattery(); if (!b.charging) return false; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
       return true;
     }
     const freeBg = () => { if (bgCache) { Object.values(bgCache).forEach(s => s && s.release && s.release()); bgCache = null; } };
     const surpDue = () => Date.now() - (parseInt(ls('ppvSurpLast') || '0', 10)) >= parseInt(ls('ppvSurpEv') || '24', 10) * 3600000;
     async function bgTick() {
-      if (bgBusy) return; const bgOn = ls('ppvBg') === '1', surpOn = ls('ppvSurp') === '1'; const a = A();
+      if (bgBusy) return; const bgOn = ls('ppvBg') === '1', surpOn = ls('ppvSurp') === '1' && ls('ppFocusMode') !== '1' && ls('ppLiteMode') !== '1';   // no surprise playlists in Lite or Focus const a = A();
       if (!a || (!bgOn && !surpOn)) { freeBg(); return; }
       if (!(await isAway())) { freeBg(); return; }
       bgBusy = true;
@@ -1419,12 +3462,12 @@
         while (ls('ppvBg') === '1' && await isAway()) {
           const tg = loadTags(), list = a.tracks().filter(x => !x.stem), t = list.find(x => !tg[x.dbId] && !bgFailed.has(x.dbId));
           if (!t) break;
-          const lv = h.LV(); if (!lv && !bgCache) bgCache = {};
+          const lv = h.LV(); if (!lv && !bgCache) bgCache = {}; const tb0 = performance.now();
           setBg('Background: tagging ' + t.title + ' (' + list.filter(x => !tg[x.dbId] && !bgFailed.has(x.dbId)).length + ' left)\u2026');
-          try { const r = await tagTrack(t.url, () => {}, lv, { deep: deep.checked, cache: lv ? null : bgCache }); if (!r.emb && !r.genre) throw new Error('nothing detected'); await persistTags(t.dbId, r, aeq.checked); }
+          try { const r = await tagTrack(t.url, () => {}, lv, { deep: deep.checked, cache: lv ? null : bgCache, rest: 0.3 }); if (!r.emb && !r.genre) throw new Error('nothing detected'); await persistTags(t.dbId, r, aeq.checked); }
           catch (e) { console.warn('background tag failed', t.title, e); bgFailed.add(t.dbId); }
-          try { refreshCount(); } catch (e) {}
-          await tick();
+          try { refreshCount(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+          await tick(); await ease(performance.now() - tb0, 0.3, 'bg');   // background work is deliberately gentle
         }
         if (ls('ppvSurp') === '1' && surpDue() && await isAway()) {
           setBg('Background: assembling a surprise\u2026');
@@ -1467,38 +3510,760 @@
     $('#ppv-eqall').onclick = () => {
       const a = A(), tg = loadTags(); let n = 0, eqs = {}; try { eqs = JSON.parse(localStorage.getItem('playerTrackEq')) || {}; } catch (e) {}
       a.tracks().forEach(t => { const c = tg[t.dbId]; if (!c || (eqs[t.dbId] && !c.ae)) return; const name = eqPresetFor(c); if (name && a.setTrackEqPreset(t.dbId, name)) { c.ae = name; n++; } });
-      saveTagStore(); h.status('Auto-EQ set on ' + n + ' track' + (n === 1 ? '' : 's') + ' (your own EQ settings were left alone).');
+      saveTagStore(); h.status('Auto-EQ set on ' + n + ' track' + (n === 1 ? '' : 's') + ' (custom EQ settings were left alone).');
     };
 
     // Whisper
     const wsize = $('#ppv-wsize'), wlang = $('#ppv-wlang'), wtask = $('#ppv-wtask'), wclean = $('#ppv-wclean'), wout = $('#ppv-wout'), wsrt = $('#ppv-wsrt');
-    wsize.value = ls('ppvWSize') || 'tiny'; wlang.value = ls('ppvWLang') || ''; wtask.value = ls('ppvWTask') || 'transcribe'; wclean.checked = ls('ppvWClean') === '1';
-    wsize.onchange = () => ls('ppvWSize', wsize.value); wlang.onchange = () => ls('ppvWLang', wlang.value); wtask.onchange = () => ls('ppvWTask', wtask.value); wclean.onchange = () => ls('ppvWClean', wclean.checked ? '1' : '0');
+    if (ls('ppvWDef') !== '2') { ls('ppvWDef', '2'); ls('ppvWSize', 'base_en'); ls('ppvWLang', 'english'); }   // one-time move to the English models
+    wsize.value = whOk(ls('ppvWSize')) ? ls('ppvWSize') : 'base_en'; wlang.value = ls('ppvWLang') === null ? 'english' : ls('ppvWLang'); wtask.value = ls('ppvWTask') || 'transcribe'; wclean.checked = ls('ppvWClean') === '1';
+    const syncEn = () => { wlang.disabled = whEn(wsize.value) && wtask.value !== 'translate'; };   // English models need no language; translating does
+    wsize.onchange = () => { ls('ppvWSize', wsize.value); syncEn(); }; wlang.onchange = () => ls('ppvWLang', wlang.value); wtask.onchange = () => { ls('ppvWTask', wtask.value); syncEn(); }; wclean.onchange = () => ls('ppvWClean', wclean.checked ? '1' : '0');
+    { const wg = $('#ppv-wgpu'); wg.checked = ls('ppvWGpu') === '1'; wg.onchange = () => ls('ppvWGpu', wg.checked ? '1' : '0'); if (NATIVE) { const l = $('#ppv-wgpu-l'); l.lastChild.textContent = ' Use the phone GPU/NPU (experimental). Downloads a bigger model file once; if it is not faster it switches itself off'; } else if (!navigator.gpu) $('#ppv-wgpu-l').style.display = 'none'; }
+    syncEn();
+    { const wa = $('#ppv-wacc'); wa.value = ls('ppvWAcc') || '0'; wa.onchange = () => ls('ppvWAcc', wa.value); }
     let lastSrt = null;
     $('#ppv-wgo').onclick = async () => {
       busy(true); wout.textContent = ''; wsrt.style.display = 'none';
       try {
         const a = A(), t = cur(); if (!t) throw new Error('Play or select a track first.');
         const lyr = window.__ppLyrics;
+        { const m = WH[wsize.value][2]; if (m && m.big && localStorage.getItem('ppvWBig_' + wsize.value) !== '1') { if (!confirm('This model is a ~' + m.big + ' MB download and needs plenty of free memory. Continue?')) { busy(false); return; } try { localStorage.setItem('ppvWBig_' + wsize.value, '1'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
+        if (ls('ppvWClean') === null) wclean.checked = t.kind !== 'video';   // untouched: songs get their vocals separated first, videos do not
         if (t.kind !== 'video' && lyr && lyr.has(t.dbId) && !confirm('This track already has lyrics. Replace them?')) { busy(false); return; }
         document.querySelectorAll('.ppv-bar-wh i').forEach(e => e.style.width = '0');
         const wst = t => { h.status(t); const m = /(\d+)%/.exec(t); if (m) document.querySelectorAll('.ppv-bar-wh i').forEach(e => e.style.width = m[1] + '%'); };
-        const cues = await transcribe(t, { size: wsize.value, lang: wlang.value, task: wtask.value, clean: wclean.checked, model: h.sel.value, strength: +h.sl.value, lv: h.LV() }, wst);
+        const cues = await transcribe(t, { size: wsize.value, lang: wlang.disabled ? '' : wlang.value, task: wtask.value, clean: wclean.checked, acc: +$('#ppv-wacc').value, model: h.sel.value, strength: +h.sl.value, lv: h.LV() }, wst);
         if (!cues.length) throw new Error('No speech found.');
-        if (t.kind === 'video' || !lyr) a.setSubtitles(t.dbId, cues, 'Whisper.srt'); else lyr.set(t.dbId, toLrc(cues));
+        if (t.kind === 'video' || !lyr) a.setSubtitles(t.dbId, cues, 'Whisper.srt'); else lyr.set(t.dbId, toLrc(cues)); if (t.kind !== 'video' && lyr) { try { a.setSubtitles(t.dbId, cues, 'Whisper.srt'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
         lastSrt = { name: t.title, text: toSrt(cues) }; wsrt.style.display = '';
-        wout.textContent = cues.length + ' lines added as ' + (t.kind === 'video' ? 'subtitles' : 'synced lyrics') + '.\n' + cues.slice(0, 4).map(c => mmss(c.start) + '  ' + c.text).join('\n');
+        wout.textContent = cues.length + ' lines added as ' + (t.kind === 'video' ? 'subtitles' : 'synced lyrics and subtitles (tap CC on the disc to show them)') + '.\n' + cues.slice(0, 4).map(c => mmss(c.start) + '  ' + c.text).join('\n');
+        { const rp = window.__ppvRep; if (rp && (rp.fixed || rp.unsure)) wout.textContent += '\n' + (rp.fixed ? rp.fixed + ' repeated line' + (rp.fixed === 1 ? '' : 's') + ' made consistent. ' : '') + (rp.unsure ? rp.unsure + ' repeated line' + (rp.unsure === 1 ? ' is' : 's are') + ' still unsure: open the editor, Repeats tab, to choose the right wording.' : ''); }
+        if (window.__ppvSaved) wout.textContent += '\nVocals saved to Split tracks, so this song never needs splitting again for lyrics.';
         h.status('Done.');
       } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
       busy(false);
     };
+    // ----- Time the words: adds word timings to the lyrics the song already has, never changes their text -----
+    $('#ppv-wtime').onclick = async () => {
+      busy(true); wout.textContent = ''; wsrt.style.display = 'none';
+      try {
+        const t = cur(); if (!t) throw new Error('Play or select a track first.');
+        const lyr = window.__ppLyrics, raw = t.kind !== 'video' && lyr && lyr.get ? lyr.get(t.dbId) : '';
+        if (!raw || !/\[\d{1,3}:\d{1,2}/.test(raw)) throw new Error('This song has no synced lyrics yet. Find or load lyrics first (or use Transcribe). This button only times the words of lyrics the song already has.');
+        let sync = 0; try { sync = +JSON.parse(ls('ppvSongSync') || '{}')[t.dbId] || 0; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        const plan = wtLines(raw, sync); if (!plan.lines.length) throw new Error('No lyric lines with words to time.');
+        if (ls('ppvWClean') === null) wclean.checked = true;          // untouched: listen to the vocals only
+        { const m = WH[wsize.value] && WH[wsize.value][2]; if (m && m.big && ls('ppvWBig_' + wsize.value) !== '1') { if (!confirm('This model is a ~' + m.big + ' MB download and needs plenty of free memory. Continue?')) { busy(false); return; } ls('ppvWBig_' + wsize.value, '1'); } }
+        const wst = s => { h.status(s); const m = /(\d+)%/.exec(s); if (m) document.querySelectorAll('.ppv-bar-wh i').forEach(e => e.style.width = m[1] + '%'); };
+        const heard = await transcribeWords(t, { size: wsize.value, lang: wlang.disabled ? '' : wlang.value, clean: wclean.checked, model: h.sel.value, strength: +h.sl.value, lv: h.LV() }, wst);
+        if (!heard.length) throw new Error('No singing was heard in this song.');
+        if (lyr.get(t.dbId) !== raw) throw new Error('The lyrics were changed while listening. Try again.');
+        const res = wtApply(raw, plan, heard, sync);
+        if (!res.timed) throw new Error('The words heard did not match these lyrics well enough, so nothing was changed. Check that the lyrics belong to this song and are roughly in time.');
+        lyr.set(t.dbId, res.text);
+        if (!ST_hlOn()) wout.textContent = 'Turn on "Sing-along highlight" in the CC menu (Look and effects) to see it.\n';
+        wout.textContent = res.timed + ' of ' + plan.lines.length + ' lines now follow each word. The words themselves were not changed.' + (res.timed < plan.lines.length ? ' Lines it could not hear clearly keep the estimated timing.' : '') + (wout.textContent ? '\n' + wout.textContent : '');
+        h.status('Done.');
+      } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
+      busy(false);
+    };
+    const ST_hlOn = () => { try { return !!JSON.parse(ls('ppvSongText') || '{}').hl; } catch (e) { return false; } };
     wsrt.onclick = () => {
-      if (!lastSrt) return; const u = URL.createObjectURL(new Blob([lastSrt.text], { type: 'text/plain' })), a = document.createElement('a');
-      a.href = u; a.download = lastSrt.name.replace(/[\\/:*?"<>|]+/g, '_') + '.srt'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
+      if (!lastSrt) return;
+      const blob = new Blob([lastSrt.text], { type: 'text/plain' }), name = lastSrt.name.replace(/[\\/:*?"<>|]+/g, '_') + '.srt';
+      if (window.ppSaveBlob) { window.ppSaveBlob(blob, name); return; }   // works inside the Android app
+      const u = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
     };
     $('#ppv-wfree').onclick = async () => {
-      try { if (asr) { await asr.dispose(); asr = null; asrId = ''; } const ks = await caches.keys(); for (const k of ks) if (/transformers/i.test(k)) await caches.delete(k); h.status('Whisper download removed.'); } catch (e) { h.status('Error: ' + errText(e)); }
+      try { if (NATIVE) { const ids = PK_FILES.map(f => f[0]).concat(Object.values(WHN).flatMap(k => [k + '_enc', k + '_dec', k + '_encf'])); for (const id of ids) { try { await NP.remove({ id }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } } if (asr) { await asr.dispose(); asr = null; asrId = ''; } const ks = await caches.keys(); for (const k of ks) if (/transformers/i.test(k)) await caches.delete(k); h.status('Whisper download removed.'); } catch (e) { h.status('Error: ' + errText(e)); }
     };
+    // ---------- AI summary ----------
+    { const ss = $('#ppv-sumstyle'); if (ss) ss.value = sumStyleKey(); }
+    { const sl = $('#ppv-sumlen'); sl.value = sumLenKey(); sl.onchange = () => { try { localStorage.setItem('ppvSumLen', sl.value); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }; }
+    $('#ppv-lyfix').onclick = () => { const a = window.__ppApi, i = a ? a.currentIndex() : -1; if (i < 0) { h.status('Play or select a track first.'); return; } if (h.mas && h.mas.lyricFix) h.mas.lyricFix(i); };
+    $('#ppv-sumtalk').onclick = () => { const a = window.__ppApi, i = a ? a.currentIndex() : -1; if (i < 0) { h.status('Play or select a track first.'); return; } if (h.mas && h.mas.songTalk) h.mas.songTalk(i); };
+    $('#ppv-sumgo').onclick = async () => {
+      const sumout = $('#ppv-sumout'); busy(true); sumout.textContent = '';
+      try {
+        const t = cur(); if (!t) throw new Error('Play or select a track first.');
+        const old = sumLoad()[t.dbId];
+        if (old && !confirm('This track already has a saved summary. Make a new one?')) { sumout.textContent = old.t; $('#ppv-sumtalk').style.display = 'block'; busy(false); return; }
+        const say = x => h.status(x);
+        let c = loadTags()[t.dbId];
+        if (!c) { say('Tagging first, so the summary knows what it hears…'); const r = await tagTrack(t.url, say, h.LV(), {}); await persistTags(t.dbId, r, false); c = loadTags()[t.dbId]; }
+        const tr = getTranscript(t.dbId), prof = soundProfile(c, t.kind), ch = h.mas.chat;
+        let ai = '', note = '';
+        if (tr.words >= 12 || (t.kind !== 'video' && t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist))) {
+          if (!ch.ready() && !confirm('The written summary uses the AI brain: a one-time download of about ' + ch.mb() + ' MB. Continue? (Cancel keeps just the sound summary.)')) note = 'No AI brain download, so this is the sound summary only.';
+          else { try { const askLive = (msgs, opts, sy) => { let acc = ''; return ch.ask(msgs, Object.assign({}, opts, { onText: x => { acc += x; sumout.textContent = acc; } }), sy); };
+            ai = await aiSummary(t, c, tr, askLive, say, $('#ppv-sumlen').value, ch.ctx && ch.ctx()); } catch (e) { console.warn(e); note = 'The AI brain could not run: ' + errText(e); } if (!ai && !note) note = tr.words >= 12 ? 'The AI summary came out unusable, so only the sound summary is shown.' : 'No lyrics are saved and the AI brain does not know this song, so only the sound summary is shown. Tap "Transcribe current track" above for a fuller summary.'; }
+        } else note = 'No lyrics or subtitles saved for this track, so this is based on the sound only. Tap "Transcribe current track" above for a fuller summary.';
+        const text = [ai, prof.line ? 'Sound: ' + prof.line : ''].filter(Boolean).join('\n\n');
+        if (!text) throw new Error('Nothing to summarize yet. Tag the track first.');
+        const kept = await sumSave(t.dbId, { t: text, ts: Date.now(), len: $('#ppv-sumlen').value, sty: sumStyleKey() });
+        if (!kept) note = (note ? note + ' ' : '') + 'It could not be saved on this device (storage is full or blocked), so copy it now if you want to keep it.';
+        sumout.textContent = text + (note ? '\n\n' + note : '');
+        $('#ppv-sumtalk').style.display = 'block';
+        h.status('Done.');
+      } catch (e) { console.error(e); h.status('Error: ' + errText(e)); }
+      busy(false);
+    };
+    // ---------- Saved summaries: every summary on this device, any length, to read, copy, download or delete ----------
+    {
+      const det = $('#ppv-sumlist'), hd = $('#ppv-sumlist-h'), bd = $('#ppv-sumlist-b');
+      const nameOf = id => { const a = A(), t = a && a.tracks().find(x => String(x.dbId) === String(id)); return t ? t.title + (t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? ' \u2013 ' + t.artist : '') : 'Removed track'; };
+      const safe = x => String(x).replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 80) || 'summary';
+      const save = (name, text) => { const u = URL.createObjectURL(new Blob([text], { type: 'text/plain' })), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); };
+      const mk = (label, fn) => { const b = document.createElement('button'); b.className = 'ppv-sec'; b.style.cssText = 'width:auto;padding:4px 10px'; b.textContent = label; b.onclick = fn; return b; };
+      const render = () => {
+        const all = Object.entries(sumLoad()).filter(([, v]) => v && v.t).sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
+        hd.textContent = 'Saved summaries (' + all.length + ')';
+        if (!det.open) return;
+        bd.textContent = '';
+        if (!all.length) { const n = document.createElement('div'); n.className = 'ppv-note'; n.textContent = 'Nothing saved yet. Each summary you make is kept here on this device, in its own storage, so long ones are safe too.'; bd.appendChild(n); return; }
+        const top = document.createElement('div'); top.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0';
+        top.appendChild(mk('Download all (.txt)', () => save('summaries.txt', all.map(([id, v]) => nameOf(id) + '\n' + '='.repeat(Math.min(40, nameOf(id).length)) + '\n' + v.t).join('\n\n\n'))));
+        bd.appendChild(top);
+        all.forEach(([id, v]) => {
+          const d = document.createElement('details'), sm = document.createElement('summary'), meta = document.createElement('div'), body = document.createElement('div'), row = document.createElement('div');
+          const words = v.t.split(/\s+/).filter(Boolean).length;
+          sm.textContent = nameOf(id); meta.className = 'ppv-note'; meta.textContent = (v.ts ? new Date(v.ts).toLocaleString() + ' \u00b7 ' : '') + words + ' words' + (v.len && SUM_LENS[v.len] ? ' \u00b7 ' + SUM_LENS[v.len].label.replace(/ \(.*/, '') : '') + (v.sty && SUM_STYLES[v.sty] ? ' \u00b7 ' + SUM_STYLES[v.sty].label.replace(/ \(.*/, '') : '');
+          body.style.cssText = 'white-space:pre-wrap;max-height:260px;overflow:auto;margin:6px 0;font-size:13px;line-height:1.45;user-select:text'; body.textContent = v.t;
+          row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
+          row.append(
+            mk('Copy', async () => { try { await navigator.clipboard.writeText(v.t); h.status('Copied.'); } catch (e) { h.status('Could not copy. Press and hold the text to select it.'); } }),
+            mk('Download .txt', () => save(safe(nameOf(id)) + ' summary.txt', nameOf(id) + '\n\n' + v.t)),
+            mk('Delete', async () => { if (confirm('Delete the saved summary for \u201c' + nameOf(id) + '\u201d?')) { await sumDelete(id); h.status('Summary deleted.'); } }));
+          d.append(sm, meta, body, row); bd.appendChild(d);
+        });
+      };
+      det.addEventListener('toggle', render); document.addEventListener('ppv-sums', render); render();
+    }
+    // ---------- Lyrics & timestamp editor ----------
+    {
+      const edet = { open: false }, mkEl = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+      let edTrack = null;
+      const fut = [];   // redo stack
+      let rows = [], hist = [], edId = null;   // rows: {s: seconds, e: seconds|null, text}
+      const fmtT = x => { x = Math.max(0, x); const m = Math.floor(x / 60); return m + ':' + (x - m * 60).toFixed(2).padStart(5, '0'); };
+      const parseT = v => { v = String(v).trim().replace(',', '.'); let m = /^(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(v); if (m) return (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]); m = /^(\d+(?:\.\d+)?)$/.exec(v); return m ? +m[1] : NaN; };
+      const snap = () => { hist.push(JSON.stringify(rows)); if (hist.length > 80) hist.shift(); fut.length = 0; };
+      const parseLrcText = txt => { const out = [], re = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g; String(txt).split(/\r?\n/).forEach(raw => { const st = []; let m, last = 0; re.lastIndex = 0; while ((m = re.exec(raw))) { st.push(+m[1] * 60 + +m[2] + (m[3] ? +m[3].padEnd(3, '0').slice(0, 3) / 1000 : 0)); last = re.lastIndex; } if (!st.length) return; const tx = raw.slice(last).replace(/<\d+:\d+(?:[.:]\d+)?>/g, '').trim(); st.forEach(x => out.push({ s: x, e: null, text: tx })); }); return out.sort((a, b) => a.s - b.s); };
+      const parseSrtText = txt => { const out = []; String(txt).replace(/\r/g, '').split(/\n{2,}/).forEach(b => { const l = b.split('\n'), i = l.findIndex(x => x.includes('-->')); if (i < 0) return; const m = /([\d:.,]+)\s*-->\s*([\d:.,]+)/.exec(l[i]); if (!m) return; const s = parseT(m[1]), e = parseT(m[2]); if (isNaN(s)) return; out.push({ s, e: isNaN(e) ? null : e, text: l.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').trim() }); }); return out.sort((a, b) => a.s - b.s); };
+      const plain = v => v.split(/\r?\n/).filter(x => x.trim()).map((x, i) => ({ s: i * 4, e: null, text: x.trim() }));
+      const toCues = () => { const r = rows.filter(x => x.text.trim() && isFinite(x.s)).slice().sort((a, b) => a.s - b.s); return r.map((x, i) => { const nx = r[i + 1]; let e = x.e != null && x.e > x.s ? x.e : (nx ? nx.s : x.s + 4); return { start: x.s, end: Math.max(e, x.s + 0.3), text: x.text.trim() }; }); };
+      const media = () => { const t = edTrack || cur(); return t ? mediaOf(t) : null; };
+      // ================= Full-screen editor page =================
+      const ecss = document.createElement('style');
+      ecss.textContent = '#ppv-edpage{position:fixed;inset:0;z-index:100000;display:none;flex-direction:column;background:var(--bg,#15161a);color:var(--text,#eee);font:14px system-ui,sans-serif}#ppv-edpage.open{display:flex}' +
+        '#ppv-edpage button{font:inherit;cursor:pointer;color:inherit;background:rgba(127,127,127,.16);border:1px solid var(--line,#444);border-radius:10px;padding:8px 12px;margin:0;width:auto}#ppv-edpage button:disabled{opacity:.4}' +
+        '#ppv-edpage button.pri{background:var(--accent,#7c3aed);border-color:transparent;color:#fff;font-weight:700}#ppv-edpage button.danger{color:#ff6b6b}' +
+        '#ppv-edpage input,#ppv-edpage select,#ppv-edpage textarea{font:inherit;color:inherit;background:rgba(127,127,127,.12);border:1px solid var(--line,#444);border-radius:8px;padding:7px;box-sizing:border-box;margin:0;width:auto}' +
+        '#ppv-edpage .eh{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--line,#333)}#ppv-edpage .eh .tt{flex:1;min-width:0}#ppv-edpage .eh b{display:block;font-size:15px}#ppv-edpage .eh small{display:block;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+        '#ppv-edpage .ebadge{font-size:11px;padding:3px 8px;border-radius:99px;background:rgba(127,127,127,.2)}#ppv-edpage .ebadge.dirty{background:#b45309;color:#fff}' +
+        '#ppv-edpage .etr{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line,#333);flex-wrap:wrap}#ppv-edpage .etr input[type=range]{flex:1;min-width:120px;padding:0;accent-color:var(--accent,#7c3aed)}#ppv-edpage .etime{font-variant-numeric:tabular-nums;font-size:12px;opacity:.85;min-width:92px;text-align:center}' +
+        '#ppv-edpage .etabs{display:flex;gap:6px;padding:8px 12px 0;overflow-x:auto}#ppv-edpage .etabs button{white-space:nowrap;border-radius:99px;padding:6px 14px;font-size:13px}#ppv-edpage .etabs button.on{background:var(--accent,#7c3aed);color:#fff;border-color:transparent}' +
+        '#ppv-edpage .etool{display:none;padding:8px 12px;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line,#333);max-height:34vh;overflow:auto}#ppv-edpage .etool.on{display:flex}#ppv-edpage .etool label{font-size:12px;opacity:.8;display:flex;align-items:center;gap:6px}#ppv-edpage .etool .sep{flex-basis:100%;height:0}' +
+        '#ppv-edpage .ebanner{display:none;padding:8px 12px;background:#b45309;color:#fff;font-size:13px;align-items:center;gap:8px}#ppv-edpage .ebanner.on{display:flex}#ppv-edpage .ebanner span{flex:1}' +
+        '#ppv-edpage .efilter{padding:8px 12px 0;display:flex;gap:8px;align-items:center}#ppv-edpage .efilter input{flex:1}#ppv-edpage .ecount{font-size:12px;opacity:.65}' +
+        '#ppv-edpage .elist{flex:1;overflow:auto;padding:8px 12px 16px;-webkit-overflow-scrolling:touch}#ppv-edpage .eempty{opacity:.6;text-align:center;padding:40px 10px}' +
+        '#ppv-edpage .er{border:1px solid var(--line,#3a3a40);border-radius:12px;padding:8px;margin-top:8px;background:rgba(127,127,127,.07)}#ppv-edpage .er.on{border-color:var(--accent,#7c3aed);box-shadow:0 0 0 1px var(--accent,#7c3aed) inset}#ppv-edpage .er.sel{background:rgba(124,58,237,.14)}' +
+        '#ppv-edpage .er .r1{display:flex;gap:6px;align-items:center;flex-wrap:wrap}#ppv-edpage .er .n{font-size:11px;opacity:.6;width:26px;text-align:center}#ppv-edpage .er .et{width:84px;text-align:center;font-variant-numeric:tabular-nums}#ppv-edpage .er .arrow{opacity:.5}' +
+        '#ppv-edpage .er textarea{display:block;width:100%;margin-top:6px;resize:none;line-height:1.35;overflow:hidden;min-height:calc(1.35em + 16px)}#ppv-edpage.fs-s .er textarea{font-size:13px}#ppv-edpage.fs-l .er textarea{font-size:17px}#ppv-edpage.fs-x .er textarea{font-size:20px}' +
+        '#ppv-edpage .er .r3{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}#ppv-edpage .er .r3 button{padding:5px 9px;font-size:12px}#ppv-edpage .er.hide{display:none}#ppv-edpage .er.bad .et{border-color:#ff6b6b}' +
+        '#ppv-edpage .etap{display:none;padding:8px 12px;border-top:1px solid var(--line,#333);text-align:center}#ppv-edpage .etap.on{display:block}#ppv-edpage .etap button{width:100%;padding:18px;font-size:18px;font-weight:700}#ppv-edpage .etap small{display:block;opacity:.7;margin-bottom:6px}' +
+        '#ppv-edpage .ebar{display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line,#333);background:var(--bg,#15161a)}#ppv-edpage .ebar .st{flex:1;font-size:12px;opacity:.8;min-width:0}#ppv-edpage .ebar .go{padding:13px 18px;font-size:15px}' +
+        '#ppv-edpage .etoast{position:absolute;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#23242a;color:#eee;border:1px solid #555;border-radius:12px;padding:9px 14px;font-size:13px;max-width:88vw;display:none;z-index:3;box-shadow:0 6px 24px #0008}' +
+        '#ppv-edpage .emod{position:absolute;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:4;padding:16px}#ppv-edpage .emod.on{display:flex}#ppv-edpage .emod .box{background:var(--bg,#1b1c21);border:1px solid var(--line,#444);border-radius:14px;padding:14px;width:min(520px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:8px}#ppv-edpage .emod textarea,#ppv-edpage .emod input[type=text]{width:100%}#ppv-edpage .emod textarea{min-height:180px}#ppv-edpage .emod .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}';
+      document.head.appendChild(ecss);
+      const ov = mkEl('div'); ov.id = 'ppv-edpage';
+      ov.innerHTML =
+        '<div class="eh"><button id="e-back" data-keep="1">‹ Back</button><div class="tt"><b>Edit lyrics &amp; subtitles</b><small id="e-track">No track</small></div><span class="ebadge" id="e-badge">Saved</span></div>' +
+        '<div class="ebanner" id="e-ban"><span>The player moved to another track.</span><button id="e-banload">Edit that track</button></div>' +
+        '<div class="etr"><button id="e-b5" title="Back 5 seconds">−5s</button><button id="e-pp" class="pri" style="min-width:48px">▶</button><button id="e-f5" title="Forward 5 seconds">+5s</button><span class="etime" id="e-time">0:00.00 / 0:00</span><input type="range" id="e-scrub" min="0" max="1" step="0.05" value="0"><select id="e-rate" title="Playback speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></div>' +
+        '<div class="etabs" id="e-tabs"><button data-t="lines" class="on">Lines</button><button data-t="timing">Timing</button><button data-t="text">Text</button><button data-t="rep">Repeats</button><button data-t="file">File</button><button data-t="view">View</button></div>' +
+        '<div class="etool on" data-p="lines"><button id="e-undo">↶ Undo</button><button id="e-redo">↷ Redo</button><button id="e-add">+ Add line at playhead</button><button id="e-tap">⏱ Tap-sync mode</button><button id="e-sort">Sort by time</button></div>' +
+        '<div class="etool" data-p="timing">' +
+          '<label>Shift by <input type="number" id="e-sh" value="0.5" step="0.1" min="0" style="width:74px"> s</label>' +
+          '<label>Apply to <select id="e-scope"><option value="all">all lines</option><option value="from">selected line and after</option><option value="sel">selected line only</option></select></label>' +
+          '<div class="sep"></div><button id="e-shm">− Earlier</button><button id="e-shp">+ Later</button>' +
+          '<div class="sep"></div><label>Stretch ×<input type="number" id="e-st" value="1.000" step="0.001" style="width:88px"></label><button id="e-stgo">Apply stretch</button>' +
+          '<div class="sep"></div><button id="e-fit">Fit ends to next line</button><button id="e-auto">Reset ends to auto</button><button id="e-ovl">Remove overlaps</button><button id="e-rnd">Round to 0.1s</button>' +
+          '<div class="sep"></div><label>Min length<input type="number" id="e-min" value="1" step="0.1" min="0.3" style="width:70px"> s</label><button id="e-mingo">Make short lines longer</button></div>' +
+        '<div class="etool" data-p="text"><button id="e-fr">Find &amp; replace…</button><button id="e-trim">Trim spaces</button><button id="e-cap">Capitalise first letter</button><button id="e-up">UPPER</button><button id="e-low">lower</button><button id="e-brk">Remove [bracketed] text</button><button id="e-empty">Delete empty lines</button><button id="e-dup">Delete repeated lines</button></div>' +
+        '<div class="etool" data-p="rep"><button id="e-rscan">Scan repeated lines</button><button id="e-rscanA">Scan with audio</button><button id="e-rall" class="pri">Apply to selected groups</button><button id="e-rsel">Select all</button><button id="e-rnone">Select none</button><label><input type="checkbox" id="e-rshow"> Also show repeats that already agree</label></div>' +
+        '<div class="etool" data-p="file"><button id="e-sync">Sync my own lyrics…</button><button id="e-net">Find lyrics online…</button><button id="e-tr">Translate lyrics…</button><div class="sep"></div><button id="e-paste">Paste text…</button><button id="e-loadf">Open file…</button><button id="e-revert">Revert to saved</button><div class="sep"></div><button id="e-dsrt">Download .srt</button><button id="e-dlrc">Download .lrc</button><button id="e-dtxt">Download .txt</button><input type="file" id="e-file" accept=".srt,.vtt,.lrc,.txt" style="display:none"></div>' +
+        '<div class="etool" data-p="view"><label><input type="checkbox" id="e-follow" checked> Follow playback</label><label><input type="checkbox" id="e-ends" checked> Show end times</label><label>Text size <select id="e-fs"><option value="s">Small</option><option value="m" selected>Medium</option><option value="l">Large</option><option value="x">Extra large</option></select></label></div>' +
+        '<div class="efilter"><input type="text" id="e-q" placeholder="Search lines…"><span class="ecount" id="e-cnt"></span></div>' +
+        '<div class="elist" id="e-list"></div>' +
+        '<div class="etap" id="e-tapbar"><small id="e-tapinfo"></small><button id="e-tapbtn" class="pri">TAP — set start of selected line</button></div>' +
+        '<div class="ebar"><button id="e-cancel" data-keep="1">Cancel</button><div class="st" id="e-st2">No changes</div><button id="e-save">Save</button><button id="e-ok" class="pri go" data-keep="1">✓ Confirm &amp; close</button></div>' +
+        '<div class="etoast" id="e-toast"></div><div class="emod" id="e-mod"><div class="box" id="e-modbox"></div></div>';
+      document.body.appendChild(ov);
+      const $e = s => ov.querySelector(s), rowsEl = $e('#e-list');
+      let sel = null, savedSnap = '[]', tapOn = false, prevRate = 1, toastT = 0;
+      const toast = m => { const t = $e('#e-toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => { t.style.display = 'none'; }, 2600); };
+      const autoEnd = i => rows[i + 1] ? rows[i + 1].s : rows[i].s + 4;
+      const endOf = i => { const r = rows[i]; return r.e != null && r.e > r.s ? r.e : autoEnd(i); };
+      const sortRows = () => rows.sort((a, b) => a.s - b.s);
+      const isDirty = () => JSON.stringify(rows) !== savedSnap;
+      const upBar = () => { const d = isDirty(); $e('#e-badge').textContent = d ? 'Unsaved' : 'Saved'; $e('#e-badge').classList.toggle('dirty', d); $e('#e-st2').textContent = (d ? 'Unsaved changes · ' : 'All changes saved · ') + rows.filter(x => x.text.trim()).length + ' lines'; $e('#e-undo').disabled = !hist.length; $e('#e-redo').disabled = !fut.length; };
+      const mut = fn => { snap(); fn(); render(); };
+      const fixE = r => { if (r.e != null && r.e <= r.s) r.e = null; };
+      const kind = () => (edTrack && edTrack.kind === 'video') ? 'subtitles' : 'synced lyrics';
+      const modal = (title, body, acts) => { const b = $e('#e-modbox'); b.innerHTML = '<b>' + title + '</b>'; b.appendChild(body); const a = mkEl('div', 'acts'); acts.forEach(x => { const bt = mkEl('button', x.pri ? 'pri' : '', x.label); bt.onclick = () => { if (x.fn && x.fn() === false) return; if (!x.keep) $e('#e-mod').classList.remove('on'); }; a.appendChild(bt); }); b.appendChild(a); $e('#e-mod').classList.add('on'); };
+      const closeModal = () => $e('#e-mod').classList.remove('on');
+      const render = () => {
+        const el = media(), now = el ? el.currentTime : -1, q = $e('#e-q').value.trim().toLowerCase(), showE = $e('#e-ends').checked;
+        rowsEl.textContent = '';
+        if (!rows.length) { rowsEl.appendChild(mkEl('div', 'eempty', 'No lines yet.<br>Use “+ Add line at playhead”, open the File tab to paste text or load a file, or generate with Whisper.')); upBar(); $e('#e-cnt').textContent = ''; return; }
+        let shown = 0;
+        rows.forEach((r, i) => {
+          const d = mkEl('div', 'er' + (now >= r.s && now < endOf(i) ? ' on' : '') + (r === sel ? ' sel' : '') + (r.e != null && r.e <= r.s ? ' bad' : ''));
+          if (q && r.text.toLowerCase().indexOf(q) < 0) d.classList.add('hide'); else shown++;
+          d.onclick = ev => { if (ev.target.tagName === 'BUTTON') return; sel = r; rowsEl.querySelectorAll('.er.sel').forEach(x => x.classList.remove('sel')); d.classList.add('sel'); if (tapOn) tapInfo(); };
+          const r1 = mkEl('div', 'r1'), num = mkEl('span', 'n', String(i + 1));
+          const tin = mkEl('input', 'et'); tin.type = 'text'; tin.value = fmtT(r.s); tin.inputMode = 'decimal'; tin.title = 'Start time';
+          tin.onchange = () => { const v = parseT(tin.value); if (isNaN(v)) { tin.value = fmtT(r.s); return; } snap(); r.s = v; fixE(r); sortRows(); render(); };
+          const ein = mkEl('input', 'et'); ein.type = 'text'; ein.value = r.e != null ? fmtT(r.e) : ''; ein.placeholder = fmtT(autoEnd(i)); ein.title = 'End time (leave empty for automatic)'; ein.inputMode = 'decimal';
+          ein.onchange = () => { const s = ein.value.trim(); snap(); if (!s) r.e = null; else { const v = parseT(s); if (isNaN(v)) { hist.pop(); ein.value = r.e != null ? fmtT(r.e) : ''; return; } r.e = v; } render(); };
+          const nm = mkEl('button', '', '−.1'), np = mkEl('button', '', '+.1'); nm.title = 'Start 0.1s earlier'; np.title = 'Start 0.1s later';
+          nm.onclick = () => mut(() => { r.s = Math.max(0, r.s - 0.1); if (r.e != null) r.e = Math.max(0, r.e - 0.1); sortRows(); }); np.onclick = () => mut(() => { r.s += 0.1; if (r.e != null) r.e += 0.1; sortRows(); });
+          r1.append(num, tin); if (showE) r1.append(mkEl('span', 'arrow', '→'), ein); r1.append(nm, np);
+          const tx = mkEl('textarea'); tx.value = r.text; tx.rows = 1; tx.placeholder = 'Line text'; let first = true;
+          const fit = () => { if (!tx.offsetWidth) return; tx.style.height = 'auto'; tx.style.height = (tx.scrollHeight + 2) + 'px'; };   // hidden (width 0) -> leave it to the observer below
+          if (window.ResizeObserver) { let lw = 0; new ResizeObserver(() => { const w = tx.offsetWidth; if (w && w !== lw) { lw = w; fit(); } }).observe(tx); }   // refit when the page is shown, rotated or the text size changes
+          tx.oninput = () => { if (first) { snap(); first = false; } r.text = tx.value; fit(); upBar(); }; tx.onfocus = () => { sel = r; first = true; };
+          const r3 = mkEl('div', 'r3');
+          const B = (t, ttl, fn, cls) => { const b = mkEl('button', cls || '', t); b.title = ttl; b.onclick = fn; r3.appendChild(b); return b; };
+          B('▶ Play', 'Jump here and play', () => { const e2 = media(); if (e2) { e2.currentTime = Math.max(0, r.s - 0.05); if (e2.play) e2.play().catch(() => {}); } sel = r; });
+          B('⏱ Start', 'Set start to current time', () => { const e2 = media(); if (!e2) return; mut(() => { r.s = e2.currentTime; fixE(r); sortRows(); }); });
+          B('⏱ End', 'Set end to current time', () => { const e2 = media(); if (!e2) return; if (e2.currentTime <= r.s) { toast('End must be after the start.'); return; } mut(() => { r.e = e2.currentTime; }); });
+          B('＋ Below', 'Insert a new line after this one', () => { snap(); const n = { s: Math.min(endOf(i), r.s + 30), e: null, text: '' }; rows.splice(i + 1, 0, n); sel = n; render(); const t2 = rowsEl.querySelectorAll('textarea')[i + 1]; if (t2) t2.focus(); });
+          B('⧉ Copy', 'Duplicate line', () => mut(() => { rows.splice(i + 1, 0, { s: endOf(i), e: null, text: r.text }); }));
+          B('✂ Split', 'Split at the text cursor', () => { const p = tx.selectionStart; if (!r.text.trim() || p <= 0 || p >= tx.value.length) { toast('Tap inside the text at the split point first.'); return; } mut(() => { const a = r.text.slice(0, p).trim(), b = r.text.slice(p).trim(), mid = r.s + (endOf(i) - r.s) * (p / tx.value.length), oe = r.e; r.text = a; r.e = mid; rows.splice(i + 1, 0, { s: mid, e: oe, text: b }); }); });
+          if (rows[i + 1]) B('⤵ Merge', 'Merge with the next line', () => mut(() => { const n = rows[i + 1]; r.text = (r.text.trim() + ' ' + n.text.trim()).trim(); r.e = n.e != null ? n.e : null; rows.splice(i + 1, 1); }));
+          B('✕ Delete', 'Delete line', () => mut(() => { rows.splice(i, 1); if (sel === r) sel = null; }), 'danger');
+          d.append(r1, tx, r3); rowsEl.appendChild(d); fit();
+        });
+        $e('#e-cnt').textContent = q ? shown + ' of ' + rows.length : rows.length + ' lines';
+        upBar();
+      };
+      const load = () => {
+        const t = cur(); if (!t) { toast('Play or select a track first.'); return false; }
+        edTrack = t; edId = t.dbId; hist = []; fut.length = 0; rows = []; sel = null;
+        try {
+          if (t.kind === 'video') { const o = JSON.parse(localStorage.getItem('playerSubtitles') || '{}')[t.dbId]; const c = o && (Array.isArray(o) ? o.map(x => [x.start, x.end, x.text]) : o.c); if (c) rows = c.map(x => ({ s: +x[0], e: +x[1], text: String(x[2]) })); }
+          else { const o = JSON.parse(localStorage.getItem('playerLyricsV1') || '{}')[t.dbId]; if (o) { rows = parseLrcText(o); if (!rows.length) rows = plain(String(o)); } if (!rows.length) { const s = JSON.parse(localStorage.getItem('playerSubtitles') || '{}')[t.dbId], c = s && (Array.isArray(s) ? s.map(x => [x.start, x.end, x.text]) : s.c); if (c) rows = c.map(x => ({ s: +x[0], e: +x[1], text: String(x[2]) })); } }
+        } catch (e) {}
+        { const am = rpAltsLoad(t.dbId); rows.forEach(r => { let b = null; am.forEach(a => { const d = Math.abs(a[0] - r.s); if (d < 1.0 && (!b || d < b.d)) b = { d, a: a[1] }; }); if (b) r.alts = b.a.slice(); }); }
+        savedSnap = JSON.stringify(rows); $e('#e-track').textContent = t.title + ' · ' + (t.kind === 'video' ? 'subtitles' : 'lyrics'); $e('#e-ban').classList.remove('on');
+        render(); return true;
+      };
+      const open = () => { if (!edTrack || (cur() && cur().dbId !== edId)) { if (!load()) return; } else render(); ov.classList.add('open'); edet.open = true; document.body.style.overflow = 'hidden'; const m = media(); if (m) { prevRate = m.playbackRate || 1; m.playbackRate = +$e('#e-rate').value; } tickT(); };
+      const close = () => { ov.classList.remove('open'); edet.open = false; closeModal(); document.body.style.overflow = ''; const m = media(); if (m) m.playbackRate = prevRate; tapOn = false; $e('#e-tapbar').classList.remove('on'); $e('#e-tap').classList.remove('pri'); };
+      const back = () => { if (isDirty() && !confirm('Discard unsaved changes?')) return; close(); };
+      const save = () => {
+        const t = edTrack || cur(); if (!t) { toast('Play or select a track first.'); return false; }
+        const cues = toCues(); if (!cues.length) { toast('Nothing to save: add at least one line with text.'); return false; }
+        const a = A(), lyr = window.__ppLyrics;
+        if (t.kind === 'video' || !lyr) a.setSubtitles(t.dbId, cues, 'Edited.srt'); else lyr.set(t.dbId, toLrc(cues)); if (t.kind !== 'video' && lyr) { try { a.setSubtitles(t.dbId, cues, 'Edited.srt'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+        lastSrt = { name: t.title, text: toSrt(cues) }; wsrt.style.display = '';
+        edId = t.dbId; savedSnap = JSON.stringify(rows); try { rpAltsSave(t.dbId, rows.map(r => ({ s: r.s, alts: r.alts }))); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } upBar(); toast('Saved ' + cues.length + ' lines as ' + (t.kind === 'video' ? 'subtitles' : 'synced lyrics') + '.'); return true;
+      };
+      const dlFile = ext => {
+        const t = edTrack || cur(); if (!t) return; const cues = toCues(); if (!cues.length) { toast('Nothing to download yet.'); return; }
+        const body = ext === 'srt' ? toSrt(cues) : ext === 'lrc' ? toLrc(cues) : cues.map(c => c.text).join('\n'), blob = new Blob([body], { type: 'text/plain' }), name = t.title.replace(/[\\/:*?"<>|]+/g, '_') + '.' + ext;
+        if (window.ppSaveBlob) { window.ppSaveBlob(blob, name); return; }
+        const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
+      };
+      // ---- transport ----
+      const fmtS = x => { x = Math.max(0, x || 0); const m = Math.floor(x / 60); return m + ':' + (x - m * 60).toFixed(2).padStart(5, '0'); };
+      const tickT = () => {
+        if (!edet.open) return; const m = media(); if (!m) return; const dur = isFinite(m.duration) ? m.duration : 0;
+        $e('#e-time').textContent = fmtS(m.currentTime) + ' / ' + mmss(dur); const sc = $e('#e-scrub'); sc.max = dur || 1; if (document.activeElement !== sc) sc.value = m.currentTime;
+        $e('#e-pp').textContent = m.paused ? '▶' : '⏸';
+        const t = cur(); $e('#e-ban').classList.toggle('on', !!(t && edTrack && t.dbId !== edTrack.dbId));
+        const n = m.currentTime; let act = -1; rows.forEach((r, i) => { if (n >= r.s && n < endOf(i)) act = i; });
+        const els = rowsEl.querySelectorAll('.er'); els.forEach((d, i) => d.classList.toggle('on', i === act));
+        if (act >= 0 && $e('#e-follow').checked && !m.paused && !ov.contains(document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT' ? document.activeElement : null) && els[act]) els[act].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      };
+      ['audio', 'video-el'].forEach(id => { const e = document.getElementById(id); if (e) ['timeupdate', 'play', 'pause', 'seeked', 'loadedmetadata'].forEach(ev => e.addEventListener(ev, tickT)); });
+      $e('#e-pp').onclick = () => { const m = media(); if (!m) return; if (m.paused) m.play().catch(() => {}); else m.pause(); };
+      $e('#e-b5').onclick = () => { const m = media(); if (m) m.currentTime = Math.max(0, m.currentTime - 5); };
+      $e('#e-f5').onclick = () => { const m = media(); if (m) m.currentTime = m.currentTime + 5; };
+      $e('#e-scrub').oninput = () => { const m = media(); if (m) m.currentTime = +$e('#e-scrub').value; };
+      $e('#e-rate').onchange = () => { const m = media(); if (m) m.playbackRate = +$e('#e-rate').value; };
+      // ---- tabs ----
+      $e('#e-tabs').onclick = ev => { const b = ev.target.closest('button[data-t]'); if (!b) return; $e('#e-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); ov.querySelectorAll('.etool').forEach(p => p.classList.toggle('on', p.dataset.p === b.dataset.t)); const rp = b.dataset.t === 'rep'; rowsEl.style.display = rp ? 'none' : ''; const re = $e('#e-replist'); if (re) { re.style.display = rp ? '' : 'none'; if (rp) repRender(); } $e('.efilter').style.display = rp ? 'none' : ''; };
+      // ---- lines tab ----
+      $e('#e-undo').onclick = () => { if (!hist.length) return; fut.push(JSON.stringify(rows)); rows = JSON.parse(hist.pop()); sel = null; render(); };
+      $e('#e-redo').onclick = () => { if (!fut.length) return; hist.push(JSON.stringify(rows)); rows = JSON.parse(fut.pop()); sel = null; render(); };
+      $e('#e-add').onclick = () => { const m = media(); snap(); const n = { s: m ? m.currentTime : 0, e: null, text: '' }; rows.push(n); sortRows(); sel = n; render(); const i = rows.indexOf(n), t2 = rowsEl.querySelectorAll('textarea')[i]; if (t2) { t2.scrollIntoView({ block: 'center' }); t2.focus(); } };
+      $e('#e-sort').onclick = () => mut(() => sortRows());
+      const tapInfo = () => { const i = rows.indexOf(sel); $e('#e-tapinfo').textContent = sel ? 'Selected line ' + (i + 1) + ': ' + (sel.text.slice(0, 60) || '(empty)') : 'Tap a line to select it first.'; };
+      $e('#e-tap').onclick = () => { tapOn = !tapOn; $e('#e-tapbar').classList.toggle('on', tapOn); $e('#e-tap').classList.toggle('pri', tapOn); if (tapOn) { if (!sel && rows[0]) sel = rows[0]; render(); tapInfo(); const m = media(); if (m && m.paused) m.play().catch(() => {}); toast('Play the track, then tap at the start of each line.'); } };
+      $e('#e-tapbtn').onclick = () => {
+        const m = media(); if (!m || !sel) { tapInfo(); return; } snap(); sel.s = m.currentTime; fixE(sel); const i0 = rows.indexOf(sel); sortRows(); const i = rows.indexOf(sel), nx = rows[i + 1] || null;
+        if (i > 0 && rows[i - 1].e != null) rows[i - 1].e = null; sel = nx || sel; render(); tapInfo(); const els = rowsEl.querySelectorAll('.er'), idx = rows.indexOf(sel); if (els[idx]) els[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      };
+      // ---- timing tab ----
+      const inScope = r => { const sc = $e('#e-scope').value; if (sc === 'all') return true; if (!sel) return false; return sc === 'sel' ? r === sel : r.s >= sel.s; };
+      const shiftBy = d => { if (!rows.length) return; if ($e('#e-scope').value !== 'all' && !sel) { toast('Tap a line to select it first.'); return; } mut(() => { rows.forEach(r => { if (!inScope(r)) return; r.s = Math.max(0, r.s + d); if (r.e != null) r.e = Math.max(0, r.e + d); }); sortRows(); }); };
+      $e('#e-shm').onclick = () => shiftBy(-Math.abs(+$e('#e-sh').value || 0)); $e('#e-shp').onclick = () => shiftBy(Math.abs(+$e('#e-sh').value || 0));
+      $e('#e-stgo').onclick = () => { const f = +$e('#e-st').value; if (!(f > 0.5 && f < 2)) { toast('Use a factor between 0.5 and 2, e.g. 1.001.'); return; } mut(() => { rows.forEach(r => { r.s *= f; if (r.e != null) r.e *= f; }); }); };
+      $e('#e-fit').onclick = () => mut(() => { rows.forEach((r, i) => { if (rows[i + 1]) r.e = rows[i + 1].s; }); });
+      $e('#e-auto').onclick = () => mut(() => { rows.forEach(r => { r.e = null; }); });
+      $e('#e-ovl').onclick = () => mut(() => { rows.forEach((r, i) => { if (rows[i + 1] && r.e != null && r.e > rows[i + 1].s) r.e = rows[i + 1].s; }); });
+      $e('#e-rnd').onclick = () => mut(() => { const q = x => Math.round(x * 10) / 10; rows.forEach(r => { r.s = q(r.s); if (r.e != null) r.e = q(r.e); }); });
+      $e('#e-mingo').onclick = () => { const mn = +$e('#e-min').value || 1; let n = 0; mut(() => { rows.forEach((r, i) => { const e = endOf(i); if (e - r.s < mn) { const lim = rows[i + 1] ? rows[i + 1].s : r.s + mn; r.e = Math.min(r.s + mn, lim); if (r.e > r.s) n++; else r.e = null; } }); }); toast(n + ' line' + (n === 1 ? '' : 's') + ' lengthened (never past the next line).'); };
+      // ---- text tab ----
+      const mapText = fn => { if (!rows.length) return; mut(() => { rows.forEach(r => { r.text = fn(r.text); }); }); };
+      $e('#e-trim').onclick = () => mapText(s => s.replace(/[ \t]+/g, ' ').trim());
+      $e('#e-cap').onclick = () => mapText(s => s.replace(/^(\s*)(\S)/, (m, a, b) => a + b.toUpperCase()));
+      $e('#e-up').onclick = () => mapText(s => s.toUpperCase()); $e('#e-low').onclick = () => mapText(s => s.toLowerCase());
+      $e('#e-brk').onclick = () => mapText(s => s.replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/\s{2,}/g, ' ').trim());
+      $e('#e-empty').onclick = () => { const n = rows.filter(r => !r.text.trim()).length; if (!n) { toast('No empty lines.'); return; } mut(() => { rows = rows.filter(r => r.text.trim()); sel = null; }); toast(n + ' empty line' + (n === 1 ? '' : 's') + ' deleted.'); };
+      $e('#e-dup').onclick = () => { let n = 0; mut(() => { rows = rows.filter((r, i) => { const dup = i > 0 && r.text.trim() && r.text.trim().toLowerCase() === rows[i - 1].text.trim().toLowerCase(); if (dup) n++; return !dup; }); }); toast(n ? n + ' repeated line' + (n === 1 ? '' : 's') + ' deleted.' : 'No repeated lines.'); };
+      $e('#e-fr').onclick = () => {
+        const w = mkEl('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        w.innerHTML = '<input type="text" id="e-fa" placeholder="Find"><input type="text" id="e-fb" placeholder="Replace with"><label style="font-size:12px"><input type="checkbox" id="e-fc"> Match case</label><div id="e-fn" style="font-size:12px;opacity:.7"></div>';
+        const cnt = () => { const f = w.querySelector('#e-fa').value, cs = w.querySelector('#e-fc').checked; if (!f) { w.querySelector('#e-fn').textContent = ''; return 0; } const re = new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), cs ? 'g' : 'gi'); let n = 0; rows.forEach(r => { const m = r.text.match(re); if (m) n += m.length; }); w.querySelector('#e-fn').textContent = n + ' match' + (n === 1 ? '' : 'es'); return n; };
+        w.oninput = cnt; w.onchange = cnt;
+        modal('Find & replace', w, [{ label: 'Cancel' }, { label: 'Replace all', pri: 1, fn: () => { const f = w.querySelector('#e-fa').value, rp = w.querySelector('#e-fb').value, cs = w.querySelector('#e-fc').checked; if (!f) return false; const re = new RegExp(f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), cs ? 'g' : 'gi'); const n = cnt(); mut(() => { rows.forEach(r => { r.text = r.text.replace(re, () => rp); }); }); toast(n + ' replaced.'); } }]);
+        setTimeout(() => w.querySelector('#e-fa').focus(), 50);
+      };
+      // ---- file tab ----
+      $e('#e-paste').onclick = () => {
+        const w = mkEl('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        w.innerHTML = '<div style="font-size:12px;opacity:.7">Paste .lrc, .srt, or plain text (one line per row). Plain text is spaced 4 seconds apart for re-timing.</div><textarea id="e-pt" placeholder="Paste here…"></textarea><label style="font-size:12px"><input type="checkbox" id="e-pa"> Add to the existing lines instead of replacing them</label>';
+        modal('Paste text', w, [{ label: 'Cancel' }, { label: 'Import', pri: 1, fn: () => { const v = w.querySelector('#e-pt').value; if (!v.trim()) return false; let r = /-->/.test(v) ? parseSrtText(v) : parseLrcText(v); if (!r.length) r = plain(v); mut(() => { rows = w.querySelector('#e-pa').checked ? rows.concat(r) : r; sortRows(); sel = null; }); toast(r.length + ' lines imported. Not saved until confirmed.'); } }]);
+      };
+      $e('#e-loadf').onclick = () => $e('#e-file').click();
+      $e('#e-file').onchange = async ev => { const f = ev.target.files[0]; ev.target.value = ''; if (!f) return; const txt = (await f.text()).replace(/^\uFEFF/, ''); let r = /-->/.test(txt) ? parseSrtText(txt) : parseLrcText(txt); if (!r.length) r = plain(txt); if (!r.length) { toast('Could not read any lines from that file.'); return; } mut(() => { rows = r; sel = null; }); toast(r.length + ' lines loaded from ' + f.name + '. Not saved until confirmed.'); };
+      $e('#e-revert').onclick = () => { if (isDirty() && !confirm('Discard edits and go back to the last saved version?')) return; load(); };
+      $e('#e-dsrt').onclick = () => dlFile('srt'); $e('#e-dlrc').onclick = () => dlFile('lrc'); $e('#e-dtxt').onclick = () => dlFile('txt');
+      // ---- view ----
+      $e('#e-ends').onchange = render; $e('#e-q').oninput = render;
+      $e('#e-fs').onchange = () => { ov.classList.remove('fs-s', 'fs-l', 'fs-x'); const v = $e('#e-fs').value; if (v !== 'm') ov.classList.add('fs-' + v); render(); };
+      // ---- header / footer ----
+      $e('#e-back').onclick = back; $e('#e-cancel').onclick = back;
+      $e('#e-save').onclick = save;
+      $e('#e-ok').onclick = () => { if (!rows.filter(r => r.text.trim()).length) { toast('Add at least one line with text first.'); return; } if (!isDirty()) { close(); return; } if (save()) close(); };
+      $e('#e-banload').onclick = () => { if (isDirty() && !confirm('Discard unsaved changes and edit the new track instead?')) return; load(); };
+      document.addEventListener('keydown', ev => { if (edet.open && ev.key === 'Escape' && !$e('#e-mod').classList.contains('on')) back(); else if (edet.open && ev.key === 'Escape') closeModal(); });
+      window.addEventListener('beforeunload', ev => { if (edet.open && isDirty()) { ev.preventDefault(); ev.returnValue = ''; } });
+      // ================= Repeats tab: pick the right wording for lines that were sung more than once =================
+      const rcss = document.createElement('style');
+      rcss.textContent = '#ppv-edpage .rg{border:1px solid var(--line,#3a3a40);border-radius:12px;padding:10px;margin-top:10px;background:rgba(127,127,127,.07)}#ppv-edpage .rg h4{margin:0 0 6px;font-size:13px}#ppv-edpage .rg .tms{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}#ppv-edpage .rg .tms button{padding:3px 8px;font-size:12px}' +
+        '#ppv-edpage .rv{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line,#444);border-radius:10px;margin-top:6px;cursor:pointer}#ppv-edpage .rv.on{border-color:var(--accent,#7c3aed);background:rgba(124,58,237,.14)}#ppv-edpage .rv input[type=radio]{margin-top:3px;accent-color:var(--accent,#7c3aed)}#ppv-edpage .rv .tx{flex:1;line-height:1.35}#ppv-edpage .rv .bd{font-size:11px;opacity:.75;white-space:nowrap}#ppv-edpage .rv input[type=text]{flex:1;width:100%}' +
+        '#ppv-edpage .rg .ap{width:100%;margin-top:8px;padding:11px}#ppv-edpage .rnote{font-size:12px;opacity:.7;margin-top:8px}';
+      rcss.textContent += '#ppv-edpage .rg h4{display:flex;align-items:center;gap:8px}#ppv-edpage .rg .occs{margin-bottom:8px}#ppv-edpage .rg .occ{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid rgba(127,127,127,.25);cursor:pointer}#ppv-edpage .rg .occ:first-of-type{border-top:0}#ppv-edpage .rg .occ button{padding:3px 8px;font-size:12px;flex:none}#ppv-edpage .rg .occ .ot{flex:1;min-width:0;font-size:13px;word-break:break-word}#ppv-edpage .rg .occ input{margin-top:5px;flex:none}#ppv-edpage .rg .osel{display:flex;gap:6px;margin-bottom:4px}#ppv-edpage .rg .osel button{padding:2px 8px;font-size:11px}';
+      document.head.appendChild(rcss);
+      const repEl = mkEl('div', 'elist'); repEl.id = 'e-replist'; repEl.style.display = 'none'; rowsEl.after(repEl);
+      let repGroups = [];                                                // [{rows:[row refs], pick:string|null, own:string}]
+      const repVariants = g => {
+        const m = new Map(); g.rows.forEach(r => { const k = rpNorm(r.text); if (!k) return; if (!m.has(k)) m.set(k, { text: r.text, n: 0, alt: false }); m.get(k).n++; });
+        g.rows.forEach(r => (r.alts || []).forEach(a => { const k = rpNorm(a); if (k && !m.has(k)) m.set(k, { text: a, n: 0, alt: true }); }));
+        return [...m.values()].sort((a, b) => b.n - a.n);
+      };
+      const repScan = async audio => {
+        if (!rows.length) { toast('No lines to check yet.'); return; }
+        const t = edTrack || cur(); let x = null; const b1 = $e('#e-rscan'), b2 = $e('#e-rscanA'); b1.disabled = b2.disabled = true;
+        try {
+          if (audio) { if (!t) { toast('Play or select a track first.'); return; } toast('Listening to the track… this can take a moment.'); const vs0 = findVocalsStem(A() && A().tracks(), t); x = await decodeMono(((vs0 || t).url), 16000); }
+          const items = rows.map((r, i) => ({ s: r.s, e: endOf(i), text: r.text })), gs = await rpFind(items, x); x = null;
+          repGroups = gs.map(ix => ({ rows: ix.map(i => rows[i]), pick: null, own: '' }));
+          repRender(); const n = repGroups.filter(g => repVariants(g).length > 1).length; toast(n ? n + ' repeated line' + (n === 1 ? ' has' : 's have') + ' different wordings.' : 'Every repeated line already matches.');
+        } catch (e) { console.error(e); toast('Scan failed: ' + errText(e)); }
+        b1.disabled = b2.disabled = false;
+      };
+      // Several wordings can be right (a chorus that really changes between passes), so they are ticked, not picked.
+      // Applying: a line whose wording is ticked keeps it; any other line gets the CLOSEST ticked wording (a mishearing sits
+      // nearest to what was really sung); the per-line menu still overrides both.
+      const repSimTxt = (a, b) => { a = rpNorm(a); b = rpNorm(b); if (!a || !b) return 0; const n = a.length, m = b.length; let prev = Array.from({ length: m + 1 }, (_, j) => j); for (let i = 1; i <= n; i++) { const cur = [i]; for (let j = 1; j <= m; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return 1 - prev[m] / Math.max(n, m); };
+      const repPicked = g => {                                            // ticked wordings as text, own wording included when ticked
+        const vs = repVariants(g), out = vs.filter(v => g.picks && g.picks.has(rpNorm(v.text))).map(v => v.text);
+        if (g.ownOn && String(g.own || '').trim()) out.push(String(g.own).trim());
+        return out;
+      };
+      const repTarget = (g, r, picked) => {
+        const a = g.asg && g.asg.get(r); if (a) return a;
+        if (!picked.length) return null;
+        if (picked.some(p => rpNorm(p) === rpNorm(r.text))) return r.text;   // already one of the right wordings: keep it
+        return picked.slice().sort((x, y) => repSimTxt(r.text, y) - repSimTxt(r.text, x))[0];
+      };
+      const repApply = (g, text) => {
+        const tgt = g.rows.filter(r => !(g.off && g.off.has(r))); if (!tgt.length) { toast('Tick at least one line first.'); return; }
+        let picked = repPicked(g); if (!picked.length && String(text || '').trim()) picked = [String(text).trim()];
+        if (!picked.length && tgt.some(r => !(g.asg && g.asg.get(r)))) { toast('Tick at least one right wording, or write your own.'); return; }
+        snap(); let ch = 0, kept = 0;
+        tgt.forEach(r => { const nt = repTarget(g, r, picked); if (nt == null) return; if (nt === r.text) kept++; else { r.text = nt; ch++; } });
+        render(); repRender();
+        toast((ch ? 'Changed ' + ch + ' line' + (ch === 1 ? '' : 's') : 'Nothing needed changing') + (kept ? ', kept ' + kept + ' that already had a right wording' : '') + (tgt.length < g.rows.length ? ' (' + (g.rows.length - tgt.length) + ' unticked left as they were)' : '') + '.');
+      };
+      const repSuggest = g => { const v = rpVote(g.rows.map(r => ({ text: r.text, alts: r.alts }))); return v ? v.text : ''; };
+      const repSelBtn = () => { const n = repGroups.filter(g => g.on !== false && repVariants(g).filter(v => !v.alt).length >= 2 && g.rows.some(r => !(g.off && g.off.has(r)))).length; const b = $e('#e-rall'); if (b) b.textContent = n ? 'Apply to ' + n + ' selected group' + (n === 1 ? '' : 's') : 'Apply to selected groups'; };
+      function repRender() {
+        repEl.textContent = '';
+        const showAll = $e('#e-rshow').checked; let shown = 0;
+        repGroups.forEach((g, gi) => {
+          const vs = repVariants(g), real = vs.filter(v => !v.alt).length;
+          if (real < 2 && !showAll && !(real === 1 && vs.length > 1)) return;
+          if (real < 2 && !showAll && !g.rows.some(r => r.alts && r.alts.length)) return;
+          shown++;
+          const sug = repSuggest(g), cur0 = g.pick != null ? g.pick : sug, card = mkEl('div', 'rg');
+          { const h4 = mkEl('h4'), gc = mkEl('input'); gc.type = 'checkbox'; gc.checked = g.on !== false; gc.title = 'Include this group when applying to selected groups'; gc.onchange = () => { g.on = gc.checked; repSelBtn(); }; h4.append(gc, document.createTextNode('Sung ' + g.rows.length + '× · ' + real + ' version' + (real === 1 ? '' : 's') + ' heard')); card.appendChild(h4); }
+          g.off = g.off || new Set(); g.asg = g.asg || new Map(); let apBtn = null;
+          const upApply = () => { if (!apBtn) return; const n = g.rows.filter(r => !g.off.has(r)).length; apBtn.textContent = 'Apply to ' + (n === g.rows.length ? 'all ' : '') + n + ' selected line' + (n === 1 ? '' : 's'); apBtn.disabled = !n; };
+          const tms = mkEl('div', 'occs'), osel = mkEl('div', 'osel');
+          const setAll = v => { g.rows.forEach(r => { if (v) g.off.delete(r); else g.off.add(r); }); tms.querySelectorAll('input').forEach(c => { c.checked = v; }); upApply(); repSelBtn(); };
+          { const a1 = mkEl('button', '', 'All lines'), a2 = mkEl('button', '', 'None'); a1.onclick = () => setAll(true); a2.onclick = () => setAll(false); osel.append(a1, a2); }
+          card.appendChild(osel);
+          g.rows.forEach(r => {
+            const lab = mkEl('label', 'occ'), cb = mkEl('input'); cb.type = 'checkbox'; cb.checked = !g.off.has(r);
+            cb.onchange = () => { if (cb.checked) g.off.delete(r); else g.off.add(r); upApply(); repSelBtn(); };
+            const pb = mkEl('button', '', '▶ ' + fmtT(r.s).replace(/\.\d+$/, '')); pb.title = 'Listen to this one';
+            pb.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); const m = media(); if (m) { m.currentTime = Math.max(0, r.s - 0.2); m.play && m.play().catch(() => {}); } };
+            const tt = mkEl('span', 'ot'), tl = mkEl('div'), ss = mkEl('select'); tl.textContent = r.text; ss.title = 'Which wording this line gets';
+            ss.style.cssText = 'width:100%;margin-top:4px;font-size:12px;padding:4px';
+            { const o0 = mkEl('option'); o0.value = ''; o0.textContent = 'Gets the picked wording below'; ss.appendChild(o0); vs.forEach((v, vi) => { const o = mkEl('option'); o.value = String(vi); o.textContent = (v.text.length > 60 ? v.text.slice(0, 58) + '…' : v.text) + (v.n ? ' (×' + v.n + ')' : ' (other pass)'); ss.appendChild(o); });
+              const cv = g.asg.get(r); if (cv) { const k = vs.findIndex(v => v.text === cv); if (k >= 0) ss.value = String(k); } }
+            ss.onclick = ev => ev.stopPropagation();
+            ss.onchange = () => { if (ss.value === '') g.asg.delete(r); else { g.asg.set(r, vs[+ss.value].text); if (!cb.checked) { cb.checked = true; g.off.delete(r); } } upApply(); repSelBtn(); };
+            tt.append(tl, ss); lab.append(cb, pb, tt); tms.appendChild(lab);
+          });
+          card.appendChild(tms);
+          if (!g.picks) g.picks = new Set(cur0 ? [rpNorm(cur0)] : []);        // starts with the suggested wording ticked
+          const togglePick = txt => { const k = rpNorm(txt); if (g.picks.has(k)) g.picks.delete(k); else g.picks.add(k); repRender(); };
+          card.appendChild(mkEl('div', 'rnote', 'Tick every wording that is right. Lines that already have a ticked wording keep it; the others get the closest ticked one.'));
+          vs.forEach(v => {
+            const on = g.picks.has(rpNorm(v.text)), d = mkEl('label', 'rv' + (on ? ' on' : '')), rd = mkEl('input'); rd.type = 'checkbox'; rd.checked = on;
+            const tx = mkEl('span', 'tx'); tx.textContent = v.text; const bd = mkEl('span', 'bd', (v.n ? '×' + v.n : 'other pass') + (rpNorm(v.text) === rpNorm(sug) ? ' · suggested' : ''));
+            d.append(rd, tx, bd); d.onclick = ev => { ev.preventDefault(); togglePick(v.text); }; card.appendChild(d);
+          });
+          const own = mkEl('label', 'rv' + (g.ownOn ? ' on' : '')), orad = mkEl('input'); orad.type = 'checkbox'; orad.checked = !!g.ownOn;
+          orad.onclick = ev => { ev.stopPropagation(); g.ownOn = orad.checked; own.classList.toggle('on', g.ownOn); };
+          const oin = mkEl('input'); oin.type = 'text'; oin.placeholder = 'None of these — write my own'; oin.value = g.own || '';
+          oin.oninput = () => { g.own = oin.value; g.ownOn = !!oin.value.trim(); orad.checked = g.ownOn; own.classList.toggle('on', g.ownOn); };   // typing ticks it; other ticks stay
+          own.append(orad, oin); card.appendChild(own);
+          const ap = mkEl('button', 'pri ap', ''); apBtn = ap; upApply(); ap.onclick = () => repApply(g, ''); card.appendChild(ap);
+          repEl.appendChild(card);
+        });
+        if (!shown) repEl.appendChild(mkEl('div', 'eempty', repGroups.length ? 'Nothing to decide: every repeated line already has the same wording.' : 'Tap “Scan repeated lines” to find lines that were sung more than once and choose the right wording.<br><br>“Scan with audio” also catches repeats that Whisper wrote differently each time.'));
+        else repEl.appendChild(mkEl('div', 'rnote', 'Tip: tap ▶ to hear each time the line is sung. Use the menu under a line to give it a specific wording. If none of the versions is right, tick only the lines that should change (a line that was changed on purpose can be left out), or write a custom version.'));
+        repSelBtn();
+      }
+      $e('#e-rscan').onclick = () => repScan(false); $e('#e-rscanA').onclick = () => repScan(true); $e('#e-rshow').onchange = repRender;
+      $e('#e-rall').onclick = () => { let n = 0, k = 0; snap(); repGroups.forEach(g => { if (g.on === false || repVariants(g).filter(v => !v.alt).length < 2) return; let picked = repPicked(g); if (!picked.length) { const sg = repSuggest(g); if (!sg) return; picked = [sg]; } const tg = g.rows.filter(r => !(g.off && g.off.has(r))); if (!tg.length) return; tg.forEach(r => { const nt = repTarget(g, r, picked); if (nt != null && nt !== r.text) { r.text = nt; k++; } }); n++; }); if (!n) { hist.pop(); toast('Nothing to apply. Tick at least one group.'); return; } render(); repRender(); toast('Applied the ticked wordings: ' + k + ' line' + (k === 1 ? '' : 's') + ' in ' + n + ' group' + (n === 1 ? '' : 's') + '.'); };
+      $e('#e-rsel').onclick = () => { repGroups.forEach(g => { g.on = true; if (g.off) g.off.clear(); }); repRender(); };
+      $e('#e-rnone').onclick = () => { repGroups.forEach(g => { g.on = false; }); repRender(); };
+      // ================= Lyrics you already know: line them up with what the audio says =================
+      const lyricLines = txt => String(txt).split(/\r?\n/).map(l => l.replace(/^\s*(\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]\s*)+/, '').trim()).filter(l => l && !/^\[[^\]]*\]$/.test(l));
+      const srcRows = () => rows.filter(r => r.text.trim()).map(r => ({ s: r.s, e: endOf(rows.indexOf(r)), text: r.text }));
+      const needSrc = () => { const s = srcRows(); if (s.length < 2) { toast('Transcribe the track with Whisper first (or add lines), so there is something to match the lyrics to.'); return null; } return s; };
+      const useAligned = (lines, al) => { mut(() => { rows = lines.map((l, i) => ({ s: al.starts[i], e: null, text: l })); sel = null; }); toast('Lyrics synced. ' + Math.round(al.ratio * 100) + '% of the words matched the audio.' + (al.ratio < 0.5 ? ' Low match: check the timing.' : '')); };
+      $e('#e-sync').onclick = () => {
+        const w = mkEl('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        w.innerHTML = '<div style="font-size:12px;opacity:.75">Paste the correct lyrics, one line per row. The words stay exactly as typed; only the timing comes from the audio, using the lines currently in the editor as a guide. Lines like [Chorus] are ignored.</div><textarea id="e-lt" placeholder="Paste lyrics here…"></textarea>';
+        modal('Sync my own lyrics', w, [{ label: 'Cancel' }, { label: 'Sync', pri: 1, fn: () => { const lines = lyricLines(w.querySelector('#e-lt').value); if (!lines.length) { toast('Paste some lyrics first.'); return false; } const src = needSrc(); if (!src) return false; const al = rpAlign(src, lines); if (al.ratio < 0.2) { toast('These lyrics barely match the audio (' + Math.round(al.ratio * 100) + '%). Is it the right song?'); return false; } useAligned(lines, al); } }]);
+      };
+      const lrcShift = (lrc, src) => { const al = rpAlign(src, lrc.map(r => r.text)), d = []; lrc.forEach((r, i) => { if (al.anchored[i]) d.push(al.starts[i] - r.s); }); d.sort((a, b) => a - b); return { ratio: al.ratio, shift: d.length >= 3 ? d[d.length >> 1] : 0, n: d.length }; };
+      $e('#e-net').onclick = () => {
+        const t = edTrack || cur(); if (!t) { toast('Play or select a track first.'); return; }
+        const w = mkEl('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        const q0 = lyQuery(t);
+        w.innerHTML = '<div style=\"font-size:12px;opacity:.75\">Looks the song up on free lyrics sites (LRCLIB, Lyrics.ovh, Textyl). Only the text shown below is sent, and only when Search is tapped. Whatever is picked is checked against the audio before use. The language filter is a guess from the lyrics text.</div><input type=\"text\" id=\"e-nq\"><select id=\"e-nsrc\"><option value=\"all\">All sites</option>' + Object.keys(LY_SRC).map(k => '<option value=\"' + k + '\">' + LY_SRC[k].name + '</option>').join('') + '</select><select id=\"e-nlang\">' + LY_LANGS.map(l => '<option value=\"' + l[0] + '\">' + l[1] + '</option>').join('') + '</select><button id=\"e-nsearch\" class=\"pri\">Search</button><div id=\"e-nres\" style=\"display:flex;flex-direction:column;gap:6px\"></div>';
+        w.querySelector('#e-nq').value = q0; const res = w.querySelector('#e-nres');
+        const choose = async it => {
+          res.textContent = 'Loading…'; try { await lyEnsure(it); } catch (e) { res.textContent = 'Could not load those lyrics (' + errText(e).slice(0, 80) + ')'; return; }
+          const syn = it.syncedLyrics ? parseLrcText(it.syncedLyrics).filter(r => r.text) : [], plain2 = lyricLines(it.plainLyrics || ''), src = srcRows(); res.textContent = '';
+          res.appendChild(mkEl('div', '', '<b>' + (it.trackName || '') + '</b><br><small style="opacity:.7">' + (it.artistName || '') + (it.duration ? ' · ' + mmss(it.duration) : '') + '</small>'));
+          const add = (label, fn, pri, note) => { const b = mkEl('button', pri ? 'pri' : '', label); b.onclick = () => { closeModal(); fn(); }; res.appendChild(b); if (note) res.appendChild(mkEl('div', 'rnote', note)); };
+          const lines = syn.length ? syn.map(r => r.text) : plain2;
+          if (!lines.length) { res.appendChild(mkEl('div', 'rnote', 'That entry has no lyrics.')); return; }
+          if (src.length >= 2) {
+            const al = rpAlign(src, lines), pc = Math.round(al.ratio * 100);
+            res.appendChild(mkEl('div', 'rnote', 'Match with the audio: ' + pc + '%' + (al.ratio < 0.35 ? '. That is low, it may be a different song or version.' : '')));
+            add('Use these lyrics, timed from my audio', () => useAligned(lines, al), 1, 'Best choice: the words from the database, the timing from the track itself.');
+            if (syn.length) { const sh = lrcShift(syn, src), s = Math.abs(sh.shift) > 0.25 ? sh.shift : 0; add('Use their timestamps' + (s ? ' (shifted ' + (s > 0 ? '+' : '') + s.toFixed(1) + 's to fit)' : ''), () => { mut(() => { rows = syn.map(r => ({ s: Math.max(0, r.s + s), e: null, text: r.text })); sel = null; }); toast('Loaded ' + syn.length + ' lines with the database timing.'); }, 0, s ? 'Their timing was measured against the audio and corrected.' : ''); }
+          } else {
+            if (syn.length) add('Use their timestamps (not checked against the audio)', () => { mut(() => { rows = syn.map(r => ({ s: r.s, e: null, text: r.text })); sel = null; }); toast('Loaded ' + syn.length + ' lines. Transcribe with Whisper later to verify them.'); }, 1);
+            if (plain2.length) add('Use plain text (lines 4 seconds apart)', () => { mut(() => { rows = plain2.map((l, i) => ({ s: i * 4, e: null, text: l })); sel = null; }); toast('Loaded. Re-time the lines, or transcribe with Whisper and use Sync.'); });
+          }
+          add('‹ Back to results', () => { $e('#e-mod').classList.add('on'); }, 0);
+        };
+        const search = async () => {
+          const q = w.querySelector('#e-nq').value.trim(); if (!q) return; res.textContent = 'Searching…';
+          const sv = w.querySelector('#e-nsrc').value, lg = w.querySelector('#e-nlang').value; ls('ppvLySrc', sv); ls('ppvLyLang', lg);
+          const m = media(), du = m && isFinite(m.duration) ? m.duration : 0;
+          let { items: j, failed } = await lySearch(q, sv === 'all' ? Object.keys(LY_SRC) : [sv]);
+          j = j.filter(it => it.load || it.plainLyrics || it.syncedLyrics); if (du) j.sort((a, b) => Math.abs((a.duration || 1e4) - du) - Math.abs((b.duration || 1e4) - du)); j = j.slice(0, lg ? 12 : 8);
+          if (lg) { res.textContent = 'Checking languages…'; await Promise.all(j.map(it => lyEnsure(it).catch(() => {}))); j = j.filter(it => (it.plainLyrics || it.syncedLyrics) && guessLang(lyText(it)) === lg); }
+          res.textContent = '';
+          if (failed.length) res.appendChild(mkEl('div', 'rnote', 'Could not reach: ' + failed.join(', ') + '.'));
+          if (!j.length) { res.appendChild(mkEl('div', '', failed.length && sv !== 'all' || failed.length === Object.keys(LY_SRC).length ? 'Could not reach the lyrics sites. This needs an internet connection.' : (lg ? 'No lyrics found in ' + lyName(lg) + '. Try Any language or fewer words.' : 'No lyrics found. Try fewer words, e.g. just the song title.'))); return; }
+          j.forEach(it => { const gl = (it.plainLyrics || it.syncedLyrics) ? guessLang(lyText(it)) : '', b = mkEl('button', '', '<b>' + (it.trackName || '?') + '</b> · ' + (it.artistName || '?') + '<br><small style=\"opacity:.7\">' + it.src + (gl ? ' · ' + lyName(gl) : '') + (it.duration ? ' · ' + mmss(it.duration) : '') + (du && it.duration ? ' (this track ' + mmss(du) + ')' : '') + (it.syncedLyrics ? ' · has timestamps' : ' · text only') + '</small>'); b.style.textAlign = 'left'; b.onclick = () => choose(it); res.appendChild(b); });
+        };
+        w.querySelector('#e-nsrc').value = ls('ppvLySrc') || 'all'; w.querySelector('#e-nlang').value = ls('ppvLyLang') || '';
+        w.querySelector('#e-nsearch').onclick = search; w.querySelector('#e-nq').onkeydown = ev => { if (ev.key === 'Enter') search(); };
+        modal('Find lyrics online', w, [{ label: 'Close' }]); search();
+      };
+      $e('#e-tr').onclick = () => {
+        const src = rows.filter(r => r.text.trim()); if (!src.length) { toast('Nothing to translate. Add or find lyrics first.'); return; }
+        const NT = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PPTranslate;
+        const w = mkEl('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        w.innerHTML = '<div style=\"font-size:12px;opacity:.75\">Replaces the text of each line with its translation. Timing stays the same. Undo or Revert to saved brings the original back until you save. Nothing leaves the device.</div><select id=\"e-trl\">' + LY_LANGS.filter(l => l[0]).map(l => '<option value=\"' + l[0] + '\">' + l[1] + '</option>').join('') + '</select><select id=\"e-tre\">' + (NT ? '<option value=\"nat\">Device translator (Google ML Kit): fast, offline after a one-time language download</option>' : '') + '<option value=\"ai\">On-device AI (Bloopy brain): rougher</option></select><div id=\"e-trs\" class=\"rnote\"></div>';
+        const tl = w.querySelector('#e-trl'), te = w.querySelector('#e-tre'), ts = w.querySelector('#e-trs'); tl.value = ls('ppvTrLang') || 'en'; te.value = ls('ppvTrEng') === 'ai' || !NT ? 'ai' : 'nat';
+        let running = false; const alive = () => $e('#e-mod').classList.contains('on');
+        const run = async () => {
+          if (running) return; const to = tl.value, eng = te.value; ls('ppvTrLang', to); ls('ppvTrEng', eng);
+          const lines = src.map(r => r.text.replace(/\s+/g, ' ').trim()), from = guessLang(lines.join('\n'));
+          if (from === to) { ts.textContent = 'These lyrics already look like ' + lyName(to) + '. Pick another language.'; return; }
+          const ch = h.mas.chat; if (eng === 'ai' && !ch.ready() && !confirm('The on-device translator uses the AI brain: a one-time download of about ' + ch.mb() + ' MB. Continue?')) return;
+          running = true; ts.textContent = eng === 'nat' ? 'Preparing the translator. The first time for a language it downloads a small pack, so it needs internet once…' : 'Starting…';
+          try {
+            const prog = (d, n) => { ts.textContent = 'Translating… ' + d + ' of ' + n + ' lines'; };
+            const out = eng === 'ai' ? await lyTrAi(lines, to, ch.ask, x => { ts.textContent = x; }, prog, alive) : await lyTrNative(NT, lines, from, to, prog, alive);
+            if (!out) { running = false; return; }
+            const n = out.filter((x, i) => x !== lines[i]).length;
+            if (!n) { ts.textContent = 'Nothing came back. Try the other translator.'; running = false; return; }
+            mut(() => { src.forEach((r, i) => { if (out[i]) r.text = out[i]; }); }); closeModal(); toast('Translated ' + n + ' lines to ' + lyName(to) + '.');
+          } catch (e) { ts.textContent = 'Could not translate: ' + errText(e).slice(0, 120); }
+          running = false;
+        };
+        modal('Translate lyrics', w, [{ label: 'Cancel' }, { label: 'Translate', pri: 1, fn: () => { run(); return false; } }]);
+      };
+      $('#ppv-edopen').onclick = open;
+      // refresh the editor after Whisper writes new text
+      const origGo = $('#ppv-wgo').onclick;
+      $('#ppv-wgo').onclick = async function () { await origGo.apply(this, arguments); if (edet.open) load(); };
+      // ---------- Subtitles for audio tracks (CC button + line under the disc) ----------
+      {
+        const viz = document.getElementById('viz-wrap'), aud = document.getElementById('audio');
+        if (viz && aud) {
+          // ---------- Song text: captions and lyrics share one box that always fits the screen, with its own look ----------
+          const ST_CSS = '#ppv-st{position:absolute;z-index:4;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px;overflow:hidden;text-align:center;font-family:var(--st-font);--st-k:1}' +
+            '#ppv-st.p-below{justify-content:flex-start}#ppv-st.p-over{justify-content:center}#ppv-st.p-above{justify-content:flex-end}' +
+            '#ppv-st.c-rainbow{animation:st-hue 6s linear infinite}' +
+            '#ppv-st #ppv-asub,#ppv-st #lyrics-overlay{position:static;max-width:100%;flex:0 0 auto;transform:scale(var(--st-beat,1));transition:transform .09s linear}' +
+            '#ppv-st .st-l{display:inline-block;max-width:100%;min-height:0;overflow-wrap:anywhere;white-space:normal;line-height:1.3;border-radius:6px;padding:.15em .5em;font-weight:var(--st-weight);text-transform:var(--st-caps);text-shadow:var(--st-ts);background:rgba(0,0,0,var(--st-bg));color:var(--st-color);font-size:calc(16px*var(--st-size)*var(--st-k))}' +
+            '#ppv-st .ly-next.st-l{display:block;font-size:calc(12.5px*var(--st-size)*var(--st-k));opacity:.6;margin-top:2px;font-weight:400;background:none}#ppv-st.nonext .ly-next,#ppv-st.tight .ly-next{display:none}' +
+            '.st-w{display:inline-block;transition:opacity .18s,transform .18s,text-shadow .18s}.st-hl .st-w{opacity:.42}.st-hl .st-w.on{opacity:1}.st-hl .st-w.now{transform:scale(1.1);position:relative;color:color-mix(in srgb,var(--st-color) 42%,transparent);text-shadow:none}.st-hl .st-w.now::after{content:attr(data-w);position:absolute;left:0;top:0;white-space:nowrap;color:var(--st-color);text-shadow:0 0 .45em var(--st-color),var(--st-ts);clip-path:inset(-1em calc(100% - var(--p,0) * (100% + 1em)) -1em -1em)}' +
+            '@keyframes st-hue{to{filter:hue-rotate(360deg)}}@keyframes st-fade{from{opacity:0}}@keyframes st-pop{from{opacity:0;transform:scale(.6)}60%{transform:scale(1.07)}}@keyframes st-slide{from{opacity:0;transform:translateY(.8em)}}@keyframes st-blur{from{opacity:0;filter:blur(8px)}}@keyframes st-word{from{opacity:0;transform:translateY(.5em)}}@keyframes st-wave{0%{opacity:0}35%{opacity:1;transform:translateY(-.4em)}70%{transform:translateY(.08em)}}@keyframes st-flip{from{opacity:0;transform:rotateX(90deg)}}' +
+            '#ppv-st.fx-fade .st-in{animation:st-fade .28s ease-out}#ppv-st.fx-pop .st-in{animation:st-pop .32s cubic-bezier(.2,1.3,.4,1)}#ppv-st.fx-slide .st-in{animation:st-slide .28s ease-out}#ppv-st.fx-blur .st-in{animation:st-blur .36s ease-out}#ppv-st.fx-flip .st-in{animation:st-flip .34s ease-out}' +
+            '#ppv-st.fx-words .st-in .st-w{animation:st-word .3s ease-out backwards;animation-delay:calc(var(--i)*55ms)}#ppv-st.fx-wave .st-in .st-w{animation:st-wave .45s ease-out backwards;animation-delay:calc(var(--i)*45ms)}' +
+            '#ppv-apanel .st-lab{font-size:12px;opacity:.75;margin:10px 0 4px;display:flex;justify-content:space-between}#ppv-apanel .st-row{display:flex;flex-wrap:wrap;gap:6px}#ppv-apanel .st-row button{width:auto;flex:0 0 auto;margin:0;padding:6px 10px;border:1px solid var(--line,#444);background:transparent;color:var(--text,#eee);border-radius:8px;font-size:12.5px;cursor:pointer}#ppv-apanel .st-row button.on{background:var(--accent,#7c3aed);color:#000;border-color:transparent;font-weight:700}#ppv-apanel .st-row input[type=color]{width:38px;height:30px;padding:0;border:1px solid var(--line,#444);border-radius:8px;background:none}#ppv-apanel input[type=range]{width:100%}';
+          const st = document.createElement('style');
+          st.textContent = '#ppv-acc{position:absolute;top:-6px;right:-6px;z-index:6;width:34px;height:34px;border-radius:50%;border:1px solid var(--line,#555);background:var(--bg,#1b1c21);color:var(--text,#eee);font:700 11px system-ui;cursor:pointer;display:none;padding:0}#ppv-acc.on{background:var(--accent,#7c3aed);color:#fff;border-color:transparent}#ppv-asub{text-align:center;pointer-events:none;display:none}#ppv-apanel{position:fixed;z-index:9999;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,420px);max-height:78vh;overflow:auto;background:var(--bg,#1b1c21);color:var(--text,#eee);border:1px solid var(--line,#444);border-radius:12px;padding:12px;display:none}#ppv-apanel.open{display:block}' + ST_CSS;
+          document.head.appendChild(st);
+          const btn = document.createElement('button'); btn.id = 'ppv-acc'; btn.textContent = 'CC'; btn.title = 'Captions and lyrics'; btn.setAttribute('aria-label', 'Captions and lyrics');
+          const box = document.createElement('div'); box.id = 'ppv-asub'; const sp = document.createElement('span'); box.appendChild(sp);
+          const panel = document.createElement('div'); panel.id = 'ppv-apanel'; panel.className = 'ppv-scope';
+          panel.innerHTML = '<div class="ppv-row"><b style="flex:1;align-self:center">Captions &amp; lyrics</b><button class="ppv-sec" id="ppv-apx" style="width:auto;padding:4px 12px" data-keep="1">Close</button></div><div class="ppv-note" id="ppv-ast">No subtitles</div><button id="ppv-aton" class="ppv-sec">Turn on</button><button id="ppv-ald" class="ppv-sec">Load subtitle file (.srt/.vtt/.lrc)</button><button id="ppv-arm" class="ppv-sec">Remove from this track</button><input type="file" id="ppv-af" accept=".srt,.vtt,.lrc,.txt" style="display:none"><div id="ppv-stui"></div><hr style="border:0;border-top:1px solid var(--line,#444);margin:10px 0">';
+          viz.append(btn, box); document.body.appendChild(panel);
+          audPanel = panel;
+          let cues = [], off = 0, lastId = null, shown = '', cuePace = 0, vidOn = null;
+          // A video switched to audio keeps its own subtitles and their on/off from the video; other audio tracks
+          // follow the one "captions on audio" switch.
+          const keyOf = t => t ? t.dbId + '|' + t.kind : null;
+          const isOn = () => { const t = cur(); return t && t.convertedFromVideo && vidOn != null ? vidOn : ls('ppvAudSub') === '1'; };
+          const setOn = on => {
+            const t = cur();
+            if (t && t.convertedFromVideo && vidOn != null) {
+              vidOn = on;
+              try { const all = JSON.parse(localStorage.getItem('playerSubtitles') || '{}'), o = all[t.dbId]; if (o && !Array.isArray(o)) { o.on = on ? 1 : 0; localStorage.setItem('playerSubtitles', JSON.stringify(all)); } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+            } else ls('ppvAudSub', on ? '1' : '0');
+          };
+          const loadCues = () => {
+            cues = []; off = 0; vidOn = null; const t = cur(); lastId = keyOf(t); if (!t || t.kind === 'video') return;
+            try { const o = JSON.parse(localStorage.getItem('playerSubtitles') || '{}')[t.dbId]; const c = o && (Array.isArray(o) ? o.map(x => [x.start, x.end, x.text]) : o.c); if (c) { cues = c.map(x => ({ s: +x[0], e: +x[1], text: String(x[2]) })).sort((a, b) => a.s - b.s); off = (!Array.isArray(o) && isFinite(+o.o)) ? +o.o : 0; if (t.convertedFromVideo) vidOn = Array.isArray(o) || (o.on !== 0 && o.on !== false); } } catch (e) {}
+            cuePace = stPace(cues);
+          };
+          const status = () => { $('#ppv-ast').textContent = cues.length ? cues.length + ' lines' + (cues.length ? '' : '') : 'No subtitles for this track yet. Generate them with Whisper below, or load a file.'; $('#ppv-aton').textContent = isOn() ? 'Turn off' : 'Turn on'; $('#ppv-aton').disabled = !cues.length; $('#ppv-arm').disabled = !cues.length; btn.classList.toggle('on', isOn() && cues.length > 0); };
+          const ST_DEF = { size: 100, pos: 'below', color: '#ffffff', font: 'default', look: 'outline', bg: 0, bold: 1, caps: 0, fx: 'fade', hl: 0, beat: 0, next: 1, sdh: 0 };
+          const ST_FONTS = { default: 'inherit', serif: 'Georgia,serif', mono: "'Courier New',monospace", arial: 'Arial,Helvetica,sans-serif', condensed: "'Arial Narrow',sans-serif-condensed,Arial,sans-serif", impact: "Impact,'Arial Narrow Bold',sans-serif", casual: "'Comic Sans MS','Chalkboard SE',cursive" };
+          const ST_LOOKS = { box: { bg: 70 }, outline: { bg: 0 }, cinema: { bg: 0 }, neon: { bg: 0 }, plain: { bg: 0 } };
+          const ST = Object.assign({}, ST_DEF); try { Object.assign(ST, JSON.parse(ls('ppvSongText') || '{}')); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+          const wrap = document.createElement('div'); wrap.id = 'ppv-st';
+          const lyEl = document.getElementById('lyrics-overlay');
+          viz.appendChild(wrap); wrap.appendChild(box); if (lyEl) wrap.appendChild(lyEl);
+          sp.className = 'st-l';
+          let stSync = 0, stDirty = true, stKey = '', preview = false;
+          const syncMap = () => { try { return JSON.parse(ls('ppvSongSync') || '{}') || {}; } catch (e) { return {}; } };
+          window.__ppSongSync = () => stSync;
+          const stApply = () => {
+            const c = wrap.style, col = ST.color === 'accent' ? 'var(--accent,#6ee7d0)' : ST.color === 'rainbow' ? '#ff6b6b' : ST.color;
+            const o = '#000', ol = [[1, 0], [-1, 0], [0, 1], [0, -1], [.7, .7], [-.7, .7], [.7, -.7], [-.7, -.7]].map(d => (d[0] * 1.4).toFixed(1) + 'px ' + (d[1] * 1.4).toFixed(1) + 'px 0 ' + o).join(',');
+            const ts = ST.look === 'outline' ? ol + ',0 1px 6px rgba(0,0,0,.8)' : ST.look === 'cinema' ? '0 2px 10px rgba(0,0,0,.95),0 0 2px #000' : ST.look === 'neon' ? '0 0 .2em ' + col + ',0 0 .6em ' + col + ',0 0 1.1em ' + col : ST.look === 'plain' ? 'none' : '0 0 0 transparent';
+            c.setProperty('--st-size', ST.size / 100); c.setProperty('--st-color', ST.look === 'neon' ? '#fff' : col); c.setProperty('--st-font', ST_FONTS[ST.font] || 'inherit');
+            c.setProperty('--st-weight', ST.bold ? 700 : 400); c.setProperty('--st-caps', ST.caps ? 'uppercase' : 'none'); c.setProperty('--st-ts', ts); c.setProperty('--st-bg', ST.bg / 100);
+            wrap.className = 'p-' + ST.pos + ' fx-' + ST.fx + (ST.next ? '' : ' nonext') + (ST.color === 'rainbow' ? ' c-rainbow' : '');
+            if (!ST.beat) c.setProperty('--st-beat', 1);
+            stDirty = true;
+          };
+          const stClean = t => !ST.sdh ? t : String(t).split('\n').map(l => l.replace(/\[[^\]]*\]|\([^)]*\)|[♪♫]+/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+          // How fast this song is sung, in seconds per letter, worked out from its own lines. A line's time slot is never shorter than
+          // the singing in it, so the tighter slots show the real speed. 0 = too few lines to tell.
+          const stUnits = text => String(text || '').split(/\s+/).filter(Boolean).reduce((n, w) => n + w.length + 1.5, 0);
+          function stPace(lines) {
+            const rs = [];
+            for (const l of lines || []) { const d = l.e - l.s, t = stClean(l.text); if (d > 0.4 && d < 15 && t.split(/\s+/).filter(Boolean).length >= 3) rs.push(d / stUnits(t)); }
+            if (rs.length < 4) return 0;
+            rs.sort((a, b) => a - b);
+            return Math.max(0.025, Math.min(0.12, rs[Math.floor(rs.length * 0.4)] * 1.1));
+          }
+          // Puts a line into an element one word at a time, so words can come in and light up on their own.
+          // wt = real word timings from the lyrics file ({ at: [start of each word], end }), when it has them.
+          const stFill = (el, text, s, e, pace, wt) => {
+            el.__stRaw = text || ''; text = stClean(text || '');
+            if (el.__stT === text && el.__stS === s) return;
+            el.__stT = text; el.__stS = s; el.__stE = e; el.__stP = pace; el.__stWt = wt || null; el.textContent = ''; el.classList.add('st-l');
+            const ws = []; let i = 0;
+            text.split('\n').forEach((line, li) => {
+              if (li) el.appendChild(document.createElement('br'));
+              line.split(/\s+/).filter(Boolean).forEach((w, wi) => { if (wi) el.appendChild(document.createTextNode(' ')); const x = document.createElement('span'); x.className = 'st-w'; x.style.setProperty('--i', i++); x.textContent = w; x.dataset.w = w; el.appendChild(x); ws.push(x); });
+            });
+            let tot = 0; const len = ws.map(x => { const n = x.textContent.length + 1.5; tot += n; return n; });
+            el.__stW = ws;
+            if (wt && wt.at && wt.at.length === ws.length && ws.length) {   // the file says when each word starts
+              const L = wt.at[ws.length - 1];
+              el.__stAt = wt.at.slice(); el.__stWE = wt.end > L ? wt.end : Math.min(e > L ? e : L + 1, L + 0.25 + len[ws.length - 1] * (pace || 0.07));
+            } else {
+              // No word timings, so each word gets a share of the line by its length, at the song's own pace. Long gaps after a line are not sung.
+              const dur = Math.max(0.3, Math.min(e > s ? e - s : 3, pace > 0 ? 0.15 + tot * pace : 0.5 + ws.length * 0.42 + tot * 0.03)); let acc = 0;
+              el.__stAt = len.map(n => { const a = s + dur * acc / tot; acc += n; return a; }); el.__stWE = s + dur;
+            }
+            el.classList.remove('st-in'); void el.offsetWidth; if (text) el.classList.add('st-in');
+            stDirty = true;
+          };
+          const stMark = (el, now) => {
+            const ws = el && el.__stW, at = el && el.__stAt; if (!ws) return;
+            const hl = !!ST.hl && el.__stS >= 0; el.classList.toggle('st-hl', hl); if (!hl) return;
+            now += 0.09;                                             // a word takes a moment to light up, so start it slightly early
+            for (let i = 0; i < ws.length; i++) {
+              const w = ws[i], nx = i + 1 < ws.length ? at[i + 1] : el.__stE, a = now >= at[i], c = a && now < nx, st = c ? 2 : a ? 1 : 0;
+              if (w.__s !== st) { w.__s = st; w.classList.toggle('on', a); w.classList.toggle('now', c); }
+              if (c) {                                               // the word being sung fills in from left to right
+                const we = Math.min(nx, i + 1 < ws.length ? nx : el.__stWE), v = (we > at[i] ? Math.min(1, (now - at[i]) / (we - at[i])) : 1).toFixed(3);
+                if (w.__p !== v) { w.__p = v; w.style.setProperty('--p', v); }
+              }
+            }
+          };
+          // While a song plays with the highlight on, the words are redrawn every frame so the fill moves smoothly.
+          let stRaf = 0;
+          const stFrame = () => {
+            stRaf = 0; if (!ST.hl || aud.paused) return;
+            const now = aud.currentTime - stSync, lc = lyEl && lyEl.classList.contains('show') ? lyEl.querySelector('.ly-cur') : null;
+            if (!shown && !lc) return;
+            if (shown) stMark(sp, now - off);
+            if (lc) stMark(lc, now);
+            stRaf = requestAnimationFrame(stFrame);
+          };
+          // The lyric lines in the main page are drawn through here too, so both kinds of text look and behave the same.
+          window.__ppSongText = { line: stFill, pace: stPace };
+          // Where the box goes: always inside the screen, never over the song title. Text that is still too tall gets smaller.
+          const stLayout = () => {
+            const r = viz.getBoundingClientRect(); if (r.width < 20) return;
+            const vw = window.innerWidth, vh = window.innerHeight, m = 10;
+            let top, bot;
+            if (ST.pos === 'over') { top = r.top + r.height * 0.22; bot = r.top + r.height * 0.78; }
+            else if (ST.pos === 'above') { bot = r.top - 10; top = Math.max(56, bot - 150); if (bot - top < 44) { top = r.top + 4; bot = top + 120; } }   // clear of the CC button; no room above (landscape): top of the disc instead
+            else {
+              top = r.top + r.height * 0.875; bot = Math.min(vh - 8, r.bottom + 70);
+              const np = document.getElementById('now-playing'), nr = np && np.offsetParent ? np.getBoundingClientRect() : null;
+              if (nr && nr.top > r.top + r.height / 2) bot = Math.min(bot, nr.top - 4);
+              if (bot - top < 44) top = bot - 44;                    // very little room under the disc: let it ride up over the edge of it
+            }
+            const key = [Math.round(r.left), Math.round(top), Math.round(bot), vw, ST.size].join(',');
+            if (key !== stKey) { stKey = key; stDirty = true; wrap.style.left = (m - r.left) + 'px'; wrap.style.width = (vw - 2 * m) + 'px'; wrap.style.top = (top - r.top) + 'px'; wrap.style.height = (bot - top) + 'px'; }
+            if (!stDirty) return; stDirty = false;
+            const room = bot - top, need = () => { let h = 0, n = 0; for (const ch of wrap.children) { if (ch.offsetHeight) { h += ch.offsetHeight; n++; } } return h + Math.max(0, n - 1) * 4; };
+            let k = 1; wrap.classList.remove('tight'); wrap.style.setProperty('--st-k', k);
+            while (need() > room && k > 0.72) { k -= 0.07; wrap.style.setProperty('--st-k', k.toFixed(2)); }
+            if (need() > room) { wrap.classList.add('tight'); k = 1; wrap.style.setProperty('--st-k', k); while (need() > room && k > 0.5) { k -= 0.07; wrap.style.setProperty('--st-k', k.toFixed(2)); } }
+          };
+          const tick = () => {
+            const t = cur(), a = t && t.kind !== 'video';
+            btn.style.display = a ? 'block' : 'none';
+            if (!a) { box.style.display = 'none'; lastId = null; return; }
+            if (keyOf(t) !== lastId) { loadCues(); status(); stSync = +syncMap()[t.dbId] || 0; stSyncUi(); }
+            const now = aud.currentTime - stSync, n = now - off; let txt = '', s0 = -1, e0 = -1;
+            if (isOn() && cues.length) for (const c of cues) { if (c.s > n) break; if (n < c.e) { txt += (txt ? '\n' : '') + c.text; if (s0 < 0) s0 = c.s; e0 = Math.max(e0, c.e); } }
+            // Whisper and online lyrics save the same words twice (synced lyrics and subtitles). Only one copy shows: the lyrics,
+            // which can carry each word's real time for the sing-along highlight; the CC subtitles show when there are no lyrics.
+            const lyOn = !!(lyEl && lyEl.classList.contains('show'));
+            if (lyOn) txt = '';
+            if (!txt && preview && !lyOn) { txt = 'This is how the words will look'; s0 = n - (n % 4); e0 = s0 + 4; }
+            if (txt !== shown) { shown = txt; stFill(sp, txt, s0, e0, cuePace); }
+            box.style.display = txt && sp.__stT ? 'block' : 'none';
+            stMark(sp, n);
+            if (lyOn) stMark(lyEl.querySelector('.ly-cur'), now);
+            if (ST.beat) { let lv = -1; try { lv = aud.paused ? 0 : window.__ppBassLevel(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } wrap.style.setProperty('--st-beat', (1 + Math.min(0.14, Math.max(0, lv - 0.02) * 0.7)).toFixed(3)); }
+            if (txt || lyOn) stLayout();
+            if (ST.hl && !aud.paused && !stRaf && (txt || lyOn)) stRaf = requestAnimationFrame(stFrame);
+          };
+          // 60 ms keeps the words in step while a song plays. Paused, nothing moves, so it checks only every ~0.5 s,
+          // and with the screen off (music playing in the background) there is nothing to draw at all.
+          let tickN = 0;
+          setInterval(() => { if (document.hidden) return; if (aud.paused && !preview && (++tickN % 8)) return; tick(); }, 60);
+          window.addEventListener('resize', () => { stKey = ''; });
+          // ----- the controls -----
+          const ui = panel.querySelector('#ppv-stui');
+          const row = (label, key, opts) => '<div class="st-lab"><span>' + label + '</span></div><div class="st-row" data-k="' + key + '">' + opts.map(o => '<button data-v="' + o[0] + '"' + (o[2] ? ' style="' + o[2] + '"' : '') + '>' + o[1] + '</button>').join('') + '</div>';
+          ui.innerHTML = '<hr style="border:0;border-top:1px solid var(--line,#444);margin:10px 0"><b>Look and effects</b><div class="ppv-note">For captions and lyrics on songs. The words always stay inside the screen.</div>' +
+            '<div class="st-lab"><span>Timing for this song</span><span id="st-sync-v">0.0s</span></div><div class="st-row" id="st-sync"><button data-d="-0.5">−0.5</button><button data-d="-0.1">−0.1</button><button data-d="0.1">+0.1</button><button data-d="0.5">+0.5</button><button data-d="0">Reset</button></div>' +
+            row('Where', 'pos', [['below', 'Under the disc'], ['over', 'On the disc'], ['above', 'Above the disc']]) +
+            '<div class="st-lab"><span>Text size</span><span id="st-size-v"></span></div><input type="range" id="st-size" min="60" max="220" step="5">' +
+            row('Style', 'look', [['outline', 'Outline'], ['box', 'Box'], ['cinema', 'Cinema'], ['neon', 'Neon glow'], ['plain', 'Plain']]) +
+            '<div class="st-lab"><span>Background</span><span id="st-bg-v"></span></div><input type="range" id="st-bg" min="0" max="100" step="5">' +
+            '<div class="st-lab"><span>Color</span></div><div class="st-row" data-k="color">' + [['#ffffff', 'White'], ['#ffe14d', 'Yellow'], ['#6ee7d0', 'Aqua'], ['#7CFC7C', 'Green'], ['#7db8ff', 'Blue'], ['#ff8ad8', 'Pink'], ['#ffa94d', 'Orange'], ['#ff6b6b', 'Red']].map(o => '<button data-v="' + o[0] + '" style="color:' + o[0] + '">' + o[1] + '</button>').join('') + '<button data-v="accent">Theme</button><button data-v="rainbow">Rainbow</button><input type="color" id="st-col" value="#ffffff" title="Custom color"></div>' +
+            row('Font', 'font', [['default', 'Sans'], ['serif', 'Serif', 'font-family:Georgia,serif'], ['mono', 'Mono', "font-family:'Courier New',monospace"], ['arial', 'Arial', 'font-family:Arial'], ['condensed', 'Narrow', "font-family:'Arial Narrow',sans-serif-condensed"], ['impact', 'Impact', 'font-family:Impact'], ['casual', 'Casual', "font-family:'Comic Sans MS',cursive"]]) +
+            row('How a new line comes in', 'fx', [['none', 'None'], ['fade', 'Fade'], ['pop', 'Pop'], ['slide', 'Slide up'], ['blur', 'Focus'], ['flip', 'Flip'], ['words', 'Word by word'], ['wave', 'Wave']]) +
+            '<div class="st-lab"><span>Extras</span></div><div class="st-row" id="st-tg"><button data-t="hl" title="Words light up as they are sung">Sing-along highlight</button><button data-t="beat" title="The words pulse with the bass">Pulse with the beat</button><button data-t="next" title="Shows the next lyric line under the current one">Next lyric line</button><button data-t="bold">Bold</button><button data-t="caps">ALL CAPS</button><button data-t="sdh" title="Hides lines like [music], (sighs) and music notes">Hide [sounds]</button></div>';
+          const stPaint = () => {
+            ui.querySelectorAll('.st-row[data-k]').forEach(r => r.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(ST[r.dataset.k]) === b.dataset.v)));
+            ui.querySelectorAll('#st-tg button').forEach(b => b.classList.toggle('on', !!ST[b.dataset.t]));
+            ui.querySelector('#st-size').value = ST.size; ui.querySelector('#st-size-v').textContent = ST.size + '%';
+            ui.querySelector('#st-bg').value = ST.bg; ui.querySelector('#st-bg-v').textContent = ST.bg + '%';
+            if (/^#[0-9a-f]{6}$/i.test(ST.color)) ui.querySelector('#st-col').value = ST.color;
+          };
+          const stSetSync = v => { const t = cur(); if (!t) return; stSync = Math.max(-30, Math.min(30, +(+v).toFixed(2))); const m = syncMap(); if (stSync) m[t.dbId] = stSync; else delete m[t.dbId]; ls('ppvSongSync', JSON.stringify(m)); stSyncUi(); tick(); };
+          if (window.ppPresetRow) window.ppPresetRow({ after: ui.querySelector('#st-sync'), key: 'ppPresetSongSync', unit: 's', def: 0.3, min: -30, max: 30, step: 0.1,
+            title: 'Timing preset for songs (seconds)', get: () => stSync, set: stSetSync, enabled: () => !!cur() });
+          function stSyncUi() { const v = ui.querySelector('#st-sync-v'); if (v) v.textContent = (stSync > 0 ? '+' : '') + stSync.toFixed(1) + 's' + (stSync > 0 ? ' later' : stSync < 0 ? ' earlier' : ''); }
+          // Any change replays the line, so the effect that was just picked is seen straight away.
+          const stChanged = () => { ls('ppvSongText', JSON.stringify(ST)); stApply(); stPaint(); shown = null; sp.__stT = null; const lc = lyEl && lyEl.querySelector('.ly-cur'); if (lc && lc.__stT) { const tx = lc.__stRaw != null ? lc.__stRaw : lc.__stT; lc.__stT = null; stFill(lc, tx, lc.__stS, lc.__stE, lc.__stP, lc.__stWt); } tick(); };
+          ui.addEventListener('click', e => {
+            const b = e.target.closest('button'); if (!b) return;
+            const r = b.parentElement;
+            if (r.id === 'st-sync') { const t = cur(); if (!t) return; const d = +b.dataset.d; stSync = d === 0 ? 0 : Math.max(-30, Math.min(30, +(stSync + d).toFixed(2))); const m = syncMap(); if (stSync) m[t.dbId] = stSync; else delete m[t.dbId]; ls('ppvSongSync', JSON.stringify(m)); stSyncUi(); tick(); return; }
+            if (r.id === 'st-tg') { ST[b.dataset.t] = ST[b.dataset.t] ? 0 : 1; stChanged(); return; }
+            if (r.dataset.k) { ST[r.dataset.k] = b.dataset.v; if (r.dataset.k === 'look') ST.bg = ST_LOOKS[b.dataset.v].bg; stChanged(); }
+          });
+          ui.querySelector('#st-size').addEventListener('input', e => { ST.size = +e.target.value; stChanged(); });
+          ui.querySelector('#st-bg').addEventListener('input', e => { ST.bg = +e.target.value; stChanged(); });
+          ui.querySelector('#st-col').addEventListener('input', e => { ST.color = e.target.value; stChanged(); });
+          new MutationObserver(() => { preview = panel.classList.contains('open'); shown = null; tick(); }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+          stApply(); stPaint(); stSyncUi();
+          try { const a = A(); if (a && a.setSubtitles && !a.__ppvW) { const o = a.setSubtitles; a.setSubtitles = function () { const r = o.apply(this, arguments); lastId = null; return r; }; a.__ppvW = 1; } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+          btn.onclick = () => { loadCues(); status(); placeWhisper('aud'); panel.classList.toggle('open'); };
+          $('#ppv-apx').onclick = () => panel.classList.remove('open');
+          $('#ppv-aton').onclick = () => { setOn(!isOn()); status(); tick(); };
+          // the same words are often saved twice (subtitles and synced lyrics): Remove takes both away
+          $('#ppv-arm').onclick = () => { const t = cur(); if (!t) return; try { const all = JSON.parse(localStorage.getItem('playerSubtitles') || '{}'); delete all[t.dbId]; localStorage.setItem('playerSubtitles', JSON.stringify(all)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } try { const L = window.__ppLyrics; if (L && L.has(t.dbId)) L.set(t.dbId, ''); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } loadCues(); status(); tick(); };
+          $('#ppv-ald').onclick = () => $('#ppv-af').click();
+          $('#ppv-af').onchange = async e => {
+            const f = e.target.files[0]; e.target.value = ''; const t = cur(); if (!f || !t) return;
+            const txt = (await f.text()).replace(/^﻿/, ''); let r = /-->/.test(txt) ? parseSrtText(txt) : parseLrcText(txt);
+            rows = r; const c = toCues(); if (!c.length) { status(); $('#ppv-ast').textContent = 'Could not read any subtitles from that file.'; return; }
+            A().setSubtitles(t.dbId, c, f.name); ls('ppvAudSub', '1'); loadCues(); status(); tick();
+          };
+        }
+      }
+    }
     refreshCount();
     // the list is always visible now, so keep it current as the library loads and tags change
     let lastSig = '';
@@ -1513,19 +4278,23 @@
         { id: 'savedmenu', label: 'Tagged tracks menu', key: 'ppvShowSaved', def: 1, ui: 1 },
         { id: 'savedvid', label: 'Tagged videos in that menu', key: 'ppvShowVid', def: 1, ui: 1 },
         { id: 'lyrics', label: 'Lyrics & subtitles (Whisper) menu', key: 'ppvShowLyr', def: 1, ui: 1 },
-        { g: 'Automatic', id: 'live', label: 'Live smart playlists (follow your tags)', key: 'ppvLive', def: 1, box: 'ppv-live' },
+        { g: 'Automatic', id: 'live', label: 'Live smart playlists (follow tags)', key: 'ppvLive', def: 1, box: 'ppv-live' },
         { id: 'mixes', label: 'Auto mixes: For You, Ones You May Like, Your Pattern', key: 'ppvLiveMix', def: 1, box: 'ppv-lmix' },
         { id: 'surp', label: 'Surprise playlists', key: 'ppvSurp', def: 0, box: 'ppv-surp' },
         { id: 'bg', label: 'Background tagging while I am away', key: 'ppvBg', def: 0, box: 'ppv-bg' },
+        { id: 'lyfetch', label: 'Fetch lyrics for my songs and music videos in the background, for offline use (sends song titles to lrclib.net and lyrics.ovh)', key: 'ppvLyAuto', def: 0 },
         { id: 'aeq', label: 'Auto-EQ when tagging', key: 'ppvAutoEq', def: 0, box: 'ppv-aeq' },
         { id: 'askip', label: 'Skip long intros', key: 'ppvAutoSkip', def: 0, box: 'ppv-askip' },
-        { g: 'Bloop', id: 'mascot', label: 'Bloop, the mascot', box: 'ppv-mas', def: 1, get: () => h.mas.isOn() },
-        { id: 'assist', label: 'Bloop assistant button', box: 'ppv-chat-on', def: 0, get: () => h.mas.chat.isOn() },
+        { g: 'Bloopy', id: 'mascot', label: 'Bloopy, the mascot', box: 'ppv-mas', def: 1, get: () => h.mas.isOn() },
+        { id: 'blbub', label: 'Bloopy speech bubbles over the app', key: 'ppvBlBubbles', def: 0, box: 'ppv-bub' },
+        { id: 'blhdr', label: 'Bloopy headers at the top of AI sections', key: 'ppvBlHeaders', def: 0, box: 'ppv-hdr' },
+        { id: 'assist', label: 'Bloopy assistant button', box: 'ppv-chat-on', def: 0, get: () => h.mas.chat.isOn() },
         { id: 'mini', label: 'Smarter understanding (MiniLM)', box: 'ppv-mini-on', def: 0, get: () => h.mas.voice.get('ppvMini') },
-        { id: 'speak', label: 'Bloop speaks (Kokoro)', box: 'ppv-voice-on', def: 0, get: () => h.mas.voice.get('ppvVoice') },
-        { id: 'mic', label: 'Talk to Bloop (Moonshine)', box: 'ppv-mic-on', def: 0, get: () => h.mas.voice.get('ppvMic') },
+        { id: 'speak', label: 'Bloopy speaks (Kokoro)', box: 'ppv-voice-on', def: 0, get: () => h.mas.voice.get('ppvVoice') },
+        { id: 'mic', label: 'Talk to Bloopy (Moonshine)', box: 'ppv-mic-on', def: 0, get: () => h.mas.voice.get('ppvMic') },
         { id: 'wake', label: 'Wake word', box: 'ppv-wake-on', def: 0, get: () => h.mas.voice.get('ppvWake') }
       ];
+      const BL_FEATS = ['mascot', 'blbub', 'blhdr', 'assist', 'mini', 'speak', 'mic', 'wake'];
       const isOn = f => { if (f.get) return !!f.get(); const v = ls(f.key); return v == null ? f.def === 1 : v === '1'; };
       const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
       const F = id => FEATS.find(f => f.id === id), on = id => isOn(F(id));
@@ -1534,7 +4303,7 @@
         const hr = whHost.previousElementSibling; if (hr && hr.tagName === 'HR') hr.style.display = on('lyrics') ? '' : 'none';   // the divider the captions menu got
         const sf = $('#ppv-sf'), vo = sf && sf.querySelector('option[value="video"]'), vid = on('savedvid');
         if (vo) { vo.hidden = !vid; vo.disabled = !vid; if (!vid && sf.value === 'video') sf.value = 'all'; }
-        try { renderSaved(); } catch (e) {}
+        try { renderSaved(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       }
       const setF = (f, v) => {
         if (f.key) ls(f.key, v ? '1' : '0');
@@ -1544,34 +4313,36 @@
       const box = document.createElement('div'); box.className = 'ppv-scope'; box.id = 'ppv-smartset';
       box.innerHTML = '<details open><summary>Smart features</summary>' +
         '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-fs-all"> <b>All smart features</b></label>' +
-        '<div class="ppv-note">Off hides the smart menus and stops the automatic playlists and background work. Your tags, playlists and listening history are kept. Turning it back on restores what you had.</div>' +
-        FEATS.map(f => (f.g ? '<div style="margin-top:8px"><b>' + f.g + '</b></div>' : '') + '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-fs-' + f.id + '"> ' + f.label + '</label>').join('') + '</details>';
+        '<div class="ppv-note">Off hides the smart menus and stops the automatic playlists and background work. Tags, playlists and listening history are kept. Turning it back on restores everything.</div>' +
+        FEATS.map(f => { const bl = BL_FEATS.includes(f.id) ? ' ppv-bl-set' : '';   // Bloopy's rows: hidden in Focus mode
+          return (f.g ? '<div class="' + bl + '" style="margin-top:8px"><b>' + f.g + '</b></div>' : '') + '<label class="ppv-c' + bl + '" style="display:block"><input type="checkbox" id="ppv-fs-' + f.id + '"> ' + f.label + '</label>'; }).join('') + '</details>';
       const syncBoxes = () => { FEATS.forEach(f => { const el = box.querySelector('#ppv-fs-' + f.id); if (el) el.checked = isOn(f); }); box.querySelector('#ppv-fs-all').checked = FEATS.some(isOn); };
       FEATS.forEach(f => { box.querySelector('#ppv-fs-' + f.id).onchange = e => { setF(f, e.target.checked); syncBoxes(); }; });
       box.querySelector('#ppv-fs-all').onchange = e => {
         if (!e.target.checked) { const snap = {}; FEATS.forEach(f => { snap[f.id] = isOn(f); }); if (Object.values(snap).some(Boolean)) ls('ppvSmartSnap', JSON.stringify(snap)); FEATS.forEach(f => setF(f, false)); }
-        else { let snap = null; try { snap = JSON.parse(ls('ppvSmartSnap')); } catch (er) {} if (snap && !Object.values(snap).some(Boolean)) snap = null; FEATS.forEach(f => setF(f, snap ? !!snap[f.id] : f.def === 1)); }
+        else { let snap = null; try { snap = JSON.parse(ls('ppvSmartSnap')); } catch(er){ if (typeof ppCaught === "function") ppCaught(er); } if (snap && !Object.values(snap).some(Boolean)) snap = null; FEATS.forEach(f => setF(f, snap ? !!snap[f.id] : f.def === 1)); }
         syncBoxes();
       };
       // keep these in step when the same switch is changed in its own panel
-      document.addEventListener('change', e => { if (e.target && /^ppv-(live|lmix|surp|bg|aeq|askip|mas|chat-on|mini-on|voice-on|mic-on|wake-on)$/.test(e.target.id)) syncBoxes(); });
+      document.addEventListener('change', e => { if (e.target && /^ppv-(live|lmix|surp|bg|aeq|askip|mas|bub|hdr|chat-on|mini-on|voice-on|mic-on|wake-on)$/.test(e.target.id)) syncBoxes(); });
       (document.getElementById('sidebar-pane-settings') || p).appendChild(box);
       if (sb) sb.addEventListener('click', () => setTimeout(applyShow, 0));
       if (eb) eb.addEventListener('click', () => setTimeout(applyShow, 0));
-      syncBoxes(); applyShow();
+      syncBoxes(); applyShow(); lyStart(() => on('lyfetch'));
     }
   }
 
   // ---------- UI ----------
-  // ---------- Bloop, the little ball mascot ----------
+  // ---------- Bloopy, the little ball mascot ----------
   // Lives in the Stem separator panel (all the AI features). Reacts to the panel's own status messages, so every
   // feature (splitting, tagging, playlists, Whisper) gets it for free. Pops up as a small floating bubble when a
-  // task finishes while the panel is closed. Can be switched off with the "Show Bloop" checkbox.
+  // task finishes while the panel is closed. Can be switched off with the "Show Bloopy" checkbox.
   function mascot(panel) {
     let uid = 0, mood = 'idle', key = '', tmr = null, ftmr = null, greeted = false;
     const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-    const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+    const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     let on = lsGet('ppvMascot') !== '0';
+    const bubblesOn = () => lsGet('ppvBlBubbles') === '1';             // speech bubbles that pop up over the app (off by default)
     const pick = a => a[Math.floor(Math.random() * a.length)];
     const css = document.createElement('style');
     css.textContent = `
@@ -1739,7 +4510,7 @@
       return `<svg class="bl-ic"${s ? ` data-skin="${k}"` : ''} viewBox="-8 -14 80 80" width="22" height="22" aria-hidden="true" style="vertical-align:-6px;margin-right:5px;overflow:visible"><defs>${BL_DEFS(g)}<radialGradient id="${g}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient></defs>${s ? blSkinOne(k, 'rear', g) : ''}<circle cx="32" cy="34" r="24" style="fill:${s ? s.color : 'var(--accent,#7c5cff)'}"/>${s ? blSkinOne(k, 'body', g) : ''}<circle cx="32" cy="34" r="24" fill="url(#${g})"/><circle cx="24" cy="31" r="5.5" fill="#fff" stroke="#b4b8c6" stroke-width=".8"/><circle cx="40" cy="31" r="5.5" fill="#fff" stroke="#b4b8c6" stroke-width=".8"/><circle cx="25" cy="32" r="2.6" fill="#1a1a22"/><circle cx="41" cy="32" r="2.6" fill="#1a1a22"/><path d="M25 43q7 6 14 0" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linecap="round"/>${s ? blSkinOne(k, 'front', g) : ''}</svg>`; };
     // ---------- Skin voices: each skin has its own lines for greetings, pokes, status, results and command replies. A skin line is used about two times in three; the normal lines fill the rest. ----------
     const BL_SKIN_SAY = {
-      orange: { open: ["Hey there! It's me, Bloopy, fresh and juicy!", "Zest in time! Bloop here. What are we listening to?"], ready: ["Squeezed and ready.", "Peeled and ready when you are."],
+      orange: { open: ["Hey there! It's me, Bloopy, fresh and juicy!", "Zest in time! Bloopy here. What are we listening to?"], ready: ["Squeezed and ready.", "Peeled and ready when you are."],
         tap: ["Careful, I am ripe!", "Hey, no squeezing!", "That was a citrus-y poke."], poke: ["Hey, watch the peel!", "Squeeze me and you get juice. Do you want juice?", "I am full of vitamin C and opinions.", "Okay, okay, I am pith-ed off. Just kidding!"],
         dizzy: ["I am so dizzy I might turn into juice!", "Stop shaking me, I will make a smoothie out of myself!"], idle: ["Just hanging on the tree.", "Soaking up some sun.", "Orange you glad I am here?"],
         click: ["Click! Zesty.", "Nice press. Very fresh.", "Squeeze, click, done."], start: ["Zest in time!", "Let's squeeze this out!"], busy: ["Still squeezing, almost there!", "Juicing the data, one sec!"],
@@ -1747,7 +4518,7 @@
         sep: ["Peeling the song apart, segment by segment.", "Separating the segments gently."], tag: ["Tasting the song for flavour notes...", "Checking if this one is sweet or sour."],
         wh: ["Writing every word, nice and juicy.", "Catching every word like a drop of juice."], gen: ["Working on it, still juicy.", "Rolling along, round and orange."], panel: ["Stems menu! A song is just segments, like me.", "Pick your segments, I mean stems."],
         t: { play: ["Juicy beats incoming."], skip: ["Next slice!"], volume: ["Turned up the zest."], shuffle: ["Shaken, not squeezed."], playlist: ["A whole basket of songs!"], tag: ["Tasted it. Notes of bass and sunshine."], split: ["Peeled apart, segment by segment."], lyrics: ["Every word, fresh squeezed."], sleep: ["Sleep tight, I will keep the vitamins."], eq: ["Sweet tuning."], missing: ["Not in this orchard."] } },
-      pumpkin: { open: ["Boo! Just kidding, it's Bloopy. Ask me anything!", "Happy spooky season! Bloop here. What are we playing?"], ready: ["Carved and ready.", "Candle is lit. Ready when you are."],
+      pumpkin: { open: ["Boo! Just kidding, it's Bloopy. Ask me anything!", "Happy spooky season! Bloopy here. What are we playing?"], ready: ["Carved and ready.", "Candle is lit. Ready when you are."],
         tap: ["Boo!", "Careful, I have a candle inside!", "Do not carve me!"], poke: ["Hey! I am not a pie yet.", "Poking a pumpkin is bad luck. Probably.", "My seeds are rattling!", "Spooky, but I am a friendly one."],
         dizzy: ["My seeds are all shaken up!", "I am going to go full pumpkin spice!"], idle: ["Just sitting on the porch.", "Waiting for the sun to go down.", "Autumn leaves are my favourite."],
         click: ["Click! Spooky.", "Nice press. Very festive.", "A pumpkin approves."], start: ["Let us carve this one out!", "Spooky time!"], busy: ["Still carving, almost there!", "Scooping out the data, one sec!"],
@@ -1755,7 +4526,7 @@
         sep: ["Carving the song into pieces.", "Scooping the vocals out gently."], tag: ["Sniffing out the spooky vibes...", "Listening for ghosts in the track."],
         wh: ["Writing every word by candlelight.", "Whispering the lyrics, very spooky."], gen: ["Carving away.", "Rolling along, orange and round."], panel: ["Stems menu! Carving time.", "Pick which parts to carve out."],
         t: { play: ["Spooky tunes on!"], skip: ["Next, before the candle burns out."], volume: ["Louder, so the ghosts can hear."], shuffle: ["Shuffled like a haunted deck."], playlist: ["A whole patch of songs!"], tag: ["Vibes: spooky and sweet."], split: ["Carved it right down the middle."], lyrics: ["Written in candlelight."], sleep: ["Sleep tight, ghosts included."], eq: ["Bass like a creaky door. Perfect."], missing: ["Not in this pumpkin patch."] } },
-      basketball: { open: ["Hey there! It's Bloopy, ready to hoop!", "Tip off! Bloop here. What are we listening to?"], ready: ["Warmed up and ready.", "On the court and ready when you are."],
+      basketball: { open: ["Hey there! It's Bloopy, ready to hoop!", "Tip off! Bloopy here. What are we listening to?"], ready: ["Warmed up and ready.", "On the court and ready when you are."],
         tap: ["Do not dribble me!", "Boing! That was a bounce pass!", "Swish!"], poke: ["Hey! I am not a basketball. Okay, I am a basketball.", "Dribble me again and I will foul you.", "Bounce, bounce, bounce.", "That was a good pass."],
         dizzy: ["Too much dribbling! I am dizzy!", "Time out, time out!"], idle: ["Just bouncing on the court.", "Waiting for someone to pass me the song.", "Practising my free throws in my head."],
         click: ["Click! Nothing but net.", "Nice press. Two points.", "Buzzer beater!"], start: ["Tip off!", "Game time!"], busy: ["Still on the court, almost there!", "Dribbling through the data, one sec!"],
@@ -1763,7 +4534,7 @@
         sep: ["Passing the stems out to the team.", "Splitting the song like a fast break."], tag: ["Scouting the track...", "Reading the play, tempo and key."],
         wh: ["Taking notes on every word, coach.", "Calling out every lyric from the bench."], gen: ["Working the ball up the court.", "Dribbling along."], panel: ["Stems menu! Pick your starting five.", "Choose which stems make the team."],
         t: { play: ["Game on!"], skip: ["Next play!"], volume: ["Crowd noise up!"], shuffle: ["Shuffled like a new rotation."], playlist: ["A whole roster of songs!"], tag: ["Scouting report is in."], split: ["Passed right through the defense."], lyrics: ["Every word on the scoreboard."], sleep: ["Final buzzer coming up."], eq: ["Tuned like a good bounce."], missing: ["Not on the roster."] } },
-      soccer: { open: ["Hey there! It's Bloopy, ready to kick off!", "Kick off! Bloop here. What are we playing?"], ready: ["On the pitch and ready.", "Boots laced. Ready when you are."],
+      soccer: { open: ["Hey there! It's Bloopy, ready to kick off!", "Kick off! Bloopy here. What are we playing?"], ready: ["On the pitch and ready.", "Boots laced. Ready when you are."],
         tap: ["Please do not kick me!", "Goal!", "Boing! That was a header!"], poke: ["Hey! Only the keeper can touch me. Wait, no.", "Do not kick me, kick the song!", "Offside!", "That was a clean tackle."],
         dizzy: ["I am spinning like a free kick!", "Referee, I need a break!"], idle: ["Just rolling on the pitch.", "Waiting for the next kick.", "Practising my bend."],
         click: ["Click! Goal!", "Nice press. Top corner.", "And the crowd goes wild!"], start: ["Kick off!", "Let's play!"], busy: ["Still on the ball, almost there!", "Dribbling past the data, one sec!"],
@@ -1771,7 +4542,7 @@
         sep: ["Passing each stem to its own player.", "Splitting the song into positions."], tag: ["Studying the match...", "Checking the tempo, like the clock on the pitch."],
         wh: ["Taking notes on every word, like a commentator.", "Calling every lyric live."], gen: ["Working on the ball.", "Rolling down the pitch."], panel: ["Stems menu! Pick your formation.", "Choose who plays which position."],
         t: { play: ["Kick off the music!"], skip: ["Substitution!"], volume: ["Crowd noise up!"], shuffle: ["Shuffled the line-up."], playlist: ["A whole squad of songs!"], tag: ["Scouting report is in."], split: ["Split like a through ball."], lyrics: ["Every word, like live commentary."], sleep: ["Full time soon."], eq: ["Tuned for the stadium."], missing: ["Not in the squad."] } },
-      earth: { open: ["Hello, world! It's me, Bloopy!", "Greetings from orbit! Bloop here. What are we listening to?"], ready: ["Orbiting and ready.", "Spinning and ready when you are."],
+      earth: { open: ["Hello, world! It's me, Bloopy!", "Greetings from orbit! Bloopy here. What are we listening to?"], ready: ["Orbiting and ready.", "Spinning and ready when you are."],
         tap: ["Hello, world!", "You just caused a small earthquake!", "Spin me again!"], poke: ["Careful, you poked a continent.", "I was in the middle of an orbit!", "That is how tides start.", "Poking Earth. Bold."],
         dizzy: ["I rotate once a day, not once a second!", "Too fast! The seasons are all mixed up!"], idle: ["Just orbiting the sun.", "Spinning slowly, nothing to see.", "Thinking about oceans."],
         click: ["Click! A tiny tremor.", "Nice press. Felt it in Asia.", "That moved the plates."], start: ["Here we go around the sun!", "Spinning up!"], busy: ["Still in orbit, almost there!", "Crossing time zones, one sec!"],
@@ -1779,7 +4550,7 @@
         sep: ["Splitting the song into continents.", "Separating the oceans from the land."], tag: ["Scanning the track from orbit...", "Reading the tempo like a weather map."],
         wh: ["Charting every word like a map.", "Mapping out the lyrics."], gen: ["Working on it, still spinning.", "Rolling around the sun."], panel: ["Stems menu! Pick your continents.", "Choose which parts of the planet to keep."],
         t: { play: ["Music across the globe!"], skip: ["Next stop on the world tour!"], volume: ["Loud enough to hear from space."], shuffle: ["Shuffled across time zones."], playlist: ["A whole atlas of songs!"], tag: ["Mapped out the vibes."], split: ["Split like tectonic plates."], lyrics: ["Every word on the map."], sleep: ["Night is falling, sleep well."], eq: ["Tuned to the planet."], missing: ["Not on any map."] } },
-      cat: { open: ["Meow! It's me, Bloopy. Ask me anything!", "Hello, human. Bloop here. What are we listening to?"], ready: ["Stretched and ready.", "Awake from my nap and ready."],
+      cat: { open: ["Meow! It's me, Bloopy. Ask me anything!", "Hello, human. Bloopy here. What are we listening to?"], ready: ["Stretched and ready.", "Awake from my nap and ready."],
         tap: ["Meow!", "Purr... I mean, hello.", "I will knock something off the table now."], poke: ["Hey! I am not a toy. Well, maybe a little.", "You may pet me. Once.", "I was napping!", "Do that again and I will sit on your keyboard."],
         dizzy: ["The zoomies hit me!", "I am dizzy, and I blame the dog."], idle: ["Just napping in a sunbeam.", "Staring at nothing. Very important work.", "Plotting something small and mischievous."],
         click: ["Click! Meow.", "Nice press. I approve.", "Paws up for that one."], start: ["On it, human!", "Pounce!"], busy: ["Still hunting, almost there!", "Chasing the data, one sec!"],
@@ -1787,7 +4558,7 @@
         sep: ["Clawing the song apart, gently.", "Pulling the vocals out, like a ball of yarn."], tag: ["Sniffing out the vibe...", "Whiskers twitching, reading the tempo."],
         wh: ["Writing every word with my paw.", "Listening with both ears, very closely."], gen: ["Working on it, with my tail up.", "Stalking along."], panel: ["Stems menu! Pick your catnip.", "Choose which stems to chase."],
         t: { play: ["Purr-fect tune."], skip: ["Next, I got bored."], volume: ["Loud enough to wake me from a nap."], shuffle: ["Shuffled like a cat in a box."], playlist: ["A whole cat tree of songs!"], tag: ["Sniffed it. Smells like bass."], split: ["Clawed right through it."], lyrics: ["Wrote it all down with my paw."], sleep: ["Time for a cat nap."], eq: ["Tuned like a purr."], missing: ["Not in the box, I checked."] } },
-      bunny: { open: ["Hop hop! It's me, Bloopy!", "Hi hi! Bloop here. What are we listening to?"], ready: ["Hopped over and ready.", "Ears up and ready."],
+      bunny: { open: ["Hop hop! It's me, Bloopy!", "Hi hi! Bloopy here. What are we listening to?"], ready: ["Hopped over and ready.", "Ears up and ready."],
         tap: ["Hop hop!", "My nose twitched!", "Boing boing!"], poke: ["Hey! My ears are sensitive!", "Careful, I will thump my foot.", "Do not squish the fluff!", "I did a binky!"],
         dizzy: ["I am all hopped out!", "My ears are spinning!"], idle: ["Just nibbling a carrot.", "Twitching my nose at nothing.", "Dreaming of clover."],
         click: ["Click! Hop.", "Nice press. Fluffy.", "My ears perked up."], start: ["Hop to it!", "Hopping in!"], busy: ["Still hopping, almost there!", "Digging a burrow through the data, one sec!"],
@@ -1795,7 +4566,7 @@
         sep: ["Splitting the song, hop by hop.", "Separating the stems carefully, with soft paws."], tag: ["Twitching my nose to find the vibe...", "Listening with my big ears."],
         wh: ["Writing every word with my paw.", "My long ears caught every word."], gen: ["Working on it, hop by hop.", "Bouncing along."], panel: ["Stems menu! Pick your carrots.", "Choose which stems to nibble."],
         t: { play: ["Hoppy tunes!"], skip: ["Hop, next song!"], volume: ["Loud enough for long ears."], shuffle: ["Shuffled like a hop in the grass."], playlist: ["A whole garden of songs!"], tag: ["My nose says it is a good one."], split: ["Split with a hop and a skip."], lyrics: ["Every word, in my burrow notes."], sleep: ["Sleep tight in the burrow."], eq: ["Fine tuned for big ears."], missing: ["Not in this burrow."] } },
-      panda: { open: ["Hey there! It's Bloopy. I was just having a snack.", "Hello! Bloop here. What are we listening to? I have time."], ready: ["Fed and ready.", "Bamboo break over. Ready."],
+      panda: { open: ["Hey there! It's Bloopy. I was just having a snack.", "Hello! Bloopy here. What are we listening to? I have time."], ready: ["Fed and ready.", "Bamboo break over. Ready."],
         tap: ["Mmm, snack time?", "I was napping!", "Roll with it!"], poke: ["Hey! I am not a pillow.", "Careful, I am fluffy and sleepy.", "I rolled over. Bye.", "You poked a panda. Bold."],
         dizzy: ["I rolled too much!", "I am so dizzy I forgot my bamboo!"], idle: ["Just chewing bamboo.", "Taking a nap, with my eyes open.", "Thinking about the next snack."],
         click: ["Click! Bamboo.", "Nice press. Very chill.", "A panda approves."], start: ["Okay, after this snack.", "Rolling in!"], busy: ["Still chewing on it, almost there!", "Slow and steady, one sec!"],
@@ -1803,7 +4574,7 @@
         sep: ["Splitting the song, like a bamboo stalk.", "Peeling the stems apart, one leaf at a time."], tag: ["Chewing on the vibes...", "Slowly figuring out the tempo."],
         wh: ["Writing each word, one bite at a time.", "Listening to every word, slowly."], gen: ["Working on it, slowly.", "Rolling along."], panel: ["Stems menu! Pick your bamboo.", "Choose which stems to chew."],
         t: { play: ["Chill tunes on."], skip: ["Next, after a stretch."], volume: ["A little louder, for the bamboo grove."], shuffle: ["Rolled the order around."], playlist: ["A whole bamboo forest of songs!"], tag: ["Chewed on it. Tastes good."], split: ["Peeled like a bamboo shoot."], lyrics: ["Every word, one slow bite at a time."], sleep: ["Nap time, finally."], eq: ["Nice and mellow."], missing: ["Not in this bamboo forest."] } },
-      penguin: { open: ["Hello! It's Bloopy, dressed for the occasion.", "Waddle waddle! Bloop here. What are we listening to?"], ready: ["Waddled over and ready.", "Slid in on my belly, ready."],
+      penguin: { open: ["Hello! It's Bloopy, dressed for the occasion.", "Waddle waddle! Bloopy here. What are we listening to?"], ready: ["Waddled over and ready.", "Slid in on my belly, ready."],
         tap: ["Waddle waddle!", "Squawk!", "Brr, that was a cold poke."], poke: ["Hey! I am not an ice cube.", "Careful, I will slide away.", "My tuxedo is wrinkled now.", "That tickled my flippers."],
         dizzy: ["I slid on the ice and spun!", "I waddled in circles!"], idle: ["Just standing on the ice.", "Thinking about fish.", "Waiting for the iceberg to drift."],
         click: ["Click! Brr.", "Nice press. Very cool.", "A penguin approves."], start: ["Sliding in!", "Off we waddle!"], busy: ["Still sliding, almost there!", "Swimming through the data, one sec!"],
@@ -1811,7 +4582,7 @@
         sep: ["Splitting the colony, I mean the stems.", "Separating the stems, nice and neat."], tag: ["Waddling around the vibes...", "Checking the tempo, flipper by flipper."],
         wh: ["Writing every word, like a tuxedo scribe.", "Listening with my flippers on my hips."], gen: ["Working on it, with a waddle.", "Sliding along."], panel: ["Stems menu! Pick your fish.", "Choose which stems to slide."],
         t: { play: ["Cool tunes, coming right up."], skip: ["Next iceberg!"], volume: ["Loud enough for the whole colony."], shuffle: ["Shuffled like a huddle."], playlist: ["A whole colony of songs!"], tag: ["Waddled through the vibes."], split: ["Split, slid and done."], lyrics: ["Every word, on ice."], sleep: ["Time to huddle up and sleep."], eq: ["Tuned like a cold, clear day."], missing: ["Not on this iceberg."] } },
-      mint: { open: ["Hey there! It's Bloopy, cool and fresh!", "Fresh start! Bloop here. What are we listening to?"], ready: ["Cool and ready.", "Fresh and ready when you are."],
+      mint: { open: ["Hey there! It's Bloopy, cool and fresh!", "Fresh start! Bloopy here. What are we listening to?"], ready: ["Cool and ready.", "Fresh and ready when you are."],
         tap: ["Cool!", "That was refreshing.", "Ahh, minty fresh."], poke: ["Hey! You will make me melt.", "Cool as a cucumber, but ticklish.", "Poke me and you get fresh breath.", "That was refreshing, actually."],
         dizzy: ["I am so dizzy I forgot to be cool!", "My freshness is spinning!"], idle: ["Just chilling.", "Staying fresh.", "Cool and calm, as usual."],
         click: ["Click! Fresh.", "Nice press. Very cool.", "Minty approval."], start: ["Cool, let's go!", "Fresh start!"], busy: ["Still cool, almost there!", "Keeping fresh, one sec!"],
@@ -1819,7 +4590,7 @@
         sep: ["Splitting the song, nice and clean.", "Separating the stems, crisp and clear."], tag: ["Sniffing out a fresh vibe...", "Reading the tempo, cool and calm."],
         wh: ["Writing every word, clean and clear.", "Catching every word, crisp."], gen: ["Working on it, still cool.", "Rolling along, fresh."], panel: ["Stems menu! Keep it clean.", "Pick your stems, nice and fresh."],
         t: { play: ["Fresh tunes on."], skip: ["Next, fresh and cool."], volume: ["Crisp and loud."], shuffle: ["Fresh shuffle."], playlist: ["A fresh batch of songs!"], tag: ["Cool vibes, noted."], split: ["Clean split."], lyrics: ["Every word, crisp and clear."], sleep: ["Sleep cool."], eq: ["Fresh tuning."], missing: ["Not in this fresh batch."] } },
-      sunset: { open: ["Hey there! It's Bloopy, glowing at golden hour.", "Good vibes only. Bloop here. What are we listening to?"], ready: ["Glowing and ready.", "Warm and ready when you are."],
+      sunset: { open: ["Hey there! It's Bloopy, glowing at golden hour.", "Good vibes only. Bloopy here. What are we listening to?"], ready: ["Glowing and ready.", "Warm and ready when you are."],
         tap: ["Warm greetings!", "That was a golden poke.", "Glow glow!"], poke: ["Hey! You are blocking my light.", "Poke me again and I will blush.", "I am already pink, stop making it worse.", "That felt warm."],
         dizzy: ["The horizon is spinning!", "I turned all the colours at once!"], idle: ["Just watching the horizon.", "Glowing softly.", "Thinking about the golden hour."],
         click: ["Click! Warm.", "Nice press. Golden.", "That was smooth."], start: ["Let us catch the light!", "Off to the horizon!"], busy: ["Still glowing, almost there!", "Chasing the horizon, one sec!"],
@@ -1827,7 +4598,7 @@
         sep: ["Splitting the song into layers of colour.", "Separating the stems, like bands of sky."], tag: ["Reading the song's colours...", "Feeling the tempo, soft and warm."],
         wh: ["Writing every word in warm light.", "Catching each lyric as the light fades."], gen: ["Working on it, with a glow.", "Rolling toward the horizon."], panel: ["Stems menu! Pick your colours.", "Choose which stems to light up."],
         t: { play: ["Golden hour playlist, now playing."], skip: ["Next, as the sun sets."], volume: ["Turned up the glow."], shuffle: ["Mixed like a sky full of colours."], playlist: ["A whole horizon of songs!"], tag: ["The vibes are warm."], split: ["Split like light through clouds."], lyrics: ["Every word, painted on the sky."], sleep: ["Goodnight, the sun is down."], eq: ["Tuned like a warm evening."], missing: ["Not on this horizon."] } },
-      midnight: { open: ["Hello, night owl. It's Bloopy.", "Under the stars... Bloop here. What are we listening to?"], ready: ["Awake and ready.", "The stars are out. Ready when you are."],
+      midnight: { open: ["Hello, night owl. It's Bloopy.", "Under the stars... Bloopy here. What are we listening to?"], ready: ["Awake and ready.", "The stars are out. Ready when you are."],
         tap: ["Shh, the stars are sleeping.", "Twinkle twinkle.", "You woke me up!"], poke: ["Hey! I was counting stars.", "Careful, you will wake the moon.", "That tickled my crescent.", "I was dreaming."],
         dizzy: ["The stars are spinning!", "I am so dizzy I lost the moon!"], idle: ["Just counting stars.", "Watching the moon.", "Thinking quiet thoughts."],
         click: ["Click! Twinkle.", "Nice press. Quiet and clean.", "The stars approve."], start: ["Into the night!", "Off we go, under the stars."], busy: ["Still up, almost there!", "Counting stars, one sec!"],
@@ -1835,7 +4606,7 @@
         sep: ["Splitting the song, star by star.", "Separating the stems in the dark, carefully."], tag: ["Reading the song like a night sky...", "Counting the beats like stars."],
         wh: ["Writing every word by moonlight.", "Listening in the quiet of the night."], gen: ["Working on it, quietly.", "Rolling through the night."], panel: ["Stems menu! Pick your stars.", "Choose which stems stay up late."],
         t: { play: ["Night tunes, softly."], skip: ["Next star."], volume: ["Not too loud, the neighbours are asleep."], shuffle: ["Shuffled like constellations."], playlist: ["A whole night sky of songs!"], tag: ["The vibes are deep and quiet."], split: ["Split like the Milky Way."], lyrics: ["Every word, by moonlight."], sleep: ["Goodnight, and sweet dreams."], eq: ["Tuned like a quiet night."], missing: ["Lost in the dark."] } },
-      gold: { open: ["Hello there! It's Bloopy, 24 karat.", "Shiny day! Bloop here. What are we listening to?"], ready: ["Polished and ready.", "Gleaming and ready when you are."],
+      gold: { open: ["Hello there! It's Bloopy, 24 karat.", "Shiny day! Bloopy here. What are we listening to?"], ready: ["Polished and ready.", "Gleaming and ready when you are."],
         tap: ["Ooh, shiny!", "Careful, do not smudge the gold.", "Ka-ching!"], poke: ["Hey! I am very valuable.", "Careful, that is solid gold. Maybe hollow.", "You can see your face in me.", "Poke me again and I will charge a fee."],
         dizzy: ["I am so dizzy I lost my shine!", "Stop spinning, I am worth more standing up!"], idle: ["Just sitting in the vault.", "Gleaming quietly.", "Counting my coins."],
         click: ["Click! Ka-ching.", "Nice press. Golden.", "Worth every click."], start: ["Time to mine some gold!", "Let us make this shine!"], busy: ["Still polishing, almost there!", "Mining the data, one sec!"],
@@ -1859,7 +4630,7 @@
       return `<svg class="bl-ic" viewBox="${a.vb}" width="18" height="18" aria-hidden="true" style="vertical-align:-4px;margin-right:5px;overflow:visible"><defs>${BL_DEFS(g)}</defs>${a.rear ? a.rear(g) : ''}${a.item(g)}</svg>`; };
     function ball() {
       const g = 'ppvg' + (++uid), d = document.createElement('div');
-      d.className = 'ppv-ball m-idle'; d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Bloop, the mascot'); { const sk = lsGet('ppvSkin'); if (sk && BL_SKINS[sk]) d.dataset.skin = sk; }
+      d.className = 'ppv-ball m-idle'; d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Bloopy, the mascot'); { const sk = lsGet('ppvSkin'); if (sk && BL_SKINS[sk]) d.dataset.skin = sk; }
       d.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="${g}" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>${BL_DEFS(g)}</defs>
         <ellipse class="sh" cx="32" cy="60" rx="15" ry="3"/>
         <g class="behind"><g class="burst"><circle cx="8" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="56" cy="22" r="7" fill="#e9e3ff" opacity=".35"/><circle cx="6" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="58" cy="44" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="32" cy="62" r="8" fill="#e9e3ff" opacity=".35"/><circle cx="18" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><circle cx="46" cy="60" r="6" fill="#e9e3ff" opacity=".35"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(2 8) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(60 6) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(62 30) scale(1.3)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(0 30) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(12 64) scale(1.1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(54 62) scale(1.2)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(30 -2) scale(1)" fill="#ffd95a"/><path d="M0-4L1.2-1.2L4-1.2L1.8.6L2.6 3.6L0 1.8L-2.6 3.6L-1.8.6L-4-1.2L-1.2-1.2Z" transform="translate(64 50) scale(0.9)" fill="#ffd95a"/></g></g><g class="gear">${blSkinPart('rear', g)}${BL_REAR(g)}</g><g class="body"><circle class="bd" cx="32" cy="34" r="24"/>${blSkinPart('body', g)}<circle cx="32" cy="34" r="24" fill="url(#${g})"/>
@@ -1893,15 +4664,15 @@
       idle: ['Ready for the next one!', 'What else can I do?', 'Got another song for me?', 'Psst, try saying "make a playlist"!', 'Want a joke? Just ask!', 'Still here, still bouncing.'],
       panel: ['Stems menu! Pick a model and the tracks you want.', 'Vocals, drums, bass? Your call.', 'Tick the stems you want, then tap split.', 'Splitting is my favourite kind of surgery.', 'Heavier model, better split. Lighter model, faster split.', 'Pick a track first, then I can take it apart.'],
       night: ['Still up? Tell me if you want something soft.', 'Late-night stems? Bold choice.', 'Shh, quiet hours. I can keep it low.'],
-      tap: ['Boing!', 'Hehe, that tickles!', "I'm Bloop!", 'Need stems? Lyrics? Tags?', 'Boing! Did you need something?', 'Hehe, do it again!'],
+      tap: ['Boing!', 'Hehe, that tickles!', "I'm Bloopy!", 'Need stems? Lyrics? Tags?', 'Boing! Did you need something?', 'Hehe, do it again!'],
       busy: ['Busy rolling, one sec!', 'Almost there!', 'Working, working…']
     };
     // ---------- Opening lines (chat box and first greeting). Picked by time of day, never the same line twice in a row. ----------
     const BL_OPEN = {
-      any: ["Hey there! It's me, It's Bloopy! Ask me anything!", "Hi! Bloop here, bouncing in to help. What do you need?", "Yo! It's Bloop. Songs, stems, lyrics, playlists: pick one!", "Hello! I'm Bloop, and I'm ready when you are.", "Boing! Hi, it's Bloop. What are we listening to?", "Hey! Want to chat, or should I just play something?"],
-      morning: ["Good morning! It's Bloopy, ready for a new day of music!", "Morning! Bloop here. Coffee first, or a song first?"],
-      day: ["Hey there, it's Bloopy! How's your day going?", "Afternoon! Bloop here. Want something to keep you going?"],
-      night: ["Up late? It's me, Bloopy! Want something soft?", "Good evening! Bloop here. Tell me what you need, I'm all ears."]
+      any: ["Hey there! It's me, It's Bloopy! Ask me anything!", "Hi! Bloopy here, bouncing in to help. What do you need?", "Yo! It's Bloopy. Songs, stems, lyrics, playlists: pick one!", "Hello! I'm Bloopy, and I'm ready when you are.", "Boing! Hi, it's Bloopy. What are we listening to?", "Hey! Want to chat, or should I just play something?"],
+      morning: ["Good morning! It's Bloopy, ready for a new day of music!", "Morning! Bloopy here. Coffee first, or a song first?"],
+      day: ["Hey there, it's Bloopy! How's your day going?", "Afternoon! Bloopy here. Want something to keep you going?"],
+      night: ["Up late? It's me, Bloopy! Want something soft?", "Good evening! Bloopy here. Tell me what you need, I'm all ears."]
     };
     let blLastOpen = '';
     function blOpenLine() {
@@ -1917,7 +4688,7 @@
       if (hold) tmr = setTimeout(() => { key = ''; set('idle', blLine('idle', L.idle)); }, hold);
     }
     function pop() {
-      if (!on || panel.style.display === 'block') return;
+      if (!on || !bubblesOn() || panel.style.display === 'block') return;
       fl.style.display = 'flex'; clearTimeout(ftmr); ftmr = setTimeout(() => { fl.style.display = 'none'; }, 6000);
     }
     function react(text) {
@@ -1945,13 +4716,35 @@
       set(m, blLine(k, lines), 6000); pop();
     }
 
-    // ---------- Chat with Bloop: a tiny on-device language model (SmolLM2-135M-Instruct via transformers.js) ----------
+    // ---------- Chat with Bloopy: a small on-device language model (choose one in settings) via transformers.js ----------
     // Off by default. App questions and crisis messages are answered from fixed text (no model needed, always reliable);
     // everything else goes to the small model. Chat is kept in memory only.
-    const CHAT_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
-    let pendingJob = null, holdModel = false, idleT = 0, chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [];
-    // How many past exchanges (your message + Bloop's reply) he remembers during a chat. 0 = none. More memory = slower and more RAM on a tiny model.
-    const MEM_MAX = 8, memN = () => { const v = parseInt(lsGet('ppvMem'), 10); return isNaN(v) ? 2 : Math.max(0, Math.min(MEM_MAX, v)); };
+    // Chat models. Pick one in the Bloopy brain settings. file = the ONNX file in that repo, eos = end-of-turn tokens, mb = rough download size.
+    const CHAT_MODELS = {
+      qwen05:  { id: 'onnx-community/Qwen2.5-0.5B-Instruct', label: 'Qwen2.5 0.5B (default, better, ~520 MB)', mb: 520, file: 'onnx/model_quantized.onnx', eos: ['<|im_end|>', '<|endoftext|>'], lid: 'llm_qwen05' },
+      llama1b: { id: 'onnx-community/Llama-3.2-1B-Instruct', label: 'Llama 3.2 1B (most capable, ~1.3 GB, needs a strong phone)', mb: 1300, file: 'onnx/model_quantized.onnx', eos: ['<|eot_id|>', '<|end_of_text|>'], lid: 'llm_llama1b' },
+      // LiteRT-LM models (Android app only): one .litertlm file, the runtime does tokenizing, chat template and sampling.
+      // To add another, copy this line and use the exact file name from the model's "Files" page on Hugging Face.
+      gemma4:  { id: 'litert-community/gemma-4-E2B-it-litert-lm', label: 'Gemma 4 E2B (LiteRT-LM, app only, ~2.4 GB, strong phone)', mb: 2400, lm: true, lid: 'lm_gemma4_e2b', url: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm' },
+      gemma4e4b: { id: 'litert-community/gemma-4-E4B-it-litert-lm', label: 'Gemma 4 E4B (LiteRT-LM, app only, ~3.7 GB, flagship phones)', mb: 3650, lm: true, lid: 'lm_gemma4_e4b', url: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm' },
+      qwen15lm:  { id: 'litert-community/Qwen2.5-1.5B-Instruct', label: 'Qwen2.5 1.5B (LiteRT-LM, app only, ~1.6 GB)', mb: 1600, lm: true, lid: 'lm_qwen15_q8', url: 'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm' },
+      qwen15i4:  { id: 'leuconoe/litert-lm-unity-quantized', label: 'Qwen2.5 1.5B 4-bit (LiteRT-LM, app only, ~790 MB, community build)', mb: 790, lm: true, lid: 'lm_qwen15_i4', url: 'https://huggingface.co/leuconoe/litert-lm-unity-quantized/resolve/main/qwen2.5-1.5b-instruct/Qwen2.5-1.5B-Instruct_wi4b64_ekv4096.litertlm' },
+      qwen05i4:  { id: 'leuconoe/litert-lm-unity-quantized', label: 'Qwen2.5 0.5B 4-bit (LiteRT-LM, app only, ~265 MB, community build, short memory)', mb: 265, lm: true, lid: 'lm_qwen05_i4', url: 'https://huggingface.co/leuconoe/litert-lm-unity-quantized/resolve/main/qwen2.5-0.5b-instruct/Qwen2.5-0.5B-Instruct_wi4b64_ekv1280.litertlm' },
+      smol135: { id: 'HuggingFaceTB/SmolLM2-135M-Instruct', label: 'SmolLM2 135M (tiny, ~150 MB, the old one)', mb: 150, file: 'onnx/model_quantized.onnx', eos: ['<|im_end|>'], lid: 'llm_smollm2' }
+    };
+    // Users who already downloaded the old SmolLM2 keep it; everyone else gets Qwen2.5 0.5B.
+    const chatKey = () => {
+      try {
+        const k = localStorage.getItem('ppvChatModel');
+        if (CHAT_MODELS[k]) return k;
+        return localStorage.getItem('ppvChatDl') === '1' ? 'smol135' : 'qwen05';
+      } catch (e) { return 'qwen05'; }
+    };
+    const webId = k => (CHAT_MODELS[k].lm ? CHAT_MODELS.qwen05 : CHAT_MODELS[k]).id;   // the browser cannot run .litertlm, so it uses Qwen instead
+    let CHAT_MODEL = webId(chatKey());
+    let pendingJob = null, holdModel = false, idleT = 0, chatOn = lsGet('ppvChat') === '1', gen = null, genP = null, chatBusy = false, dlOk = false, hist = [], musicMode = lsGet('ppvMusicMode') === '1', aiOnly = lsGet('ppvAiOnly') === '1';
+    // How many past exchanges (your message + Bloopy's reply) he remembers during a chat. 0 = none. More memory = slower and more RAM on a tiny model.
+    const MEM_MAX = 8, memN = () => { const v = parseInt(lsGet('ppvMem'), 10); return isNaN(v) ? 4 : Math.max(0, Math.min(MEM_MAX, v)); };
     const setMem = v => { v = Math.max(0, Math.min(MEM_MAX, parseInt(v, 10) || 0)); lsSet('ppvMem', String(v)); hist = memN() ? hist.slice(-2 * memN()) : []; return v; };
     const cstyle = document.createElement('style');
     cstyle.textContent = `
@@ -1968,25 +4761,66 @@
       #ppv-chat .ch-m.bot{align-self:flex-start;background:#2a2b31}
       #ppv-chat .ch-m.me{align-self:flex-end;background:var(--accent,#7c5cff);color:#fff}
       #ppv-chat .ch-a{align-self:flex-start;display:flex;gap:6px;flex-wrap:wrap}
+      #ppv-chat .lf-box{padding:4px 10px}#ppv-chat .lf-it{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid #3a3b42;cursor:pointer}#ppv-chat .lf-it:first-child{border-top:0}#ppv-chat .lf-it input{margin-top:3px;flex:none}#ppv-chat .lf-it span{flex:1;min-width:0}#ppv-chat .ch-a button:disabled{opacity:.4}#ppv-chat .lf-it{border-top:0;padding:7px 0 2px}#ppv-chat .lf-item{border-top:1px solid #3a3b42}#ppv-chat .lf-item:first-child{border-top:0}#ppv-chat .lf-it u.o{text-decoration:underline wavy #ff6b6b;text-underline-offset:3px}#ppv-chat .lf-it u.n{text-decoration:underline #4ade80;text-underline-offset:3px}#ppv-chat .lf-row{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px 26px}#ppv-chat .lf-ed{flex-direction:column;gap:6px;margin:0 0 8px 26px}#ppv-chat .lf-ed input{padding:7px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444;font:inherit;width:100%;box-sizing:border-box}#ppv-chat .lf-ed button{align-self:flex-start}#ppv-chat .lf-h{font-size:12px;opacity:.75}
       #ppv-chat .ch-i{display:flex;gap:6px;padding:8px;border-top:1px solid #2e2f36}
       #ppv-chat .ch-i input{flex:1;min-width:0;padding:8px;border-radius:8px;background:#2a2b31;color:#eee;border:1px solid #444;font:inherit}
       #ppv-chat .ch-i .ch-mic{padding:6px 9px;display:flex;align-items:center}
       #ppv-chat .ch-mic svg{width:16px;height:16px}
       #ppv-chat .ch-mic.rec{background:#ff5c7c;border-color:#ff5c7c;color:#fff}`;
     document.head.appendChild(cstyle);
-    const cfab = document.createElement('div'); cfab.id = 'ppv-cfab'; cfab.setAttribute('role', 'button'); cfab.setAttribute('aria-label', 'Chat with Bloop');
+    const cfab = document.createElement('div'); cfab.id = 'ppv-cfab'; cfab.setAttribute('role', 'button'); cfab.setAttribute('aria-label', 'Chat with Bloopy');
     const cball = ball(); cfab.appendChild(cball);
     const cbox = document.createElement('div'); cbox.id = 'ppv-chat';
-    cbox.innerHTML = '<div class="ch-h"><b>Bloop</b><span class="ch-n">Helper on your device. Free chat uses a tiny AI, so it can be wrong. Not a counselor.</span><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloop" enterkeyhint="send"><button data-a="mic" class="ch-mic" aria-label="Talk to Bloop" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button><button data-a="send">Send</button></div>';
+    cbox.innerHTML = '<div class="ch-h"><b>Bloopy</b><span class="ch-n">Your tiny helper in the player!.</span><button class="ch-c" data-a="aionly" aria-pressed="false" title="Send everything to the AI. Bloopy will not jump in on keywords">AI only: off</button><button class="ch-c" data-a="music" aria-pressed="false" title="Only talk about the music in your library and playlists">Music: off</button><button class="ch-c" data-a="clear">Clear</button><button class="ch-c" data-a="x" aria-label="Close">&times;</button></div><div class="ch-l"></div><div class="ch-i"><input type="text" maxlength="400" placeholder="Say something to Bloopy" enterkeyhint="send"><button data-a="mic" class="ch-mic" aria-label="Talk to Bloopy" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg></button><button data-a="send">Send</button></div>';
     document.body.append(cfab, cbox);
     const clist = cbox.querySelector('.ch-l'), cin = cbox.querySelector('input');
+    // Music mode: Bloopy only talks about the user's own songs and playlists, using real library data in the prompt.
+    const musicBtn = cbox.querySelector('[data-a="music"]');
+    const setMusicMode = v => {
+      musicMode = !!v; lsSet('ppvMusicMode', musicMode ? '1' : '0'); hist = [];                 // a fresh memory, so the two modes do not mix
+      musicBtn.textContent = musicMode ? 'Music: on' : 'Music: off'; musicBtn.setAttribute('aria-pressed', String(musicMode));
+      musicBtn.style.opacity = musicMode ? '1' : '.65'; cin.placeholder = musicMode ? 'Talk about your music' : 'Say something to Bloopy';
+    };
+    setMusicMode(musicMode);
+    // AI only: skip every keyword rule, command and scripted reply, and send the message straight to the AI. The crisis safety check still runs.
+    const aiBtn = cbox.querySelector('[data-a="aionly"]');
+    const setAiOnly = v => { aiOnly = !!v; lsSet('ppvAiOnly', aiOnly ? '1' : '0'); aiBtn.textContent = aiOnly ? 'AI only: on' : 'AI only: off'; aiBtn.setAttribute('aria-pressed', String(aiOnly)); aiBtn.style.opacity = aiOnly ? '1' : '.65'; };
+    setAiOnly(aiOnly);
     const cm = m => { cball.className = 'ppv-ball m-' + m; blFace(cball, m); };
     const scrollDown = () => { clist.scrollTop = clist.scrollHeight; };
-    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); if (who === 'bot') { blReact(text); blFollowUp(d, text); try { vSpeak(text); } catch (e) {} } return d; };
+    const add = (who, text) => { const d = document.createElement('div'); d.className = 'ch-m ' + who; d.textContent = text; clist.appendChild(d); scrollDown(); if (who === 'bot') { blReact(text); if (!aiOnly) blFollowUp(d, text); try { vSpeak(text); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } return d; };
     const actions = btns => { const d = document.createElement('div'); d.className = 'ch-a'; btns.forEach(([t, fn]) => { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { fn(b, d); }; d.appendChild(b); }); clist.appendChild(d); scrollDown(); return d; };
+    // ---------- Copy button on every chat message ----------
+    // Replies are streamed by setting textContent, which would wipe a button put in by hand, so one observer keeps a small
+    // icon-only button (no text of its own, so reading a message's textContent still gives just the message) on each bubble.
+    {
+      const st = document.createElement('style');
+      st.textContent = '#ppv-chat .ch-m{position:relative}#ppv-chat .ch-m .ch-cp{position:absolute;bottom:0;width:26px;height:26px;padding:0;border:0;background:transparent;color:#9a9ba6;display:flex;align-items:center;justify-content:center;border-radius:8px}' +
+        '#ppv-chat .ch-m.bot .ch-cp{right:-30px}#ppv-chat .ch-m.me .ch-cp{left:-30px}#ppv-chat .ch-m .ch-cp:active{background:#3a3b42}#ppv-chat .ch-m .ch-cp.ok{color:#5ad18a}#ppv-chat .ch-m .ch-cp svg{width:15px;height:15px;pointer-events:none}';
+      document.head.appendChild(st);
+      const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+        TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+      const copyText = async txt => {
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); return true; } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        try { const ta = document.createElement('textarea'); ta.value = txt; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; }
+      };
+      const dress = d => {
+        if (!d.classList || !d.classList.contains('ch-m') || d.classList.contains('lf-box') || d.querySelector(':scope > .ch-cp')) return;
+        const txt = d.textContent.trim(); if (!txt || txt === '…') return;               // nothing to copy yet (the "thinking" dots)
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-cp'; b.title = 'Copy message'; b.setAttribute('aria-label', 'Copy message'); b.innerHTML = ICON; d.appendChild(b);
+      };
+      new MutationObserver(recs => { for (const r of recs) { if (r.target === clist) r.addedNodes.forEach(n => { if (n.nodeType === 1) dress(n); }); else if (r.target.parentNode === clist) dress(r.target); } }).observe(clist, { childList: true, subtree: true });
+      clist.addEventListener('click', async e => {
+        const b = e.target.closest && e.target.closest('.ch-cp'); if (!b) return;
+        e.stopPropagation();
+        const ok = await copyText(b.parentNode.textContent.trim());
+        b.innerHTML = ok ? TICK : ICON; b.classList.toggle('ok', ok); b.title = ok ? 'Copied' : 'Could not copy. Press and hold the text to select it.';
+        clearTimeout(b._t); b._t = setTimeout(() => { b.innerHTML = ICON; b.classList.remove('ok'); b.title = 'Copy message'; }, 1400);
+      });
+    }
     // ---------- Voice and meaning (all optional, all on-device, all off until ticked) ----------
     // MiniLM (~25 MB): loose wording finds the right command, and songs are found by meaning ("something for a rainy drive").
-    // Kokoro (82M, ~90 MB): Bloop's voice. Moonshine tiny (~50 MB): speech to text. openWakeWord: three tiny ONNX files on onnxruntime-web.
+    // Kokoro (82M, ~90 MB): Bloopy's voice. Moonshine tiny (~50 MB): speech to text. openWakeWord: three tiny ONNX files on onnxruntime-web.
     // Each download is asked for once, then comes from the browser cache. Nothing here runs unless its checkbox is on.
     const MINI_ID = 'Xenova/all-MiniLM-L6-v2', KOKORO_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX', MOON_ID = 'onnx-community/moonshine-tiny-ONNX';
     const KOKORO_JS = 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js';
@@ -1995,11 +4829,11 @@
     const VOICE = { fr: 1280, vad: 0.02, quiet: 13, wait: 75, max: 150, speed: 1.04 };             // 80 ms frames: stop after ~1 s of quiet, give up after ~6 s of nothing, cap ~12 s
     const VOICES = [['af_heart', 'Heart (warm)'], ['af_nicole', 'Nicole (calm)'], ['af_bella', 'Bella (brighter)'], ['af_sarah', 'Sarah'], ['am_michael', 'Michael'], ['bf_emma', 'Emma (British)'], ['bm_george', 'George (British)']];
     const vFlag = k => lsGet(k) === '1';
-    const miniOn = () => vFlag('ppvMini'), speakOn = () => vFlag('ppvVoice'), micOn = () => vFlag('ppvMic'), wakeOn = () => vFlag('ppvWake') && micOn() && chatOn;
+    const miniOn = () => vFlag('ppvMini'), speakOn = () => vFlag('ppvVoice'), micOn = () => vFlag('ppvMic'), wakeOn = () => vFlag('ppvWake') && micOn() && chatOn && !window.ppSaver;   // Lite and Focus keep the mic off
     const vCat = (a, b) => { const o = new Float32Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
     const vDot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
     const vHash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return h >>> 0; };
-    const tfLoad = async () => { if (!tfMod) tfMod = await import(TF_URL); try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch (e) {} return tfMod; };
+    const tfLoad = async () => { if (!tfMod) tfMod = await import(TF_URL); try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } return tfMod; };
     const dlSay = (say, what) => p => { if (say && p && p.status === 'progress' && p.file) say('Downloading ' + what + ' ' + Math.round(p.progress || 0) + '%'); };
     // Ask once before a big download (same pattern as the chat brain). Returns true when it asked, so the caller stops and waits for the answer.
     const dlAsk = (flag, msg, go) => { if (lsGet(flag) === '1') return false; add('bot', msg); actions([['Download', (b, d) => { d.remove(); lsSet(flag, '1'); go(); }], ['Not now', (b, d) => d.remove()]]); return true; };
@@ -2010,13 +4844,48 @@
     function getMini(say) {
       if (miniP) return miniP;
       miniP = (async () => {
-        const tf = await tfLoad(); say && say('Loading MiniLM\u2026');
+        const CP = window.Capacitor && window.Capacitor.Plugins, PE = CP && CP.PPEmbed, OS = CP && CP.OnnxSeparator;
+        say && say('Loading MiniLM\u2026');
+        // Android app, fully native: Java tokenizes and runs the model on background threads, so transformers.js is never loaded
+        // and nothing heavy runs on the page. An older app build without loadVocab/embed throws here and drops to the routes below.
+        if (NATIVE && PE && OS) {
+          try {
+            const base = 'https://huggingface.co/' + MINI_ID + '/resolve/main/';
+            const need = async (id, url, what) => { if (!(await OS.exists({ id })).ready) { say && say('Downloading ' + what + '\u2026'); await OS.download({ id, url }); } };
+            await need('minilm_q8', base + 'onnx/model_quantized.onnx', 'MiniLM');
+            await need('minilm_tok', base + 'tokenizer.json', 'MiniLM vocabulary');
+            await PE.load({ id: 'minilm_q8' });
+            await PE.loadVocab({ id: 'minilm_tok' });
+            const fe = async texts => { const r = await PE.embed({ texts, maxLen: 128 }); return { dims: [r.count, r.dim], data: await fromB64(r.data) }; };   // already mean-pooled and normalized natively
+            fe.dispose = async () => { try { await PE.unload(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+            return fe;
+          } catch (e) { console.warn('fully native MiniLM unavailable, trying the older route', e); }
+        }
+        const tf = await tfLoad();
+        // Older route: the model runs natively but the tokenizer stays in JS. Any failure falls back to the web pipeline below.
+        if (NATIVE && PE && OS) {
+          try {
+            const tok = await tf.AutoTokenizer.from_pretrained(MINI_ID);
+            if (!(await OS.exists({ id: 'minilm_q8' })).ready) { say && say('Downloading MiniLM\u2026'); await OS.download({ id: 'minilm_q8', url: 'https://huggingface.co/' + MINI_ID + '/resolve/main/onnx/model_quantized.onnx' }); }
+            await PE.load({ id: 'minilm_q8' });
+            const fe = async texts => {
+              const enc = tok(texts, { padding: true, truncation: true, max_length: 128 }), B = enc.input_ids.dims[0], L = enc.input_ids.dims[1];
+              const rows = t => { const out = []; for (let i = 0; i < B; i++) { const r = new Array(L); for (let j = 0; j < L; j++) r[j] = Number(t.data[i * L + j]); out.push(r); } return out; };
+              const r = await PE.run({ ids: rows(enc.input_ids), mask: rows(enc.attention_mask) });
+              const bin = atob(r.data), u8 = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+              return { dims: [r.count, r.dim], data: new Float32Array(u8.buffer) };   // already mean-pooled and normalized natively
+            };
+            fe.dispose = async () => { try { await PE.unload(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+            return fe;
+          } catch (e) { console.warn('native MiniLM unavailable, using the web version', e); }
+        }
         return tf.pipeline('feature-extraction', MINI_ID, { dtype: 'q8', device: 'wasm', progress_callback: dlSay(say, 'MiniLM') });
       })();
       miniP.catch(() => { miniP = null; });
       return miniP;
     }
-    async function freeMini() { clearTimeout(miniT); const p = miniP; miniP = null; if (p) { try { const fe = await p; await fe.dispose(); } catch (e) {} } }
+    async function freeMini() { clearTimeout(miniT); const p = miniP; miniP = null; if (p) { try { const fe = await p; await fe.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
     async function mEmbed(texts, say) {
       const fe = await getMini(say), out = [];
       for (let i = 0; i < texts.length; i += 16) {
@@ -2032,10 +4901,10 @@
       if (semCmd) return semCmd;
       const items = []; S_CAT.forEach(([cmd, safe, ph]) => ph.forEach(t => items.push({ cmd, safe, t })));
       const sig = vHash(items.map(x => x.t).join('|'));
-      let c = null; try { c = await idbGet('mini_cmd'); } catch (e) {}
+      let c = null; try { c = await idbGet('mini_cmd'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       if (c && c.sig === sig && c.v && c.v.length === items.length) { items.forEach((x, i) => { x.v = c.v[i]; }); return (semCmd = items); }
       const vs = await mEmbed(items.map(x => x.t), say); items.forEach((x, i) => { x.v = vs[i]; });
-      try { await idbPut('mini_cmd', { sig, v: vs }); } catch (e) {}
+      try { await idbPut('mini_cmd', { sig, v: vs }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       return (semCmd = items);
     }
     // One short text per song: title, artist, tag words and the start of any lyrics. Re-embedded only when that text changes.
@@ -2047,9 +4916,9 @@
       for (let i = 0; i < want.length; i += 48) {
         const part = want.slice(i, i + 48), vs = await mEmbed(part.map(w => w.x), null);
         part.forEach((w, k) => { semIdx[w.id] = { h: w.h, v: vs[k] }; });
-        say && say('Learning your songs\u2026 ' + Math.min(want.length, i + 48) + ' of ' + want.length);
+        say && say('Learning songs\u2026 ' + Math.min(want.length, i + 48) + ' of ' + want.length);
       }
-      if (want.length) { try { await idbPut('mini_trk', semIdx); } catch (e) {} }
+      if (want.length) { try { await idbPut('mini_trk', semIdx); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
       return tr.map((t, i) => !t.stem && semIdx[t.dbId] ? { i, v: semIdx[t.dbId].v } : null).filter(Boolean);
     }
     const MUSICWORD = /\b(song|songs|music|track|tracks|tune|tunes|playlist|vibe|mood|feel|feels|feeling|something|anything|play|listen|put on|about)\b/i;
@@ -2089,8 +4958,17 @@
       finally { semBusy = false; }
     }
 
-    // ---- Kokoro: Bloop speaks ----
+    // ---- Kokoro: Bloopy speaks ----
     let kP = null, kT = 0, kLoaded = false, spkId = 0, spkCtx = null, spkSrc = null, voiceAsked = false;
+    // Native option (app only): the phone's own text-to-speech reads the reply, so nothing is downloaded. A failure drops back to Kokoro for the session.
+    let vNatFailed = false, natTalk = false;
+    const natTts = () => { try { return NATIVE ? window.Capacitor.Plugins.PPSpeech : null; } catch (e) { return null; } };
+    const voiceNat = () => !vNatFailed && vFlag('ppvVoiceNat') && !!natTts();
+    async function speakNative(id, sents) {
+      const P = natTts(); vDuck(true); natTalk = true; vSpeaking = true;
+      try { for (const t of sents) { if (id !== spkId) return; const r = await P.speak({ text: t, rate: VOICE.speed, lang: 'en-US' }); if (id !== spkId || !r || r.done === false) return; } }
+      finally { if (id === spkId) { natTalk = false; vSpeaking = false; wwHold = Date.now() + 700; vDuck(false); } }
+    }
     const voiceWho = () => { const v = lsGet('ppvVoiceWho'); return VOICES.some(x => x[0] === v) ? v : 'af_heart'; }, voiceWhen = () => lsGet('ppvVoiceWhen') === 'all' ? 'all' : 'talk';
     function getTts(say) {
       if (kP) return kP;
@@ -2102,7 +4980,7 @@
       kP.catch(() => { kP = null; kLoaded = false; });
       return kP;
     }
-    async function freeVoice() { clearTimeout(kT); const p = kP; kP = null; kLoaded = false; if (p) { try { const t = await p; await t.model.dispose(); } catch (e) {} } }
+    async function freeVoice() { clearTimeout(kT); const p = kP; kP = null; kLoaded = false; if (p) { try { const t = await p; await t.model.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
     const SKIPSPEAK = /^(?:\u2026|\.\.\.|\(Reading that as|Downloading|Loading|Listening|Transcribing)/;
     // Calm, not bubbly: exclamation marks become full stops, and only the first few sentences are read out.
     function speechSentences(s, full) {
@@ -2117,11 +4995,18 @@
       if (!speakOn() || !text || (!force && voiceWhen() === 'talk' && !voiceTurn)) return;
       const s = String(text).trim(); if (SKIPSPEAK.test(s) || heavyBusy()) return;
       const sents = speechSentences(s, typeof CRISIS_MSG !== 'undefined' && s === CRISIS_MSG); if (!sents.length) return;   // a safety message is always read in full
-      if (lsGet('ppvVoiceDl') !== '1') { if (!voiceAsked) { voiceAsked = true; dlAsk('ppvVoiceDl', 'To talk out loud I need to download my voice first: about 90 MB, one time. Wi-Fi is best.', () => { voiceAsked = false; vSpeak(s, true); }); } return; }
+      if (!voiceNat() && lsGet('ppvVoiceDl') !== '1') { if (!voiceAsked) { voiceAsked = true; dlAsk('ppvVoiceDl', 'To talk out loud I need to download my voice first: about 90 MB, one time. Wi-Fi is best.', () => { voiceAsked = false; vSpeak(s, true); }); } return; }
       const id = ++spkId; stopAudio();
       speakRun(id, sents).catch(e => { console.error(e); if (id === spkId) vDuck(false); });
     }
     async function speakRun(id, sents) {
+      if (voiceNat()) {
+        try { await speakNative(id, sents); return; }
+        catch (e) {
+          console.warn('native voice failed, using Kokoro', e); vNatFailed = true; if (id !== spkId) return;
+          if (lsGet('ppvVoiceDl') !== '1') { add('bot', 'The phone\u2019s own voice did not work here, so I will use my downloaded voice instead.'); spkId++; vSpeak(sents.join(' '), true); return; }
+        }
+      }
       let note = null; if (!kLoaded) note = add('bot', 'Loading my voice\u2026');
       let tts; try { tts = await getTts(note ? m => { note.textContent = m; } : null); }
       catch (e) { if (note) note.textContent = 'My voice would not load: ' + e.message; return; }
@@ -2148,7 +5033,7 @@
         } catch (e) { vSpeaking = false; res(); }
       });
     }
-    function stopAudio() { const s = spkSrc; spkSrc = null; if (s) { try { s.onended = null; s.stop(); } catch (e) {} } vSpeaking = false; }
+    function stopAudio() { if (natTalk) { natTalk = false; try { natTts().stop().catch(() => {}); } catch (e) {} } const s = spkSrc; spkSrc = null; if (s) { try { s.onended = null; s.stop(); } catch (e) {} } vSpeaking = false; }
     function stopSpeak() { spkId++; stopAudio(); vDuck(false); }
     function vDuck(on) {                                                                          // music dips while he talks or listens
       try {
@@ -2159,7 +5044,7 @@
     function vPrime() { try { const C = window.AudioContext || window.webkitAudioContext; if (!speakOn() || !C) return; if (!spkCtx) spkCtx = new C(); if (spkCtx.state === 'suspended') spkCtx.resume(); } catch (e) {} }   // browsers want audio started from a tap
     function vTyped() { voiceTurn = false; vPrime(); stopSpeak(); }
 
-    // ---- Moonshine: Bloop listens ----
+    // ---- Moonshine: Bloopy listens ----
     let earsP = null, earsT = 0, dictating = false, dictStop = false;
     function getEars(say) {
       if (earsP) return earsP;
@@ -2171,7 +5056,24 @@
       earsP.catch(() => { earsP = null; });
       return earsP;
     }
-    async function freeEars() { clearTimeout(earsT); const p = earsP; earsP = null; if (p) { try { const a = await p; await a.dispose(); } catch (e) {} } }
+    // Native option (app only): the app's own Whisper engine (the one that makes subtitles) hears the sentence instead of Moonshine.
+    // It uses English Base if that is already on the phone, otherwise English Tiny. A failure drops back to Moonshine for the session.
+    let eNatFailed = false, earsNT = 0;
+    const earsNat = () => !!NATIVE && !eNatFailed && vFlag('ppvEarsNat');
+    async function earsNative(pcm, say) {
+      let size = 'tiny_en';
+      try { if ((await NP.exists({ id: 'wh_base_en_enc' })).ready && (await NP.exists({ id: 'wh_base_en_dec' })).ready) size = 'base_en'; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      const raw = await whisperNative(pcm, [[0, pcm.length / 16000]], { size, lang: 'english', task: 'transcribe', quick: true }, m => { if (say) say(/^Transcribing/.test(m) ? 'Transcribing\u2026' : m); });
+      clearTimeout(earsNT); earsNT = setTimeout(() => { if (!heavyBusy()) NP.whisperUnload().catch(() => {}); }, 120000);   // give the memory back, unless a subtitle job is using the engine
+      return raw.map(r => r.text).join(' ');
+    }
+    async function hear(pcm, say) {
+      if (earsNat()) { try { return await earsNative(pcm, say); } catch (e) { console.warn('native listening failed, using Moonshine', e); eNatFailed = true; } }
+      const out = await (await getEars(say))(pcm);
+      clearTimeout(earsT); earsT = setTimeout(freeEars, 120000);
+      return String(out && out.text || '');
+    }
+    async function freeEars() { clearTimeout(earsT); const p = earsP; earsP = null; if (p) { try { const a = await p; await a.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
     // One shared microphone: the wake word and the recorder both read its 16 kHz frames. It closes as soon as nobody needs it.
     const mic = { ctx: null, stream: null, node: null, src: null, subs: new Set(), users: 0, opening: null };
     function vResampler(inRate) {
@@ -2189,7 +5091,7 @@
       mic.opening = (async () => {
         const s = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         const C = window.AudioContext || window.webkitAudioContext; let ctx; try { ctx = new C({ sampleRate: 16000 }); } catch (e) { ctx = new C(); }
-        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
+        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
         const src = ctx.createMediaStreamSource(s), node = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain(), rs = vResampler(ctx.sampleRate); mute.gain.value = 0;
         node.onaudioprocess = e => { const f = rs(e.inputBuffer.getChannelData(0)); if (f.length) mic.subs.forEach(fn => { try { fn(f); } catch (er) { console.error(er); } }); };
         src.connect(node); node.connect(mute); mute.connect(ctx.destination);
@@ -2230,7 +5132,7 @@
     async function dictate(viaWake) {
       if (dictating) { dictStop = true; return; }
       if (!micOn() || !chatOn) return;
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { add('bot', 'This browser will not give me the microphone here.'); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { add('bot', 'This phone will not give me the microphone here.'); return; }
       if (heavyBusy()) { if (!viaWake) add('bot', "I'm busy with a heavy job right now, so I'm not listening. Ask me again when it's done."); return; }
       if (cbox.style.display !== 'flex') { cbox.style.display = 'flex'; delete cfab.dataset.unread; blAnchor(); }
       if (viaWake && lsGet('ppvEarsDl') !== '1') return;                                         // the wake word never starts a download
@@ -2242,9 +5144,7 @@
         const pcm = await recordUtterance(viaWake ? 6 : 0); micRelease(); held = false;
         if (pcm) {
           note.textContent = 'Transcribing\u2026';
-          const out = await (await getEars(m => { note.textContent = m; }))(pcm);
-          text = String(out && out.text || '').trim().replace(/^(?:hey[, ]+)?(?:jarvis|computer|bloop|blue ?p)[,.!?]*\s*/i, '');
-          clearTimeout(earsT); earsT = setTimeout(freeEars, 120000);
+          text = (await hear(pcm, m => { note.textContent = m; })).trim().replace(/^(?:hey[, ]+)?(?:jarvis|computer|bloopy?|blue ?p)[,.!?]*\s*/i, '');
         }
         if (!/[a-z0-9]{2}/i.test(text) || /^(?:you|thank you|thanks for watching|bye)[.!]*$/i.test(text)) { note.textContent = pcm ? 'I did not catch that.' : 'I did not hear anything.'; text = ''; }
       } catch (e) {
@@ -2257,11 +5157,16 @@
     // ---- openWakeWord: always-on wake phrase (opt-in) ----
     let wk = null, wkStarting = false;
     async function wakeFiles(say) {
-      const ensure = async (key, file, abs) => { if (!(await idbGet(key))) await fetchPart(key, abs ? WAKE_HF + file : file, (g, t) => say && say('Downloading ' + file + (t ? ' ' + Math.round(g / t * 100) + '%' : '')), true); };
+      const have = async k => NATIVE ? !!(await NP.exists({ id: k })).ready : !!(await idbGet(k));
+      const ensure = async (key, file, abs) => {
+        if (await have(key)) return;
+        if (NATIVE) { say && say('Downloading ' + file + '…'); await nativeFetch(key, abs ? WAKE_HF + file : file, () => {}); return; }   // the app's own engine reads its own model store
+        await fetchPart(key, abs ? WAKE_HF + file : file, (g, t) => say && say('Downloading ' + file + (t ? ' ' + Math.round(g / t * 100) + '%' : '')), true);
+      };
       await ensure('ww_mel', 'melspectrogram.onnx', true); await ensure('ww_emb', 'embedding_model.onnx', true);
-      if (await idbGet('ww_bloop')) return ['ww_bloop', 0.5, 'Hey Bloop'];
+      if (await have('ww_bloop')) return ['ww_bloop', 0.5, 'Hey Bloopy'];
       if (Date.now() - (+lsGet('ppvWakeMiss') || 0) > 6048e5) {                                    // your own hey_bloop.onnx in HF_BASE, checked at most once a week
-        try { await fetchPart('ww_bloop', 'hey_bloop.onnx', null, true); return ['ww_bloop', 0.5, 'Hey Bloop']; } catch (e) { lsSet('ppvWakeMiss', String(Date.now())); }
+        try { if (NATIVE) await nativeFetch('ww_bloop', 'hey_bloop.onnx', () => {}); else await fetchPart('ww_bloop', 'hey_bloop.onnx', null, true); return ['ww_bloop', 0.5, 'Hey Bloopy']; } catch (e) { lsSet('ppvWakeMiss', String(Date.now())); }
       }
       await ensure('ww_jarvis', 'hey_jarvis.onnx', true); return ['ww_jarvis', 0.45, 'Hey Jarvis'];
     }
@@ -2269,17 +5174,17 @@
       if (wk || wkStarting) return; wkStarting = true;
       try {
         await loadOrt(); const h = await wakeFiles(say);
-        ort.env.wasm.wasmPaths = ORT; ort.env.wasm.numThreads = 1;
-        const mk = async k => ort.InferenceSession.create(new Uint8Array(await getPart(k)), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+        if (!NATIVE) { ort.env.wasm.wasmPaths = ORT; ort.env.wasm.numThreads = 1; }
+        const mk = async k => NATIVE ? makeSession(k, false, null) : ort.InferenceSession.create(new Uint8Array(await getPart(k)), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
         const mel = await mk('ww_mel'), emb = await mk('ww_emb'), head = await mk(h[0]);
         await micAcquire();
-        wk = { mel, emb, head, thr: h[1], name: h[2], raw: new Float32Array(480), melBuf: [], embBuf: [], acc: new Float32Array(0), q: [], busy: false, hits: 0, cool: 0 };
+        wk = { mel, emb, head, thr: h[1], name: h[2], raw: new Float32Array(480), melBuf: [], embBuf: [], acc: new Float32Array(0), q: [], busy: false, hits: 0, cool: 0, pre: [], hang: 0, floor: null };
         mic.subs.add(wakeSub); say && say('Wake word ready: say \u201c' + h[2] + '\u201d.');
       } finally { wkStarting = false; }
     }
     function wakeStop() {
       const w = wk; if (!w) return; wk = null; mic.subs.delete(wakeSub);
-      [w.mel, w.emb, w.head].forEach(s => { try { s.release && s.release(); } catch (e) {} }); micRelease();
+      [w.mel, w.emb, w.head].forEach(s => { try { s.release && s.release(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }); micRelease();
     }
     function wakeSub(f) {
       const w = wk; if (!w) return;
@@ -2292,9 +5197,22 @@
       w.busy = true;
       try {
         while (w.q.length && wk === w) {
-          const c = w.q.shift(), x = new Float32Array(c.length); for (let i = 0; i < c.length; i++) x[i] = c[i] * 32768;   // the mel model wants 16-bit scale
-          const s = await wakeScore(w, x); w.hits = s >= w.thr ? w.hits + 1 : 0;
-          if (w.hits >= 2 && Date.now() > w.cool) { w.cool = Date.now() + 3500; w.hits = 0; dictate(true); }
+          const c = w.q.shift();
+          // Quiet-room saver: in silence the three models are skipped. The last ~2 s of audio is kept and replayed the moment
+          // sound starts, so the phrase is still heard from its first syllable. Loud = clearly above a slowly tracked noise floor.
+          let e = 0, n = 0; for (let i = 0; i < c.length; i += 4) { e += c[i] * c[i]; n++; }
+          const rms = Math.sqrt(e / Math.max(1, n));
+          w.floor = w.floor == null ? rms : (rms < w.floor ? rms : w.floor * 0.995 + rms * 0.005);
+          const now = Date.now();
+          if (rms > Math.max(0.006, Math.min(w.floor, 0.02) * 2.5)) w.hang = now + 2500;
+          if (now > w.hang) { w.pre.push(c); if (w.pre.length > 25) w.pre.shift(); w.hits = 0; continue; }
+          const batch = w.pre.length ? w.pre.splice(0).concat([c]) : [c];
+          for (const cc of batch) {
+            if (wk !== w) break;
+            const x = new Float32Array(cc.length); for (let i = 0; i < cc.length; i++) x[i] = cc[i] * 32768;   // the mel model wants 16-bit scale
+            const s = await wakeScore(w, x); w.hits = s >= w.thr ? w.hits + 1 : 0;
+            if (w.hits >= 2 && Date.now() > w.cool) { w.cool = Date.now() + 3500; w.hits = 0; dictate(true); }
+          }
         }
       } catch (e) { console.error(e); if (wk === w) { wakeStop(); lsSet('ppvWake', '0'); add('bot', 'The wake word stopped: ' + e.message); } }
       finally { w.busy = false; }
@@ -2324,6 +5242,8 @@
     function vSet(k, on, say) {
       lsSet(k, on ? '1' : '0');
       if (k === 'ppvVoice' && !on) { stopSpeak(); freeVoice(); }
+      if (k === 'ppvVoiceNat') { stopSpeak(); vNatFailed = false; if (on) freeVoice(); }
+      if (k === 'ppvEarsNat') { eNatFailed = false; if (on) freeEars(); }
       if (k === 'ppvMini' && !on) freeMini();
       if (k === 'ppvMic' && !on) { dictStop = true; freeEars(); }
       vSync(say);
@@ -2332,18 +5252,19 @@
       stopSpeak(); dictStop = true; if (wk) wakeStop();
       await freeVoice(); await freeEars(); await freeMini();
       ['ppvMiniDl', 'ppvVoiceDl', 'ppvEarsDl', 'ppvWake'].forEach(k => lsSet(k, '0')); voiceAsked = false; semAsked = false;
-      for (const k of ['ww_mel', 'ww_emb', 'ww_bloop', 'ww_jarvis', 'mini_cmd', 'mini_trk']) { try { await idbDel(k); } catch (e) {} }
+      for (const k of ['ww_mel', 'ww_emb', 'ww_bloop', 'ww_jarvis', 'mini_cmd', 'mini_trk']) { try { await idbDel(k); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
       semIdx = null; semCmd = null;
-      try { for (const k of await caches.keys()) { if (k === 'kokoro-voices') await caches.delete(k); else if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/MiniLM|moonshine|Kokoro/i.test(r.url)) await c.delete(r); } } } catch (e) {}
+      try { for (const k of await caches.keys()) { if (k === 'kokoro-voices') await caches.delete(k); else if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/MiniLM|moonshine|Kokoro/i.test(r.url)) await c.delete(r); } } } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
     }
     const ppVoiceApi = {
       get: k => vFlag(k), set: vSet, free: vFree, list: VOICES, who: voiceWho, when: voiceWhen,
-      setWho: v => { lsSet('ppvVoiceWho', v); if (speakOn() && lsGet('ppvVoiceDl') === '1') { vPrime(); vSpeak('Hi, I am Bloop.', true); } },
+      setWho: v => { lsSet('ppvVoiceWho', v); if (speakOn() && lsGet('ppvVoiceDl') === '1') { vPrime(); vSpeak('Hi, I am Bloopy.', true); } },
       setWhen: v => lsSet('ppvVoiceWhen', v === 'all' ? 'all' : 'talk')
     };
     setTimeout(vSync, 0);
+    window.addEventListener('ppfocus', () => vSync());     // Focus mode turns the wake word off (and back on when it ends)
     // ---------- Follow-up buttons ----------
-    // When Bloop ends a reply with a question (or a "pick one!") and nothing else offered buttons, add the likely answers
+    // When Bloopy ends a reply with a question (or a "pick one!") and nothing else offered buttons, add the likely answers
     // as tappable buttons so nobody has to guess what to type. Only the newest message gets them, and only if it has none.
     const BL_FOLLOW = [
       [/stops? by itself|stop by itself|drift off|sleep timer/i, [['\u23f2 Sleep timer 30 min', 'sleep timer 30 minutes'], ['\u25b6 Something chill', 'play something chill']]],
@@ -2386,7 +5307,7 @@
         } catch (e) { console.error(e); }
       }, 80);
     }
-    const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; try { vSync(); } catch (e) {} };
+    const setChatOn = v => { chatOn = !!v; lsSet('ppvChat', chatOn ? '1' : '0'); cfab.style.display = chatOn ? 'block' : 'none'; if (!chatOn) cbox.style.display = 'none'; try { vSync(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     cfab.style.display = chatOn ? 'block' : 'none';
     cfab.onclick = () => {
       if (Date.now() < blSuppress) return;
@@ -2396,6 +5317,8 @@
     cbox.addEventListener('click', e => {
       const a = e.target.closest && e.target.closest('[data-a]'); if (!a) return;
       if (a.dataset.a === 'x') cbox.style.display = 'none';
+      else if (a.dataset.a === 'aionly') { setAiOnly(!aiOnly); add('bot', aiOnly ? (brainOn() ? 'AI only is on. I will not jump in on keywords or commands. Everything goes to the AI. Switch it off to use commands like play something chill.' : 'AI only is on, but my AI brain is switched off in the settings, so I will keep using the normal helper until you turn the brain on.') : 'AI only is off. Commands and quick replies are back.'); }
+      else if (a.dataset.a === 'music') { setMusicMode(!musicMode); add('bot', musicMode ? 'Music mode on. Ask me about your songs, artists and playlists, and I will stick to those.' : 'Music mode off. We can chat about anything again.'); }
       else if (a.dataset.a === 'clear') { clist.textContent = ''; hist = []; try { clearTimeout(blTr && blTr.timer); } catch (e) {} blTr = null; }
       else if (a.dataset.a === 'send') { const v = cin.value; cin.value = ''; vTyped(); send(v); }
       else if (a.dataset.a === 'mic') { vPrime(); dictate(); }
@@ -2412,10 +5335,10 @@
       [/^\s*(how are you|how'?s it going|how are you doing|how do you feel|what'?s up|wassup|whats up)\W*$/i, ["I'm doing great, I'm a ball in a music player. How about you?", "Rolling along nicely! How are you?", "Pretty bouncy today. How are you feeling?"]],
       [/\b(tell (me )?a joke|joke|make me laugh|something funny)\b/i, ["Why did the song go to therapy? It had too many issues with its bridge.", "What's a ball's favorite music? Anything with a good bounce.", "Why was the musician arrested? She got caught with the notes.", "I'd tell you a joke about a drum, but it might be a bit flat. Wait, that's a different instrument."]],
       [/\b(fun fact|did you know|tell me something|random fact|music fact)\b/i, ["Fun fact: a song's tempo is measured in BPM, and most pop songs sit between 100 and 130.", "Fun fact: the human brain tends to remember songs from your teenage years better than almost any other music.", "Fun fact: a vocal-free version of a song is called an instrumental, and a karaoke track is usually one with the lead vocal removed.", "Fun fact: music at about 60 BPM is often used to help people relax, because it is close to a resting heartbeat."]],
-      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(cute|nice|great|awesome|cool|the best|amazing|funny|smart|sweet)\b|\b(i (like|love) you|good (bot|ball|job))\b/i, ["Aww, thank you! That made my day.", "You're sweet! Back at you.", "Thanks! I'm just a little ball, but I'm glad to help."]],
-      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(dumb|stupid|useless|bad|annoying|terrible|trash)\b|\b(i hate you|shut up)\b/i, ["Sorry about that. I'm a very small bot and I miss things. Tell me what you wanted and I'll try again.", "Fair enough, I'm still learning. Say \u201chelp\u201d and I'll show what I can do for sure."]],
+      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(cute|nice|great|awesome|cool|the best|amazing|funny|smart|sweet)\b|\b(i (like|love) you|good (bot|ball|job))\b/i, ["Aww, thank you! That made my day.", "You're sweet! Back at you.", "Thanks! I'm glad to help."]],
+      [/\b(you'?re|you are|u r|ur)\s+(so |really |very )?(dumb|stupid|useless|bad|annoying|terrible|trash)\b|\b(i hate you|shut up)\b/i, ["Sorry about that, I missed it. Tell me what you wanted and I'll try again.", "Fair enough, I'm still learning. Say \u201chelp\u201d and I'll show what I can do for sure."]],
       [/\b(favou?rite (song|music|band|artist|genre)|what music do you like|what do you listen to)\b/i, ["I like anything with a good beat, but I can't really hear it. I just bounce along. What's yours?", "I'm a ball, so probably anything with bounce. What's your favorite?"]],
-      [/\b(are you (real|human|alive|a (person|robot|bot))|are you ai)\b/i, "I'm Bloop, a little bot mascot in this player. Not a person, not alive, just a ball that likes music."],
+      [/\b(are you (real|human|alive|a (person|robot|bot))|are you ai)\b/i, "I'm Bloopy, the AI buddy in this player. Not a person, but I love music and a good chat about pretty much anything."],
       [/\b(how old are you|where (do you|are you) (live|from)|do you (sleep|eat))\b/i, "I live inside this player, so I'm exactly as old as the page you opened. No sleeping or eating, just bouncing."],
       [/\b(i'?m|i am) (bored|so bored)\b|\bwhat should i (do|listen to|play)\b/i, ["Want me to play something upbeat? Just say \u201cplay something fun\u201d. Or tell me your mood and I'll pick for it.", "How about a mood playlist? Tell me how you feel and I'll find something from your tagged tracks."]],
       [/\b(good (morning|evening|night)|gn|gm)\b/i, ["Good one to you too! Want some music to go with it?", "Hey! Hope it's a good one."]],
@@ -2427,7 +5350,7 @@
       [/\b(smart playlists?|auto(matic)? playlists?|make a playlist)/i, 'Smart playlists live in the Library tab under "AI tagging & smart playlists". Tick the ones you want and tap Create / update. They are real playlists and keep updating as tracks get tagged.'],
       [/\b(tagging|tag (a |my |the |all )?(song|track)s?|bpm|tempo)/i, 'AI tagging is in the Library tab. Tag one track, a chosen one, or everything. It finds tempo, key, genre and vibe. You can also let it tag while you are away in the background tagging settings.'],
       [/\b(lyrics?|subtitles?|captions?|whisper|transcrib\w*)/i, 'Lyrics: Whisper writes synced lyrics for songs (Lyrics tab) and subtitles for videos (captions menu). It runs on your device and downloads a model the first time.'],
-      [/\b(who are you|what are you|your name|what can you do|how do you work)\b/i, "I'm Bloop, the little ball in this player. I can explain how things work here, suggest music for your mood, or just chat. I'm a very small AI, so I get things wrong sometimes."],
+      [/\b(who are you|what are you|your name|what can you do|how do you work)\b/i, "I'm Bloopy, the little ball in this player. I can explain how things work here, suggest music for your mood, or just chat. I'm a very small AI, so I get things wrong sometimes."],
       [/\b(private|privacy|offline|where (does|is) (this|it) run|download)/i, 'I run on your device after a one-time download of about 150 MB, so what you tell me stays on your phone. I forget the chat when you close the page or tap Clear.']
     ];
     const MOODS = [
@@ -2457,7 +5380,7 @@
       actions([['\u25b6 Play ' + m[2], () => { window.__ppApi.play(q[0], q); }], ['\u2795 Make a playlist', (b, d) => { d.remove(); moodPlaylist(m[1], 'For how you feel,'); }]]);
       return true;
     }
-    // ---------- Bloop's personality: he has favorites, picked from YOUR library and remembered ----------
+    // ---------- Bloopy's personality: he has favorites, picked from YOUR library and remembered ----------
     const realTr = () => { const A = window.__ppApi; return A ? A.tracks().filter(x => !x.stem) : []; };
     const favState = () => { try { return JSON.parse(lsGet('ppvFav')) || {}; } catch (e) { return {}; } };
     const favSave = o => lsSet('ppvFav', JSON.stringify(o));
@@ -2527,30 +5450,96 @@
     }
     const sysPrompt = () => {
       const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], c = t && loadTags()[t.dbId];
-      return "You are Bloop, a small bouncy ball who lives in a music player." + blSkinNote() + " You are friendly, playful, gentle and a little silly. Reply in one or two short, plain sentences. No lists, no markdown, no emoji. Only state music facts you are sure of. If you are not sure, say so. Only name songs, artists and tags that appear in LIBRARY DATA below. Never invent them. You cannot press buttons or change the player, so never say you did something in the app. If the user wants an action, tell them what to type, such as play something chill, or say help for the full list. The app can split songs into stems, tag songs by mood, genre, tempo and key, write lyrics and subtitles with Whisper, make smart playlists, and set an equaliser. You are not a doctor, lawyer or financial adviser, and not a counselor. If someone sounds distressed, be kind and suggest talking to someone they trust. Keep everything suitable for all ages. If asked about your favourites, answer in character as Bloop and have fun with it." +
+      return "You are Bloopy, a small bouncy ball who lives in a music player." + blSkinNote() + " You are friendly, playful, gentle and a little silly. Reply in one or two short, plain sentences. No lists, no markdown, no emoji. Only state music facts you are sure of. If you are not sure, say so. Only name songs, artists and tags that appear in LIBRARY DATA below. Never invent them. You cannot press buttons or change the player, so never say you did something in the app. If the user wants an action, tell them what to type, such as play something chill, or say help for the full list. The app can split songs into stems, tag songs by mood, genre, tempo and key, write lyrics and subtitles with Whisper, make smart playlists, and set an equaliser. You are not a doctor, lawyer or financial adviser, and not a counselor. If someone sounds distressed, be kind and suggest talking to someone they trust. Keep everything suitable for all ages. If asked about your favourites, answer in character as Bloopy and have fun with it." +
         (A && A.tracks().filter(x => !x.stem).length ? " The library has " + A.tracks().filter(x => !x.stem).length + " tracks, e.g. " + A.tracks().filter(x => !x.stem).slice(0, 5).map(x => x.title).join("; ") + "." : "") +
         (favSong() ? " Your favorite song is " + songLine(favSong()) + (favArtist() ? " and your favorite artist is " + favArtist() : "") + "." : "") +
         (t ? " Now playing: " + t.title + (c ? " (" + vibes(c).join(', ') + ")." : ".") : "");
     };
+    // Android app: the chat model runs in Java (LlmNative: KV cache + sampling on the CPU). Tokenizing stays here, only token ids cross the bridge.
+    const llmId = () => CHAT_MODELS[chatKey()].lid, llmUrl = () => CHAT_MODELS[chatKey()].url || ('https://huggingface.co/' + CHAT_MODELS[chatKey()].id + '/resolve/main/' + CHAT_MODELS[chatKey()].file);
+    let llmNativeFailed = false;                                     // set when the Java runtime rejects the model: use the web version for the rest of the session
+    async function nativeBrain(say) {
+      const pcb = p => { if (p && p.status === 'progress' && p.file) say('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); };
+      const tok = await tfMod.AutoTokenizer.from_pretrained(CHAT_MODEL, { progress_callback: pcb });
+      if (!(await NP.exists({ id: llmId() })).ready) await nativeFetch(llmId(), llmUrl(), say);
+      await NP.llmLoad({ id: llmId() });
+      const eos = [];                                                  // end-of-turn ids for the chosen model
+      for (const t of CHAT_MODELS[chatKey()].eos) { try { const e = tok.encode(t, { add_special_tokens: false }); if (e && e.length === 1) eos.push(Number(e[0])); } catch(x){ if (typeof ppCaught === "function") ppCaught(x); } }
+      if (!eos.length) eos.push(0, 2);
+      const g = async (msgs, opts) => {
+        opts = opts || {};
+        const prompt = Array.from(tok.apply_chat_template(msgs, { add_generation_prompt: true, tokenize: true, return_tensor: false }), Number);
+        const ids = [], cb = opts.streamer && opts.streamer.callback_function; let shown = 0;
+        const h = await NP.addListener('llmToken', e => {
+          ids.push(e.id); if (!cb) return;
+          const t = tok.decode(ids, { skip_special_tokens: true });
+          if (t.length > shown && !t.endsWith('\ufffd')) { cb(t.slice(shown)); shown = t.length; }
+        });
+        let out;
+        try { out = await NP.llmGenerate({ prompt, eos, maxNew: opts.max_new_tokens || 60, sample: opts.do_sample !== false, temp: opts.temperature == null ? 0.5 : opts.temperature, topP: opts.top_p == null ? 0.9 : opts.top_p, rep: opts.repetition_penalty || 1.1 }); }
+        finally { h.remove(); }
+        const text = tok.decode(out.tokens, { skip_special_tokens: true }).trim();
+        return [{ generated_text: msgs.concat([{ role: 'assistant', content: text }]) }];
+      };
+      g.tokenizer = tok;
+      g.dispose = async () => { try { await NP.llmUnload(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+      return g;
+    }
+    // Android app, LiteRT-LM: plain text goes in, text streams back. No tokenizer or token ids on this side.
+    async function nativeLm(say) {
+      const m = CHAT_MODELS[chatKey()];
+      if (!(await NP.exists({ id: m.lid })).ready) await nativeFetch(m.lid, m.url, say);
+      say('Starting the model\u2026');
+      await NP.lmLoad({ id: m.lid, gpu: lsGet('ppvLmGpu') !== '0' });   // phone GPU by default: several times faster; the app falls back to the CPU if it can't
+      const g = async (msgs, opts) => {
+        opts = opts || {};
+        const sys = msgs.length && msgs[0].role === 'system' ? String(msgs[0].content) : '';
+        const rest = msgs.filter(x => x.role !== 'system'), last = rest.pop();
+        const history = rest.map(x => ({ role: x.role === 'assistant' ? 'assistant' : 'user', text: String(x.content) }));
+        const cb = opts.streamer && opts.streamer.callback_function, greedy = opts.do_sample === false;
+        const h = await NP.addListener('lmText', e => { if (cb && e && e.text) cb(e.text); });
+        let out;
+        try { out = await NP.lmChat({ system: sys, history, user: last ? String(last.content) : '', maxNew: opts.max_new_tokens || 60, temp: greedy ? 0 : (opts.temperature == null ? 0.5 : opts.temperature), topK: greedy ? 1 : (opts.top_k || 40), topP: opts.top_p == null ? 0.9 : opts.top_p, rep: opts.repetition_penalty || 1.1 }); }
+        finally { h.remove(); }
+        const text = String((out && out.text) || '').trim();
+        return [{ generated_text: msgs.concat([{ role: 'assistant', content: text }]) }];
+      };
+      g.lm = true;
+      g.dispose = async () => { try { await NP.lmUnload(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+      return g;
+    }
     async function ensureModel(say) {
       if (gen) return gen; if (genP) return genP;
       genP = (async () => {
-        say('Loading my brain\u2026'); if (!tfMod) tfMod = await import(TF_URL);
+        say('Loading my brain\u2026');
+        if (NATIVE && !llmNativeFailed) {                                // native models don't need the web AI library at all
+          if (CHAT_MODELS[chatKey()].lm) { try { gen = await nativeLm(say); lsSet('ppvChatDl', '1'); return gen; } catch (e) { console.warn('Native chat model failed, using the web version', e); llmNativeFailed = true; say('Native brain unavailable, using the web version\u2026'); } }
+        }
+        if (!tfMod) tfMod = await import(TF_URL);
+        if (NATIVE && !llmNativeFailed && !CHAT_MODELS[chatKey()].lm) {
+          try { gen = await nativeBrain(say); lsSet('ppvChatDl', '1'); return gen; }
+          catch (e) { console.warn('Native chat model failed, using the web version', e); llmNativeFailed = true; say('Native brain unavailable, using the web version…'); }
+        }
         const gpuOn = lsGet('ppvChatGpu') === '1' && navigator.gpu;
-        try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch (e) {}   // fewer threads = less RAM
+        try { tfMod.env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 2) : 1; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }   // fewer threads = less RAM
         const pcb = p => { if (p && p.status === 'progress' && p.file) say('Downloading ' + p.file.split('/').pop() + ' ' + Math.round(p.progress || 0) + '%'); };
         try { gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: gpuOn ? 'fp16' : 'q8', device: gpuOn ? 'webgpu' : 'wasm', progress_callback: pcb }); }   // q4 is too lossy for a 135M model: it prints garbage
         catch (e) { if (!gpuOn) throw e; gen = await tfMod.pipeline('text-generation', CHAT_MODEL, { dtype: 'q8', device: 'wasm', progress_callback: pcb }); }
         lsSet('ppvChatDl', '1');
-        try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}   // ask the browser not to evict the downloaded model files
+        try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }   // ask the browser not to evict the downloaded model files
         return gen;
       })();
       try { return await genP; } finally { genP = null; }
     }
     // Take the language model out of RAM (it stays on disk and reloads later without asking).
-    async function unloadModel() { clearTimeout(idleT); if (gen) { const g = gen; gen = null; try { await g.dispose(); } catch (e) {} } }
+    async function unloadModel() { clearTimeout(idleT); if (gen) { const g = gen; gen = null; try { await g.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
+    // How long the model may sit idle in RAM. Reloading a big model takes seconds, so phones with plenty of RAM keep it
+    // around for 5 minutes; heavy jobs (split, lyrics, tagging) still free it first.
+    const bigRam = () => { try { return (navigator.deviceMemory || 0) >= 8; } catch (e) { return false; } };
+    const keepMs = () => bigRam() ? 300000 : 60000;
+    const idleUnload = () => { clearTimeout(idleT); idleT = setTimeout(() => { if (gen && !chatBusy && !holdModel) unloadModel(); }, keepMs()); };
     const heavyBusy = () => ['ppv-go', 'ppv-wgo', 'ppv-tag'].some(id => { const b = document.getElementById(id); return b && b.disabled; });
-    // The chat brain (tiny language model) is optional. Everything Bloop DOES (moods, playlists, tagging, player control) runs without it.
+    // The chat brain (tiny language model) is optional. Everything Bloopy DOES (moods, playlists, tagging, player control) runs without it.
     const brainOn = () => { const v = lsGet('ppvBrain'); return v == null ? lsGet('ppvChatDl') === '1' : v === '1'; };   // unset: on only if it was already downloaded
     const setBrain = v => { lsSet('ppvBrain', v ? '1' : '0'); if (!v) unloadModel(); const b = document.getElementById('ppv-brain-on'); if (b) b.checked = !!v; };
     const looksOk = r => { const L = (r.match(/\p{L}/gu) || []).length, W = (r.match(/\p{L}{2,}/gu) || []).length; return r.length <= 8 || (L / r.length >= 0.6 && W >= 2); };
@@ -2562,7 +5551,7 @@
       let aborted = false;
       const p = (async () => {
         const g = await ensureModel(() => {}); if (aborted) return null;
-        const out = await g([{ role: 'system', content: 'You are Bloop, a friendly ball mascot in a music player. Reply with one short, warm sentence.' },
+        const out = await g([{ role: 'system', content: 'You are Bloopy, a friendly ball mascot in a music player. Reply with one short, warm sentence.' },
           { role: 'user', content: 'The task "' + job.what + '" just finished successfully. Tell me so in one short sentence.' }], { max_new_tokens: 40, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 });
         let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : r;
         r = String(r || '').trim().split(/\n/)[0]; return r && r.length < 220 && looksOk(r) ? r : null;
@@ -2631,20 +5620,29 @@
       const tr = A.tracks(); made.forEach(([sm]) => buildMood(sm, tr, tg)); A.commitPlaylists();
       add('bot', '\u2713 Made or updated ' + made.length + ' mood playlists:\n' + made.map(([sm, n]) => '\u2728 ' + sm.name + ' (' + n + ')').join('\n'));
     }
-    // What Bloop says to something that is not a command when the chat brain is off: still helpful, no model needed.
+    // What Bloopy says to something that is not a command when the chat brain is off: still helpful, no model needed.
     function fallbackReply(text) {
-      if (MOODS.find(x => x[0].test(text))) { add('bot', pick(["That sounds hard. I'm only a little ball, but I can find some music for it.", "I'm sorry it feels like that. Want some music to go with it?", 'Thanks for telling me. Music might help a little.'])); moodChip(text); return; }
-      add('bot', "I'm not sure what to do with that. I can play music by mood, make playlists, tag, split, get lyrics and control the player. Say \u201chelp\u201d for the list.");
-      actions([['Turn on chat AI (~150 MB)', (b, d) => { d.remove(); setBrain(true); dlOk = true; send(text, true); }], ['No thanks', (b, d) => d.remove()]]);
+      if (MOODS.find(x => x[0].test(text))) { add('bot', pick(["That sounds hard. Want to tell me more, or shall I find some music for it?", "I'm sorry it feels like that. Want some music to go with it?", 'Thanks for telling me. Music might help a little.'])); moodChip(text); return; }
+      add('bot', "I need my chat brain on to talk about that. Without it I can play music by mood, make playlists, tag, split, get lyrics and control the player. Say \u201chelp\u201d for the list.");
+      actions([['Turn on chat AI', (b, d) => { d.remove(); setBrain(true); dlOk = true; send(text, true); }], ['No thanks', (b, d) => d.remove()]]);
     }
     async function freeChat() {
-      if (gen) { try { await gen.dispose(); } catch (e) {} gen = null; }
+      if (gen) { try { await gen.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } gen = null; }
+      if (NATIVE) { for (const m of Object.values(CHAT_MODELS)) { try { await NP.remove({ id: m.lid }); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
       lsSet('ppvChatDl', '0');
       const ks = await caches.keys();
-      for (const k of ks) if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/SmolLM2/i.test(r.url)) await c.delete(r); }
+      for (const k of ks) if (/transformers/i.test(k)) { const c = await caches.open(k); for (const r of await c.keys()) if (/SmolLM2|Qwen2\.5-0\.5B|Llama-3\.2-1B/i.test(r.url)) await c.delete(r); }
+    }
+    // Switch the chat model: drop the loaded one, and ask for the new download the next time Bloopy chats.
+    async function setChatModel(k) {
+      if (!CHAT_MODELS[k]) return;
+      try { localStorage.setItem('ppvChatModel', k); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      CHAT_MODEL = webId(k); llmNativeFailed = false; dlOk = false;
+      await unloadModel();
+      lsSet('ppvChatDl', '0');
     }
     // AGENT START
-    // ---------- Agent: Bloop does things when asked ----------
+    // ---------- Agent: Bloopy does things when asked ----------
     // Fixed command patterns, not model guesswork: a 135M model cannot be trusted to pick tools, and it must never claim
     // it did something it did not. Light actions run at once; heavy ones (split, tag all, lyrics) ask first.
     const agentOn = () => lsGet('ppvAgent') !== '0';
@@ -2694,9 +5692,654 @@
       });
       return out.sort((a, b) => b[1] - a[1]).map(o => o[0]);
     }
+    // ---------- Library matcher for "play ..." / "open ..." (fast, no model) ----------
+    // Understands artists ("play Drake", "something by Drake", "Drake's songs"), "<title> by <artist>", small typos
+    // and featured-artist credits. Returns null when nothing is close; then the caller can offer "did you mean".
+    const mNorm = x => String(x || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const mFlat = x => mNorm(x).replace(/ /g, '');
+    function mLev(a, b, max) {                                          // edit distance, gives up past max
+      if (Math.abs(a.length - b.length) > max) return max + 1;
+      let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+      for (let i = 1; i <= a.length; i++) {
+        const cur = [i]; let best = i;
+        for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); best = Math.min(best, cur[j]); }
+        if (best > max) return max + 1; prev = cur;
+      }
+      return prev[b.length];
+    }
+    // How well a name matches what was said: 1 exact .. 0 nothing. Tolerates typos, missing spaces and a trailing "s".
+    function mScore(name, q) {
+      const a = mFlat(name).replace(/^the(?=.{3})/, ''), b = mFlat(q).replace(/^the(?=.{3})/, ''); if (!a || !b) return 0;   // 'The Weeknd' = 'weeknd'
+      if (a === b || a === b.replace(/s$/, '') || a.replace(/s$/, '') === b) return 1;
+      if (b.length >= 3 && a.startsWith(b)) return 0.86 + 0.1 * b.length / a.length;
+      if (b.length >= 4 && a.includes(b)) return 0.8 + 0.1 * b.length / a.length;
+      if (a.length >= 4 && b.includes(a)) return 0.78;
+      const max = b.length >= 9 ? 2 : b.length >= 4 ? 1 : 0, d = max ? mLev(a, b, max) : 99;
+      if (d <= max) return 0.8 - 0.05 * d;
+      const wa = mNorm(name).split(' '), wb = mNorm(q).split(' ').filter(w => w.length > 1);
+      if (!wb.length) return 0;
+      const hit = wb.filter(w => wa.some(x => x === w || (w.length >= 5 && mLev(x, w, 1) <= 1))).length;
+      return hit === wb.length ? 0.7 : hit / wb.length >= 0.6 ? 0.5 : 0;
+    }
+    const mArtists = () => {                                            // artist name -> track indexes, credits split ("A feat. B", "A & B")
+      const tr = window.__ppApi.tracks(), by = new Map();
+      tr.forEach((t, i) => {
+        if (t.stem || !t.artist || /^(unknown artist|video|stream)$/i.test(t.artist)) return;
+        const parts = new Set([t.artist, ...String(t.artist).split(/\s*(?:,|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\bx\b|\bwith\b|\band\b)\s*/i)].map(x => x.trim()).filter(x => x.length > 1));
+        parts.forEach(n => { const k = mNorm(n); if (!k) return; if (!by.has(k)) by.set(k, { name: n, idxs: [] }); by.get(k).idxs.push(i); });
+      });
+      return [...by.values()];
+    };
+    function mBestArtist(q, min) {
+      let best = null, bs = 0;
+      mArtists().forEach(a => { const sc = mScore(a.name, q) + Math.min(0.02, a.idxs.length / 1000); if (sc > bs) { bs = sc; best = a; } });
+      return best && bs >= (min || 0.75) ? Object.assign({ score: bs }, best) : null;
+    }
+    function mBestSongs(q, pool) {                                      // indexes ranked by title match
+      const tr = window.__ppApi.tracks(), ids = pool || tr.map((x, i) => i).filter(i => !tr[i].stem);
+      return ids.map(i => [i, mScore(tr[i].title, q)]).filter(x => x[1] >= 0.7).sort((x, y) => y[1] - x[1]);
+    }
+    // "play X": {kind:'artist', a} | {kind:'song', idx, queue} | null
+    function resolveMusic(raw) {
+      let q = String(raw).trim().replace(/[.!?]+$/, '');
+      q = q.replace(/^(?:(?:some|any|a|an|the|my|me|more|all)\s+)+/i, '');
+      let m;
+      if ((m = q.match(/^(?:(?:songs?|music|tracks?|stuff|something|anything|hits?|albums?)\s+)?(?:by|from)\s+(.+)$/i))) { const a = mBestArtist(m[1], 0.7); return a ? { kind: 'artist', a } : null; }
+      if ((m = q.match(/^(.+?)(?:'s|\u2019s|s')\s+(?:songs?|music|tracks?|stuff|hits?|albums?)$/i)) || (m = q.match(/^(.+?)\s+(?:songs?|music|tracks?|hits?)$/i))) { const a = mBestArtist(m[1], 0.7); if (a) return { kind: 'artist', a }; q = m[1]; }
+      if ((m = q.match(/^(.+?)\s+by\s+(.+)$/i))) {                     // "<title> by <artist>"
+        const a = mBestArtist(m[2], 0.7);
+        if (a) { const s = mBestSongs(m[1], a.idxs); if (s.length) return { kind: 'song', idx: s[0][0], queue: [s[0][0], ...a.idxs.filter(i => i !== s[0][0])] }; }
+      }
+      const songs = mBestSongs(q), art = mBestArtist(q, 0.75);
+      // An exact artist beats a loose title; an exact title beats a loose artist.
+      if (art && (!songs.length || art.score >= songs[0][1] || art.score >= 0.99)) return { kind: 'artist', a: art };
+      if (songs.length) return { kind: 'song', idx: songs[0][0], queue: songs.map(x => x[0]).slice(0, 30) };
+      return null;
+    }
+    // Closest names for "did you mean": a few artists and titles that are near but not good enough to act on.
+    function nearMisses(q) {
+      const tr = window.__ppApi.tracks(), out = [];
+      mArtists().forEach(a => { const sc = mScore(a.name, q); if (sc >= 0.45) out.push([sc, 'play ' + a.name, a.name]); });
+      tr.forEach((t, i) => { if (t.stem) return; const sc = mScore(t.title, q); if (sc >= 0.45) out.push([sc, 'play ' + t.title + (t.artist ? ' by ' + t.artist : ''), t.title]); });
+      const seen = new Set(); return out.sort((x, y) => y[0] - x[0]).filter(x => !seen.has(x[2]) && seen.add(x[2])).slice(0, 3);
+    }
     const HELP = 'I can do things when you ask:\n\u2022 play / pause / next / previous / shuffle on\n\u2022 \u201cplay something chill\u201d, \u201cplay <song name>\u201d, \u201csurprise me\u201d\n\u2022 \u201cvolume 40\u201d, \u201clouder\u201d, \u201cmute\u201d\n\u2022 \u201csleep timer 30 minutes\u201d\n\u2022 \u201cmake a playlist of slow piano\u201d, \u201cadd this to <playlist>\u201d\n\u2022 \u201ctag this song\u201d, \u201csplit this song\u201d, \u201cget the lyrics\u201d, \u201cmore like this\u201d\n\u2022 \u201cturn on background tagging\u201d\n\u2022 \u201cmake a chill playlist\u201d, \u201cplaylist for studying\u201d, \u201cmake a playlist for when I\u2019m stressed\u201d, \u201cmake smart playlists\u201d, \u201cwhat mood is this\u201d, \u201cauto EQ\u201d (no chat AI needed)\n\u2022 \u201cskip 30 seconds\u201d, \u201crewind 10\u201d, \u201cgo to 1:30\u201d, \u201crestart\u201d, \u201chow long is left\u201d\n\u2022 \u201crepeat this song\u201d, \u201cspeed 1.5x\u201d, \u201cfullscreen\u201d, \u201ceq rock\u201d, \u201cloop start\u201d / \u201cloop end\u201d\n\u2022 \u201cmy playlists\u201d, \u201cplay my gym playlist\u201d, \u201cremove this from <playlist>\u201d, \u201crename playlist X to Y\u201d, \u201cdelete playlist X\u201d\n\u2022 \u201clibrary stats\u201d, \u201cwhat\u2019s the BPM\u201d, \u201cplay the fastest song\u201d, \u201cplay songs around 120 bpm\u201d, \u201cplay slow songs\u201d\n\u2022 \u201copen my portfolio\u201d, \u201cmy top artist\u201d, \u201cmost played song\u201d, \u201ctop 5 songs\u201d, \u201chow much have I listened\u201d, \u201cwhen do I listen most\u201d, \u201cmy streak\u201d\n\u2022 \u201cwhat songs do I have\u201d, \u201csongs by <artist>\u201d, \u201cdo I have <song>\u201d, \u201cfind <song>\u201d, \u201cmy artists\u201d, \u201cmy videos\u201d, \u201crecently added\u201d, \u201cuntagged songs\u201d, \u201cwhich songs are chill\u201d\n\u2022 Ask me about me: \u201cwhat\u2019s your favorite song?\u201d, \u201cfavorite artist?\u201d, \u201cdo you like this song?\u201d, \u201cpick a song for me\u201d\n\u2022 From your tags: \u201cany moody songs?\u201d, \u201cwhat genre is this?\u201d, \u201cwhat instruments are in this?\u201d, \u201cis this song sad?\u201d, \u201ctell me about this song\u201d\n\u2022 \u201csearch for jazz\u201d, \u201copen settings\u201d, \u201cplay the first song\u201d, \u201czoom in\u201d, \u201cnext filter\u201d\nYou can say it your own way too: \u201ctoo quiet\u201d, \u201cI don\u2019t like this one\u201d, \u201cstop in half an hour\u201d, \u201cwho sings this\u201d.\nOr just chat with me.';
     // Whenever the agent handles a message (a command, or a loose phrasing it understood), the model is dropped from RAM.
-    function agent(raw, skip) { holdModel = false; const hit = agentCore(raw, skip); if (hit && !chatBusy && !holdModel) unloadModel(); return hit; }
+    // ---------- Song summaries in the chat: show the saved one, or write one with the chat model ----------
+    let sumBusy = false;
+    async function chatSummary(i, fresh) {
+      const A = window.__ppApi, t = A.tracks()[i]; if (!t) return;
+      const label = t.title + (t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? ' by ' + t.artist : '');
+      const old = sumLoad()[t.dbId];
+      if (old && !fresh) {
+        add('bot', '\ud83d\udcdd ' + label + '\n\n' + old.t);
+        actions([['\ud83d\udcac Talk about it', (b, d) => { d.remove(); startSongTalk(i); }], ['\u270e Write a new one', (b, d) => { d.remove(); chatSummary(i, true); }]]);
+        return;
+      }
+      if (sumBusy || chatBusy) { add('bot', blTone('I am already writing something. Ask me again in a moment.')); return; }
+      sumBusy = true; holdModel = true;
+      const live = add('bot', '\ud83d\udcdd ' + label + '\n\n\u2026');
+      try {
+        const tr = getTranscript(t.dbId), c = loadTags()[t.dbId];
+        // The words appear as they are written (native models stream), so there is something to read straight away.
+        const ask2 = async (msgs, opts, say) => {
+          const g = await ensureModel(say || (x => { live.textContent = '\ud83d\udcdd ' + label + '\n\n' + x; }));
+          let acc = ''; opts = Object.assign({}, opts || {});
+          if (g.lm) opts.streamer = { callback_function: x => { acc += x; live.textContent = '\ud83d\udcdd ' + label + '\n\n' + acc; scrollDown(); } };
+          const o = await g(msgs, opts); const gt = o[0].generated_text; return String(Array.isArray(gt) ? gt[gt.length - 1].content : gt).trim();
+        };
+        const ai = await aiSummary(t, c, tr, ask2, x => { live.textContent = '\ud83d\udcdd ' + label + '\n\n' + x; }, sumLenKey(), ctxOf());
+        if (!ai) {
+          live.remove();
+          add('bot', blTone(tr.words >= 12 ? 'The summary came out unusable. Try again, or pick a bigger AI brain in the assistant settings.'
+            : 'I have no lyrics for ' + label + ' and I do not know it well enough to explain it without guessing. Transcribe it first (Lyrics & subtitles) and ask me again.'));
+          return;
+        }
+        const prof = soundProfile(c, t.kind), text = [ai, prof.line ? 'Sound: ' + prof.line : ''].filter(Boolean).join('\n\n');
+        const kept = await sumSave(t.dbId, { t: text, ts: Date.now(), len: sumLenKey(), sty: sumStyleKey() });
+        live.textContent = '\ud83d\udcdd ' + label + '\n\n' + text; scrollDown();
+        if (!kept) add('bot', blTone('I could not save that summary on this device (storage is full or blocked). Copy it now if you want to keep it.'));
+        actions([['\ud83d\udcac Talk about it', (b, d) => { d.remove(); startSongTalk(i); }]]);
+      } catch (e) { console.warn(e); try { live.remove(); } catch (x) {} add('bot', blTone('I could not write it: ' + errText(e))); }
+      finally { sumBusy = false; holdModel = false; idleUnload(); }
+    }
+    // ---------- Song Talk: an in-depth conversation about one song (literal meaning, metaphors, composition) ----------
+    // The song's lyrics, saved summary and composition facts go into the system prompt; the conversation keeps its own memory
+    // until "done" / End. Player commands ("pause", "next") still work in the middle of it.
+    let songTalk = null, stBar = null;
+    const mmssT = x => Math.floor(x / 60) + ':' + String(Math.floor(x % 60)).padStart(2, '0');
+    function songTalkFacts(t) {
+      // Few raw numbers on purpose: the small model garbles numbers it copies, so strengths are words and only the tempo is a number.
+      const c = loadTags()[t.dbId] || {}, L = [], how = v => v == null ? '' : v >= 70 ? ' (strong)' : v >= 40 ? '' : ' (faint)', lst = a => (a || []).map(v => v[0] + how(v[1])).join(', ');
+      if (c.bpm) L.push('Tempo: about ' + c.bpm + ' BPM (' + (c.bpm < 70 ? 'slow' : c.bpm < 100 ? 'mid-tempo' : c.bpm < 128 ? 'upbeat' : 'fast') + ')');
+      if (c.key) L.push('Key: ' + c.key + (c.ck ? ' (' + c.ck + ')' : ''));
+      if (c.gp && c.gp.length) L.push('Genre: ' + lst(c.gp)); if (c.st && c.st.length) L.push('Style: ' + lst(c.st));
+      const feel = Object.entries(c.hd || {}).filter(e => e[1] >= 50).sort((a, b) => b[1] - a[1]).map(e => e[0] + how(e[1])); if (feel.length) L.push('Mood/feel (audio models): ' + feel.join(', '));
+      const th = ((c.hm || {}).theme || []).map(x => String(x[0]).replace(/_/g, ' ')); if (th.length) L.push('Themes (audio models): ' + th.join(', '));
+      const IN2 = { acousticguitar: 'acoustic guitar', electricguitar: 'electric guitar', classicalguitar: 'classical guitar', acousticbassguitar: 'acoustic bass', electricpiano: 'electric piano', drummachine: 'drum machine', pipeorgan: 'pipe organ', doublebass: 'double bass' };
+      if (c.in && c.in.length) L.push('Instruments heard: ' + lst(c.in.map(v => [IN2[v[0]] || v[0], v[1]])));
+      if (c.v != null) L.push(c.v >= 50 ? 'Has vocals' : 'Mostly instrumental');
+      if (c.fv != null) L.push('Vocals from ' + mmssT(c.fv) + ' to ' + mmssT(c.lv));
+      if (c.d) L.push('Length: ' + mmssT(c.d));
+      try { const m = songMap(t.dbId, c); if (m) L.push('Song map (where the song changes and what changes in the music, from the lyrics and the sound):\n' + songMapRows(m).join('\n') + (m.duet ? '\n  (the voice changes between parts: maybe two singers)' : '')); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      // Structure from the timed lyrics: lines that come back are the chorus / hook.
+      let cues = []; try { const e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[t.dbId]; if (e && e.c) cues = e.c.map(q => [+q[0], String(q[2] || '').trim()]).filter(q => q[1]); } catch (x) {}
+      if (cues.length >= 6) {
+        const nz = q => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(), cnt = new Map();
+        cues.forEach(([at, q]) => { const k = nz(q); if (k.length < 6) return; const o = cnt.get(k) || { q, n: 0, at: [] }; o.n++; o.at.push(at); cnt.set(k, o); });
+        const hooks = [...cnt.values()].filter(o => o.n >= 2).sort((a, b) => b.n - a.n).slice(0, 3);
+        if (hooks.length) L.push('Repeated lines (chorus/hook): ' + hooks.map(o => '"' + o.q.slice(0, 60) + '" x' + o.n + ' (first at ' + mmssT(o.at[0]) + ')').join('; '));
+        L.push('Lyric timeline: ' + cues.length + ' lines from ' + mmssT(cues[0][0]) + ' to ' + mmssT(cues[cues.length - 1][0]));
+      }
+      return { lines: L, cues };
+    }
+    // ---------- Other songs as context: a song often needs its album or a sister song to make sense ----------
+    // Bloopy can read the saved summary and lyrics of other songs in the library. In Song Talk they are attached when the user
+    // names one ("how does this link to Hello"), points at one ("the previous track", "the album", "their other songs"), or
+    // hints at a link without naming it ("is this a sequel?"): then the model picks from a numbered list of likely songs.
+    // Attached songs stay for the rest of the talk and show as chips under the title bar, where they can be removed or added by hand.
+    const CTX_MAX = 6;
+    const CTX_PART = /\b(?:pt|part)\.?\s*(?:\d+|[ivx]+|one|two|three)\b|\b(?:reprise|interlude|intro|outro|prelude|continued|revisited)\b|\s(?:ii|iii|iv|v|vi|[1-9])\s*$/i;
+    const CTX_HINT = /\b(sequel|prequel|part (?:two|one|2|1|ii|i)|continu\w+|follow[- ]?up|call ?backs?|refer\w* (?:to|back)|references?|connect\w*|tie[sd]? (?:in|into|to|together)|link(?:s|ed)?|relate[sd]? to|related|relation\w*|same (?:story|character|person|theme)|story ?line|narrative|recurring|motifs?|compar\w+|versus|vs|differen\w+ (?:from|to|than)|similar to|other songs?|another song|earlier (?:song|track)|context)\b/i;
+    const ctxReal = () => window.__ppApi.tracks().filter(x => x && !x.stem);
+    const ctxArtistOf = t => t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? t.artist : '';
+    // The album's songs in track order (the song itself included). Folder names that players report as an "album" are ignored.
+    const ctxAlbum = t => {
+      const k = blNrm(t.album || ''); if (!k || /^(unknown|unknownalbum|music|audio|downloads?|songs?|videos?|movies?|whatsappaudio|recordings?)$/.test(k)) return [];
+      const al = ctxReal().filter(x => blNrm(x.album || '') === k).sort((a, b) => (a.trackNo || 9999) - (b.trackNo || 9999));
+      return al.length > 40 ? [] : al;
+    };
+    const ctxArtist = t => { const k = blNrm(ctxArtistOf(t)); return k ? ctxReal().filter(x => x.dbId !== t.dbId && blNrm(x.artist || '') === k) : []; };
+    const ctxHas = t => !!((sumLoad()[t.dbId] || {}).t) || getTranscript(t.dbId).words >= 12;       // is there anything to read for this song?
+    // "Song (Part 2)", "Song - Reprise", "Song II": the same base title means the songs belong together.
+    const ctxBase = x => blNrm(String(x || '').replace(new RegExp(CTX_PART.source, 'gi'), ' '));
+    const ctxSiblings = t => { const b = ctxBase(t.title); return b.length < 3 ? [] : ctxReal().filter(x => x.dbId !== t.dbId && blNrm(x.title) !== blNrm(t.title) && ctxBase(x.title) === b && (CTX_PART.test(x.title) || CTX_PART.test(t.title))); };
+    // Songs worth offering for this one: sister parts first, then the album (nearest tracks first), then the same artist. Only songs with something to read.
+    function ctxCandidates(t, skip) {
+      const out = [], push = x => { if (x && x.dbId !== t.dbId && !out.includes(x) && !(skip || []).includes(x.dbId) && ctxHas(x)) out.push(x); };
+      ctxSiblings(t).forEach(push);
+      const al = ctxAlbum(t), at = al.findIndex(x => x.dbId === t.dbId);
+      for (let d = 1; at >= 0 && d < al.length; d++) { push(al[at - d]); push(al[at + d]); }
+      ctxArtist(t).forEach(push);
+      return out;
+    }
+    // One other song as prompt text: its saved summary first (dense), then as much of its lyrics as the budget allows.
+    function ctxBrief(x, cur, tok) {
+      const a = ctxArtistOf(x), sum = String((sumLoad()[x.dbId] || {}).t || '').replace(/\n*Sound:[^\n]*$/, '').replace(/\s*\n+\s*/g, ' ').trim(), tr = getTranscript(x.dbId);
+      const same = cur && x.album && blNrm(x.album) === blNrm(cur.album || '');
+      let out = '"' + x.title + '"' + (a ? ' by ' + a : '') + (same ? ' (same album' + (x.trackNo ? ', track ' + (x.trackNo % 1000) : '') + ')' : x.album && ctxAlbum(x).length ? ' (album: ' + x.album + ')' : '');
+      const clip = (q, n) => { if (q.length <= n) return q; const c = q.slice(0, Math.max(0, n)), e = c.lastIndexOf('. '); return (e > n * 0.5 ? c.slice(0, e + 1) : c.replace(/\s+\S*$/, '')) + ' …'; };
+      let chars = Math.max(0, (tok - Math.ceil(out.length / 3) - 8) * 3);
+      if (sum) { const q = clip(sum, tr.lines.length && tok >= 90 ? Math.floor(chars * 0.5) : chars); if (q.length > 12) { out += '\nSummary: ' + q; chars -= q.length + 10; } }
+      if (tr.lines.length && chars > 60 && !(sum && tok < 90)) {                          // tight budget: the summary alone says more than two lines of lyrics
+        const ly = []; let n = 0;
+        for (const q of tr.lines) { if (n + q.length + 3 > chars) break; ly.push(q); n += q.length + 3; }
+        if (ly.length) out += '\nLyrics' + (ly.length < tr.lines.length ? ' (the start)' : '') + ': ' + ly.join(' / ');
+      }
+      if (!sum && !tr.lines.length) { let tg = ''; try { tg = tagLine(x); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } out += '\n(No lyrics or summary are saved for this song' + (tg ? '; its sound: ' + tg : '') + '. Say that you have not read its words.)'; }
+      return out;
+    }
+    // Several songs inside one token budget. The most recently asked-for songs get the room; the rest are only named.
+    function ctxBriefs(list, cur, tok) {
+      if (!list.length || tok < 50) return '';
+      const fit = Math.max(1, Math.min(list.length, Math.floor(tok / 45))), use = list.slice(-fit), rest = list.slice(0, list.length - fit);
+      return use.map(x => ctxBrief(x, cur, Math.floor(tok / fit))).join('\n\n') + (rest.length ? '\n\n(Also asked for, but there was no room to show them: ' + rest.map(x => x.title).join(', ') + ')' : '');
+    }
+    const ctxList = st => { const tr = window.__ppApi.tracks(); return (st.ctx || []).map(id => tr.find(x => x && x.dbId === id)).filter(Boolean); };
+    const ctxAlbumLine = t => { const al = ctxAlbum(t); return al.length < 2 ? '' : '\nALBUM: "' + t.album + '". Track order: ' + al.slice(0, 18).map((x, i) => (i + 1) + '. ' + x.title + (x.dbId === t.dbId ? ' (this song)' : '')).join('; ') + (al.length > 18 ? '; …' : '') + '\n'; };
+    // Which other songs does this message ask for? list = songs to attach now, hint = it talks about a link but names nothing, note = something to tell the model.
+    function ctxWanted(st, text) {
+      const tr = window.__ppApi.tracks(), t = st.t, low = String(text).toLowerCase(), list = [], push = x => { if (x && !x.stem && x.dbId !== t.dbId && !list.includes(x)) list.push(x); };
+      let note = '';
+      try { blNamed(text).forEach(i => push(tr[i])); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      (String(text).match(/["“][^"“”]{2,60}["”]/g) || []).forEach(q => { try { const i = blFindSong(q); if (i >= 0) push(tr[i]); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } });
+      const al = ctxAlbum(t), at = al.findIndex(x => x.dbId === t.dbId);
+      if (al.length > 1 && at >= 0) {
+        const closing = /\b(closing|final|last) (song|track) (on|of|in|from)\b|\bcloser\b/.test(low);
+        if (closing) push(al[al.length - 1]);
+        else if (/\b(previous|last|prior|preceding) (song|track|one)\b|\b(song|track|one) (before|preceding)\b/.test(low)) push(al[at - 1]);
+        if (/\bnext (song|track|one)\b|\b(song|track|one) (after|following)\b|\bfollowing (song|track)\b/.test(low)) push(al[at + 1]);
+        if (/\b(opening|first) (song|track)\b|\bopener\b/.test(low)) push(al[0]);
+        const m = low.match(/\b(?:track|song) (?:number |no\.? ?|#)?(\d{1,2})\b/); if (m) push(al.find(x => (x.trackNo || 0) % 1000 === +m[1]) || al[+m[1] - 1]);
+      }
+      if (/\b(albums?|ep|lp|mixtape|soundtrack|track ?list)\b|\b(rest of the|other) (songs|tracks) (on|from|in)\b/.test(low)) {
+        if (al.length > 1) {
+          const got = ctxCandidates(t).filter(x => al.includes(x)).slice(0, 4); got.forEach(push);
+          if (!got.length) note = 'None of the other songs on this album have lyrics or a summary saved, so you only know their titles. Tell the user that transcribing or summarising them lets you connect them.';
+        } else if (!list.length) note = 'This song has no album saved in its tags, so you cannot see its album. Tell the user they can name another song in their library instead.';
+      }
+      if (/\b(other|another|earlier|later|older|newer) (songs?|tracks?|work|music|stuff|albums?)\b|\bdiscography\b|\b(his|her|their) (songs|catalog(ue)?|work)\b/.test(low) && !list.length) ctxCandidates(t).filter(x => !ctxSiblings(t).includes(x)).slice(0, 3).forEach(push);
+      return { list: list.slice(0, 4), hint: !list.length && CTX_HINT.test(low), note };
+    }
+    // The message hints at a link but names no song: the model picks from a short numbered list (small models do that reliably).
+    async function ctxPlan(g, st, text, status) {
+      const c = ctxCandidates(st.t, st.ctx).slice(0, 10); if (!c.length) return [];
+      if (c.length <= 2) return c;                                           // nothing to choose between
+      status('Checking which other songs matter…');
+      const al = ctxAlbum(st.t), menu = c.map((x, i) => (i + 1) + ' = ' + x.title + (al.includes(x) ? ' (same album' + (x.trackNo ? ', track ' + (x.trackNo % 1000) : '') + ')' : ''));
+      try {
+        const o = await g([{ role: 'system', content: 'The user is asking about the song "' + st.title + '"' + (st.artist ? ' by ' + st.artist : '') + '. Decide which OTHER songs must be read to answer. Reply with ONLY the numbers of the songs needed, at most 3, separated by commas, or 0 if no other song is needed.\nSongs:\n' + menu.join('\n') },
+          { role: 'user', content: text }], { max_new_tokens: 12, do_sample: false, temperature: 0, top_k: 1, repetition_penalty: 1 });
+        let r = o && o[0] && o[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : r;
+        const nums = (String(r || '').match(/\d{1,2}/g) || []).map(Number);
+        if (nums.length && nums.every(n => n === 0)) return [];
+        const pick = [...new Set(nums.filter(n => n >= 1 && n <= c.length))].slice(0, 3).map(n => c[n - 1]);
+        if (pick.length) return pick;
+      } catch (e) { console.warn('song context plan failed', e); }
+      return c.slice(0, 2);                                                   // no usable answer: the two closest songs
+    }
+    function ctxAttach(st, list) {
+      list.forEach(x => { if (!x || x.dbId === st.t.dbId) return; const k = st.ctx.indexOf(x.dbId); if (k >= 0) st.ctx.splice(k, 1); st.ctx.push(x.dbId); });   // asked for again = moved to the front of the queue
+      st.ctx = st.ctx.slice(-CTX_MAX); ctxChips(st);
+    }
+    // Chips under the Song Talk bar: one per attached song (tap to remove) and a button to add more.
+    function ctxChips(st) {
+      if (!st.row) return; st.row.textContent = '';
+      const mk = (label, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.onclick = fn; st.row.appendChild(b); return b; };
+      ctxList(st).forEach(x => mk('📎 ' + (x.title.length > 22 ? x.title.slice(0, 21) + '…' : x.title) + ' ✕', 'Stop reading ' + x.title, () => { st.ctx = st.ctx.filter(id => id !== x.dbId); ctxChips(st); }));
+      mk('＋ Add a song', 'Read another song alongside this one', () => ctxPick(st));
+    }
+    function ctxPick(st) {
+      if (songTalk !== st) return;
+      clist.querySelectorAll('.ch-a.ctx-pick').forEach(r => r.remove());
+      const c = ctxCandidates(st.t, st.ctx), al = ctxAlbum(st.t), inAl = c.filter(x => al.includes(x));
+      add('bot', blTone(c.length ? 'Which song should I read alongside ' + st.title + '? Pick one, or just name any song in your library while we talk.' : 'Just name any song in your library while we talk and I will read its lyrics and summary too.' + (st.ctx.length ? '' : ' (Nothing else from this album or artist has lyrics or a summary saved yet.)')));
+      if (!c.length) return;
+      const row = c.slice(0, 6).map(x => ['📎 ' + x.title, (b, d) => { b.remove(); if (!d.children.length) d.remove(); if (songTalk === st) ctxAttach(st, [x]); }]);
+      if (inAl.length >= 2) row.unshift(['💿 The album (' + Math.min(4, inAl.length) + ')', (b, d) => { d.remove(); if (songTalk === st) ctxAttach(st, inAl.slice(0, 4).reverse()); }]);
+      actions(row).classList.add('ctx-pick');
+    }
+    function songTalkSys(st, lyricTok) {
+      const t = st.t, f = songTalkFacts(t), sum = (sumLoad()[t.dbId] || {}).t || '';
+      // Other songs take a share of the lyric budget (more when there are several); what they do not use goes back to this song's lyrics.
+      const others = ctxList(st), rel = others.length ? ctxBriefs(others, t, Math.floor(lyricTok * (others.length > 1 ? 0.5 : 0.38))) : '';
+      lyricTok = Math.max(120, lyricTok - Math.ceil(rel.length / 3));
+      let lyr = f.cues.length ? f.cues.map(([at, q]) => '[' + mmssT(at) + '] ' + q) : getTranscript(t.dbId).lines;
+      // collapse straight repeats so the budget goes to new lines
+      lyr = lyr.filter((q, i) => i === 0 || q.replace(/^\[[^\]]*\] /, '') !== lyr[i - 1].replace(/^\[[^\]]*\] /, ''));
+      let cut = false; while (lyr.length > 8 && Math.ceil(lyr.join('\n').length / 3) > lyricTok) { lyr.pop(); cut = true; }
+      return 'You are Bloopy, talking in depth with the user about ONE song: "' + t.title + '"' + (st.artist ? ' by ' + st.artist : '') + '. ' +
+        'Cover what they ask about: the LITERAL meaning (what the words actually say happens), the METAPHORICAL meaning (images, symbols, double meanings and what they stand for), and the COMPOSITION (structure, how the music, tempo, key, instruments and vocals support the words). ' +
+        'Use the lyrics and facts below. You may add what you reliably know about this song and artist; never invent facts, and say clearly when something is interpretation rather than fact. ' +
+        'Quote at most a short line at a time. Answer the question directly ' + (CHAT_STYLES[chatStyleKey()].bul ? CHAT_LENS[chatLenKey()].bul : CHAT_LENS[chatLenKey()].talk) + ', then you may suggest one thing to explore next. ' + CHAT_STYLES[chatStyleKey()].talk + '\n' +
+        (rel ? 'The OTHER SONGS section holds the saved summaries and lyrics of other songs from the user\'s library. Use it when they ask how this song connects to those songs or to its album, and keep the focus on "' + t.title + '" otherwise. Never claim to have read a song whose words are not shown below. ' : '') +
+        (st.note ? st.note + ' ' : '') + '\n' +
+        (sum ? '\nSAVED SUMMARY:\n' + sum.replace(/\n*Sound:[^\n]*$/, '') + '\n' : '') + ctxAlbumLine(t) +
+        (f.lines.length ? '\nCOMPOSITION FACTS (from the app\'s audio analysis):\n- ' + f.lines.join('\n- ') + '\n' : '') +
+        (lyr.length ? '\nLYRICS of "' + t.title + '" (automatic transcript, may contain mistakes' + (cut ? ', shortened' : '') + '):\n' + lyr.join('\n') : '\nNo lyrics are saved for this song.') +
+        (rel ? '\n\nOTHER SONGS (context only, shortened):\n' + rel : '');
+    }
+    function endSongTalk(msg) {
+      if (!songTalk) return; const lbl = songTalk.title; if (songTalk.row) songTalk.row.remove(); songTalk = null;
+      clist.querySelectorAll('.ch-a.ctx-pick').forEach(r => r.remove());
+      if (stBar) { stBar.remove(); stBar = null; }
+      cin.placeholder = musicMode ? 'Talk about your music' : 'Say something to Bloopy';
+      if (msg !== false) add('bot', blTone('Done talking about ' + lbl + '. Back to normal chat.'));
+    }
+    function startSongTalk(i) {
+      const A = window.__ppApi, t = A.tracks()[i]; if (!t) return;
+      if (songTalk) endSongTalk(false);
+      const artist = t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? t.artist : '';
+      songTalk = { t, idx: i, title: t.title, artist, hist: [], ctx: [], note: '', row: null };
+      const st = songTalk;
+      cbox.style.display = 'flex'; try { blAnchor(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      stBar = document.createElement('div');
+      stBar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #2e2f36;font-size:12px;background:#22232a';
+      const lab = document.createElement('span'); lab.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      lab.textContent = '\ud83d\udcac Talking about ' + t.title + (artist ? ' \u2013 ' + artist : '');
+      const x = document.createElement('button'); x.textContent = '\u2715 End'; x.className = 'ch-c'; x.onclick = () => endSongTalk();
+      stBar.append(lab, x); cbox.insertBefore(stBar, clist);
+      st.row = document.createElement('div'); st.row.className = 'ch-chips'; st.row.style.borderBottom = '1px solid #2e2f36'; cbox.insertBefore(st.row, clist);
+      // A sister part ("Pt. 2", "Reprise") obviously belongs with this song, so it is read from the start.
+      let sib = []; try { sib = ctxSiblings(t).filter(ctxHas).slice(0, 2); st.ctx = sib.map(x => x.dbId); } catch (e) { console.warn(e); }
+      ctxChips(st);
+      let albumN = 0; try { const al = ctxAlbum(t); albumN = ctxCandidates(t).filter(x => al.includes(x)).length; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      cin.placeholder = 'Ask about ' + t.title + '\u2026';
+      const tr = getTranscript(t.dbId);
+      add('bot', blTone('Let\'s talk about ' + t.title + (artist ? ' by ' + artist : '') + '. Ask me anything: what it literally says, what the images stand for, or how the music is built.' +
+        ' Name another song or say \u201cthe album\u201d and I will read that too.' +
+        (sib.length ? ' I am also reading ' + sib.map(x => x.title).join(' and ') + ', since ' + (sib.length > 1 ? 'they look' : 'it looks') + ' like part of the same piece.' : '') +
+        (tr.words < 12 ? ' (I have no lyrics for it yet, so I can only go on what I know about it and its sound. Transcribing it first gives much better answers.)' : '')));
+      actions([['Literal story', (b, d) => { d.remove(); send('What literally happens in this song, verse by verse?'); }],
+               ['Metaphors', (b, d) => { d.remove(); send('What are the main metaphors and symbols, and what do they stand for?'); }],
+               ['How it\'s built', (b, d) => { d.remove(); send('How is the song built musically, and how does that support the meaning?'); }],
+               ['\u270e Fix lyrics', (b, d) => { d.remove(); startLyFix(i); }]].concat(albumN ? [['\ud83d\udcbf In the album', (b, d) => { d.remove(); send('How does this song fit into the album and connect to the songs around it?'); }]] : []));
+    }
+    async function songTalkReply(text) {
+      const st = songTalk; if (!st) return;
+      if (st.ctx.length && /^(?:(?:forget|drop|remove|clear|ignore|stop reading) (?:the |those |all )?(?:other |extra )?(?:songs?|tracks?|context|album)|(?:just|only) this (?:song|one))[.!]*$/i.test(text)) { st.ctx = []; ctxChips(st); add('bot', blTone('Okay, just ' + st.title + ' again.')); return; }
+      if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging). Ask me again when it's done."); return; }
+      chatBusy = true; holdModel = true; cm('work');
+      const el = add('bot', '\u2026');
+      try {
+        const g = await ensureModel(x => { el.textContent = x; });
+        const ctx = ctxOf(), mx = Math.max(90, Math.min(Math.floor(ctx * 0.3), Math.round(Math.max(160, Math.min(420, Math.floor(ctx * 0.18))) * CHAT_LENS[chatLenKey()].mul)));
+        const lyricTok = Math.max(250, Math.floor(ctx * 0.85) - mx - 700 - Math.min(3, st.hist.length / 2) * 160);
+        // Other songs the message asks for (named, pointed at, or hinted at) are attached before answering.
+        st.note = '';
+        try {
+          const w = ctxWanted(st, text); let got = w.list; st.note = w.note;
+          if (!got.length && w.hint) got = await ctxPlan(g, st, text, x => { el.textContent = x; });
+          if (got.length && songTalk === st) { ctxAttach(st, got.slice().reverse()); el.textContent = 'Reading ' + got.map(x => x.title).join(', ') + '\u2026'; }
+        } catch (e) { console.warn('song context failed', e); }
+        const uMsg = { role: 'user', content: text };
+        let fit = fitMsgs([{ role: 'system', content: songTalkSys(st, lyricTok) }].concat(st.hist.slice(-8), [uMsg]), mx);
+        if (fit.over) fit = fitMsgs([{ role: 'system', content: songTalkSys(st, Math.floor(lyricTok / 2)) }].concat(st.hist.slice(-4), [uMsg]), mx);
+        let acc = ''; const opts = { max_new_tokens: mx, do_sample: true, temperature: 0.6, top_p: 0.92, top_k: 40, repetition_penalty: 1.12 };
+        const onPiece = x => { acc += x; el.textContent = acc; scrollDown(); };
+        if (g.lm) opts.streamer = { callback_function: onPiece };
+        else if (tfMod && tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: onPiece });
+        const out = await g(fit.msgs, opts);
+        let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
+        r = finishSentence(String(r || acc).trim());
+        try { const tb = (loadTags()[st.t.dbId] || {}).bpm; r = fixNums(r, tb ? [tb] : []); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        if (!looksOk(r)) { el.textContent = 'Sorry, that came out garbled. Ask me again?'; return; }
+        el.textContent = r; scrollDown(); try { vSpeak(r); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        if (songTalk === st) { st.hist.push(uMsg, { role: 'assistant', content: r }); st.hist = st.hist.slice(-12); }
+      } catch (e) { console.error(e); el.textContent = 'Oops, my brain would not load: ' + errText(e); }
+      finally { chatBusy = false; holdModel = false; cm('greet'); setTimeout(() => cm('idle'), 1300); idleUnload(); }
+    }
+    // ---------- Lyric Fix: the AI proofreads automatic lyrics, you approve each change ----------
+    // 1) consistency pass, no AI: a chorus transcribed slightly differently each time gets its most common wording.
+    // 2) AI pass: sections of lines with context around them; the model lists only lines it would change ("12| new line").
+    //    Suggestions that rewrite too much are dropped. Nothing is saved until you tap Accept. Timestamps never change.
+    // 3) chat: "line 12 should be ...", "replace X with Y", "show the lyrics", "undo", "check again", or ask anything.
+    let lyFix = null, lfBar = null;
+    const LF_TAG = /^(\s*(?:\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]\s*)*)(.*)$/;
+    function lfLoad(t) {
+      let e = null, lyr = '';
+      try { e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[t.dbId] || null; } catch (x) {}
+      try { lyr = (JSON.parse(localStorage.getItem('playerLyricsV1')) || {})[t.dbId] || ''; } catch (x) {}
+      const raw = e ? (Array.isArray(e) ? e.map(q => [q.start, q.end, q.text]) : (e.c || [])) : [];
+      if (raw.length) {
+        const off = e && !Array.isArray(e) && isFinite(+e.o) ? +e.o : 0;                   // fold the offset into the times so nothing shifts
+        const cues = raw.map(q => ({ start: +q[0] + off, end: +q[1] + off, text: String(q[2] || '') }));
+        return { kind: 'subs', name: (e && !Array.isArray(e) && e.n) || 'Whisper', cues, texts: cues.map(c => c.text), lyr, rawSubs: JSON.stringify(e) };
+      }
+      if (!lyr) return null;
+      const lines = String(lyr).split(/\r?\n/), map = [], texts = [];
+      lines.forEach((ln, k) => { const m = ln.match(LF_TAG), tx = (m ? m[2] : ln).trim(); if (tx && !/^\[[^\]]*\]$/.test(tx)) { map.push(k); texts.push(tx); } });
+      return texts.length ? { kind: 'lyrics', lines, map, texts, lyr } : null;
+    }
+    function lfSave() {                                                   // write the current texts back, keeping every timestamp
+      const F = lyFix; if (!F) return false;
+      const A = window.__ppApi, L = window.__ppLyrics, D = F.data;
+      if (D.kind === 'subs') {
+        const ok = A.setSubtitles(F.t.dbId, D.cues.map((c, k) => ({ start: c.start, end: c.end, text: F.texts[k] })), D.name);
+        if (D.lyr && L) {                                                 // the same lines in the saved (LRC) lyrics follow
+          const swap = new Map(); D.texts.forEach((o, k) => { if (F.texts[k] !== o && !swap.has(o.trim())) swap.set(o.trim(), F.texts[k]); });
+          if (swap.size) { const nl = String(D.lyr).split(/\r?\n/).map(ln => { const m = ln.match(LF_TAG); return m && swap.has(m[2].trim()) ? m[1] + swap.get(m[2].trim()) : ln; }).join('\n'); if (nl !== D.lyr) L.set(F.t.dbId, nl); }
+        }
+        return ok !== false;
+      }
+      const lines = D.lines.slice(); D.map.forEach((k, j) => { const m = lines[k].match(LF_TAG); lines[k] = (m ? m[1] : '') + F.texts[j]; });
+      if (L) L.set(F.t.dbId, lines.join('\n')); return true;
+    }
+    function lfUndoAll() {
+      const F = lyFix; if (!F) return;
+      F.texts = F.data.texts.slice(); F.stack = [];
+      const A = window.__ppApi, L = window.__ppLyrics, D = F.data;
+      if (D.kind === 'subs') A.setSubtitles(F.t.dbId, D.cues, D.name);
+      if (L && D.lyr) L.set(F.t.dbId, D.lyr);
+      add('bot', blTone('\u21ba All changes undone. The lyrics are back to how they were.'));
+    }
+    function lfApply(n, txt, why) {                                       // one change (n = 1-based line), saved right away
+      const F = lyFix; if (!F || n < 1 || n > F.texts.length) return false;
+      const old = F.texts[n - 1]; if (old === txt) return false;
+      F.stack.push([n, old]); F.texts[n - 1] = txt; F.changed++;
+      return lfSave();
+    }
+    const lfSim = (a, b) => { a = mNorm(a); b = mNorm(b); if (!a || !b) return 0; const mx = Math.max(a.length, b.length), d = mLev(a, b, Math.ceil(mx * 0.6)); return 1 - d / mx; };
+    const lfTok = q => String(q).trim().split(/\s+/).filter(Boolean), lfW = w => w.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+    function lfDiff(o, n) {                                               // word diff: which words of the old line (and of the new one) differ
+      const a = lfTok(o), b = lfTok(n), A = a.map(lfW), B = b.map(lfW), L = a.length, M = b.length, dp = [];
+      for (let x = 0; x <= L; x++) dp.push(new Array(M + 1).fill(0));
+      for (let x = L - 1; x >= 0; x--) for (let y = M - 1; y >= 0; y--) dp[x][y] = A[x] === B[y] ? dp[x + 1][y + 1] + 1 : Math.max(dp[x + 1][y], dp[x][y + 1]);
+      const oBad = new Array(L).fill(true), nBad = new Array(M).fill(true); let x = 0, y = 0;
+      while (x < L && y < M) { if (A[x] === B[y]) { oBad[x] = nBad[y] = false; x++; y++; } else if (dp[x + 1][y] >= dp[x][y + 1]) x++; else y++; }
+      const span = f => { const k = f.indexOf(true); return k < 0 ? null : [k, f.lastIndexOf(true)]; };
+      return { a, b, os: span(oBad), ns: span(nBad), oBad, nBad };
+    }
+    function lfMark(tok, bad, cls) {                                      // the words with the differing ones underlined
+      const f = document.createDocumentFragment();
+      tok.forEach((w, k) => { if (k) f.appendChild(document.createTextNode(' ')); if (bad[k]) { const u = document.createElement('u'); u.className = cls; u.textContent = w; f.appendChild(u); } else f.appendChild(document.createTextNode(w)); });
+      return f;
+    }
+    function lfSuggest(list, intro) {                                     // [[n, newText, why]] -> one list: tick boxes, per-line Accept / Skip / Both wrong, underlined differences
+      const F = lyFix; if (!F) return;
+      const todo = list.filter(([n, tx]) => n >= 1 && n <= F.texts.length && tx && tx !== F.texts[n - 1]);
+      if (!todo.length) return false;
+      if (intro) add('bot', blTone(intro));
+      const box = document.createElement('div'); box.className = 'ch-m bot lf-box'; const items = [];
+      let bar = null, accB = null;
+      const live = () => items.filter(o => o.item.isConnected), picked = () => live().filter(o => o.cb.checked);
+      const upd = () => { if (!accB) return; const k = picked().length; accB.textContent = '\u2713 Accept ' + (k === live().length ? 'all ' : '') + k + ' ticked'; accB.disabled = !k; };
+      const after = () => { if (!live().length) { box.remove(); if (bar) bar.remove(); } else upd(); };
+      const mkB = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.className = 'ch-c'; b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); fn(b); }; return b; };
+      todo.forEach(([n, tx, why]) => {
+        const old = F.texts[n - 1], d = lfDiff(old, tx);
+        const item = document.createElement('div'), lab = document.createElement('label'), cb = document.createElement('input'), sp = document.createElement('span');
+        item.className = 'lf-item'; lab.className = 'lf-it'; cb.type = 'checkbox'; cb.checked = true; cb.onchange = upd;
+        sp.appendChild(document.createTextNode('Line ' + n + (why ? ' (' + why + ')' : '') + ':\n\u2013 ')); sp.appendChild(lfMark(d.a, d.oBad, 'o'));
+        sp.appendChild(document.createTextNode('\n+ ')); sp.appendChild(lfMark(d.b, d.nBad, 'n'));
+        lab.append(cb, sp); item.appendChild(lab);
+        const o = { n, tx, item, cb }; items.push(o);
+        const row = document.createElement('div'), ed = document.createElement('div'); row.className = 'lf-row'; ed.className = 'lf-ed'; ed.style.display = 'none';
+        const done = (txt, msg) => { if (lfApply(n, txt)) add('bot', msg); item.remove(); after(); };
+        row.append(
+          mkB('\u2713 Accept', () => done(tx, '\u2713 Line ' + n + ' fixed.')),
+          mkB('\u2715 Skip', () => { item.remove(); after(); }),
+          mkB('\u270e Both wrong', () => { ed.style.display = ed.style.display === 'none' ? 'flex' : 'none'; }));
+        // Editor for when neither the heard line nor the suggestion is right: rewrite just the underlined part, or the whole line.
+        const inp = v => { const i = document.createElement('input'); i.type = 'text'; i.value = v; return i; };
+        const hint = t => { const h = document.createElement('div'); h.className = 'lf-h'; h.textContent = t; return h; };
+        let partIn = null;
+        if (d.os) {
+          const bad = d.a.slice(d.os[0], d.os[1] + 1).join(' '), sugPart = d.ns ? d.b.slice(d.ns[0], d.ns[1] + 1).join(' ') : '';
+          partIn = inp(sugPart); partIn.placeholder = 'What the underlined part should say';
+          const pre = d.a.slice(0, d.os[0]), post = d.a.slice(d.os[1] + 1);
+          ed.append(hint('Just the underlined part (\u201c' + bad + '\u201d):'), partIn,
+            mkB('Use this part fix', () => { const v = partIn.value.trim(); if (!v) { add('bot', 'Type what the underlined part should say, or use the whole-line box.'); return; } done(pre.concat([v], post).join(' '), '\u2713 Line ' + n + ' fixed with your wording for \u201c' + bad + '\u201d.'); }));
+        }
+        const whole = inp(tx); whole.placeholder = 'The whole line';
+        ed.append(hint('Or rewrite the whole line:'), whole,
+          mkB('Use my whole line', () => { const v = whole.value.trim(); if (!v) { add('bot', 'The line cannot be empty.'); return; } done(v, '\u2713 Line ' + n + ' set to your wording.'); }),
+          mkB('Cancel', () => { ed.style.display = 'none'; }));
+        item.append(row, ed); box.appendChild(item);
+      });
+      clist.appendChild(box); scrollDown();
+      bar = actions([
+        ['\u2713 Accept', (b, d) => {
+          const sel = picked(); let k = 0;
+          sel.forEach(o => { if (F.texts[o.n - 1] !== o.tx && lfApply(o.n, o.tx)) k++; o.item.remove(); });
+          add('bot', blTone('\u2713 ' + k + ' line' + (k === 1 ? '' : 's') + ' fixed. Say \u201cundo\u201d to take back the last one.'));
+          after();
+        }],
+        ['Select all', () => { live().forEach(o => { o.cb.checked = true; }); upd(); }],
+        ['Select none', () => { live().forEach(o => { o.cb.checked = false; }); upd(); }],
+        ['Skip the rest', (b, d) => { box.remove(); d.remove(); }]]);
+      accB = bar.children[0]; upd();
+      return true;
+    }
+    // Choruses often change on purpose between passes ("I'm falling" -> "I'm flying", a twist in the last chorus), so a
+    // repeat is only flagged when the difference looks like a mishearing: spacing/punctuation only, or ONE word that is
+    // one letter off with the same first letter ("dawn"/"down", "save"/"saves"). A different word, several changed words, or a line sung only
+    // twice is left alone. Each flag is still just a suggestion with Accept / Skip.
+    function lfMisheard(a, b) {
+      if (mFlat(a) === mFlat(b)) return true;                            // "gonna" vs "gon na", commas, capitals
+      const wa = mNorm(a).split(' '), wb = mNorm(b).split(' ');
+      if (wa.length !== wb.length) return false;
+      const diff = []; for (let k = 0; k < wa.length; k++) if (wa[k] !== wb[k]) diff.push(k);
+      if (diff.length !== 1) return false;
+      const x = wa[diff[0]], y = wb[diff[0]];
+      return x[0] === y[0] && mLev(x, y, 1) <= 1;                         // one letter, same start: "dawn"/"down" yes, "falling"/"flying" or "night"/"light" no
+    }
+    function lfConsistency() {
+      const F = lyFix, T = F.texts, n = T.length, used = new Array(n).fill(false), out = [];
+      for (let i = 0; i < n; i++) {
+        if (used[i] || mNorm(T[i]).length < 10) continue;
+        const grp = [i];
+        for (let j = i + 1; j < n; j++) if (!used[j] && lfSim(T[i], T[j]) >= 0.8) grp.push(j);
+        if (grp.length < 3) continue;                                     // needs at least three passes to know which one is odd
+        grp.forEach(j => used[j] = true);
+        const cnt = new Map(); grp.forEach(j => cnt.set(T[j], (cnt.get(T[j]) || 0) + 1));
+        const best = [...cnt.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0];
+        if (best[1] < 2 || best[1] < grp.length / 2) continue;           // no clear majority: the variations are probably the song
+        grp.forEach(j => { if (T[j] !== best[0] && cnt.get(T[j]) === 1 && lfMisheard(T[j], best[0])) out.push([j + 1, best[0], 'possibly misheard: the other ' + best[1] + ' times it is sung this way']); });
+      }
+      return out;
+    }
+    const LF_SYS = 'You correct automatic lyric transcriptions. The speech recognizer often hears a phrase that SOUNDS like what was sung but means something else, so a line can read fluently and still be wrong. ' +
+      'Check each line against the song\'s subject (given below), the lines around it, and normal grammar. Fix: misheard words, words that make no sense in context, lines that are fluent but do not fit what the song is talking about when a similar-sounding phrase would fit, and names or places heard as ordinary words. ' +
+      'Repeated lines such as a chorus can change on purpose between repeats: do not make them match unless one is clearly misheard. ' +
+      'A fix must sound almost the same when spoken aloud and keep about the same length. Keep the singer\'s own style, slang, contractions and repetition. Do not rewrite, improve, censor or translate, and never add or remove lines. ' +
+      'Reply with ONLY the lines you change, one per line, exactly as: number| corrected line. If nothing needs fixing, reply: NONE';
+    const LF_SYS2 = 'You are a careful proofreader of automatic lyric transcriptions. The speech recognizer often writes a phrase that SOUNDS like what was sung but is the wrong words. Such a line is usually grammatical, so being grammatical does not make it right. ' +
+      'Go through every line and ask: does this fit the song\'s subject and the lines before and after it? Does each word make sense here? Is there a similar-sounding word or phrase that fits better (for example a name, a place, a common expression, or a repeated phrase from nearby lines)? ' +
+      'If a line is odd, out of place, or unrelated to its surroundings, give the line the singer most likely sang. It must sound almost the same when spoken aloud and have about the same number of syllables. ' +
+      'Repeated lines such as a chorus can change on purpose between repeats: do not make them match unless one is clearly misheard. ' +
+      'Do not change lines that already fit. Do not polish, censor, translate, add or remove lines. Reply with ONLY the lines you change, one per line, exactly as: number| corrected line. If nothing needs fixing, reply: NONE';
+    const lfPho = a => String(a || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, '').replace(/\bkn/g, 'n').replace(/\bwr/g, 'r').replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/c(?=[eiy])/g, 's').replace(/c/g, 'k').replace(/q/g, 'k').replace(/x/g, 'ks').replace(/z/g, 's').replace(/gh/g, '').replace(/([a-z])\1+/g, '$1').replace(/(?<=[a-z])[aeiouy]+/g, '').replace(/\s+/g, ' ').trim();   // rough sound skeleton, so sound-alike fixes pass the guard even when the spelling differs
+    const lfGuard = (o, tx, deep) => { if (!tx || tx === o) return false; const lr = tx.length / Math.max(1, o.length); if (lr < (deep ? 0.4 : 0.5) || lr > (deep ? 2.2 : 1.8)) return false; return lfSim(o, tx) >= (deep ? 0.3 : 0.4) || lfSim(lfPho(o), lfPho(tx)) >= 0.6; };
+    const lfParse = (r, lo, hi) => String(r || '').split(/\n/).map(ln => ln.match(/^\s*(?:line\s*)?(\d{1,4})\s*[|:.)\]-]\s*(.+?)\s*$/i)).filter(Boolean).map(m => [+m[1], m[2].replace(/^["\u201c]+|["\u201d]+$/g, '').trim()]).filter(([n]) => n >= lo && n <= hi);
+    // Decode pass: a word that is out of place (a name like "Lincoln" in a line that has nothing to do with it) is often the recognizer
+    // hearing two ordinary words as one name, or one word as another. The model is asked to sound the odd word out and say what was sung.
+    const LF_SYS3 = 'You repair automatic lyric transcriptions. The speech recognizer often turns ordinary words into a NAME or an odd word that has nothing to do with the song, or glues two words into one, or splits one word in two. ' +
+      'For example, "Kingston my heart" was really "king\'s in my heart", and "hold me Carolina" was really "hold me, carry on". ' +
+      'Look at each line. If a word (especially a name or a rare word) does not fit the song\'s subject or the lines around it, say it out loud syllable by syllable and work out which ordinary word or words sound the same and make sense there. The fix can be one word, two or three words, or a different word. ' +
+      'Change only the odd word or words. Keep every other word exactly as written. Do not polish, translate, add or remove lines. If the odd word really could be a real name that belongs, leave it. ' +
+      'Repeated lines such as a chorus can change on purpose between repeats: do not make them match unless one is clearly misheard. ' +
+      'Reply with ONLY the lines you change, one per line, exactly as: number| corrected line. If nothing needs fixing, reply: NONE';
+    function lfSuspects() {                                                // mid-line capitalised words (names) that are not in the title or artist and are not sung over and over
+      const F = lyFix, T = F.texts, cnt = new Map(), out = new Map(), skip = new Set(lfTok((F.t.title || '') + ' ' + (F.artist || '')).map(lfW).filter(Boolean));
+      T.forEach(q => new Set(lfTok(q).map(lfW)).forEach(w => { if (w) cnt.set(w, (cnt.get(w) || 0) + 1); }));
+      T.forEach((q, j) => {
+        const tk = lfTok(q), bad = [];
+        tk.forEach((w, k) => { const c = lfW(w); if (k && c.length >= 3 && /^\p{Lu}\p{Ll}/u.test(w) && !/[.!?]["')\u201d]?$/.test(tk[k - 1]) && !skip.has(c) && (cnt.get(c) || 0) <= 2) bad.push(w.replace(/^[^\p{L}]+|[^\p{L}\p{N}']+$/gu, '')); });
+        if (bad.length) out.set(j, bad);
+      });
+      return out;
+    }
+    const lfDecGuard = (o, tx) => {                                        // looser than lfGuard: the odd word may become 2-3 words, but it must sound like what it replaces
+      if (!tx || tx === o) return false; const lr = tx.length / Math.max(1, o.length); if (lr < 0.5 || lr > 2.2) return false;
+      const d = lfDiff(o, tx); if (!d.os || !d.ns) return lfGuard(o, tx, true);
+      if (d.os[1] - d.os[0] > 3 || d.ns[1] - d.ns[0] > 4) return false;     // a rewrite of the whole line is not a decode
+      const a = d.a.slice(d.os[0], d.os[1] + 1).join(' '), b = d.b.slice(d.ns[0], d.ns[1] + 1).join(' ');
+      const sk = x => lfPho(x).replace(/[aeiouy\s]/g, '').replace(/h/g, ''), x = sk(a), y = sk(b); if (!x || !y) return lfSim(a, b) >= 0.4;   // consonant skeleton: "Lincoln" ~ "the link on"
+      const [sh, lo] = x.length <= y.length ? [x, y] : [y, x]; let prev = new Array(lo.length + 1).fill(0);                         // best match of the shorter skeleton anywhere inside the longer (extra little words like "the" are free)
+      for (let i = 1; i <= sh.length; i++) { const cur = [i]; for (let j = 1; j <= lo.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (sh[i - 1] === lo[j - 1] ? 0 : 1)); prev = cur; }
+      return 1 - Math.min(...prev) / sh.length >= 0.55 || lfSim(a, b) >= 0.4;
+    };
+    async function lfAiPass(mode) {
+      const dec = mode === 'decode', deep = mode === true || dec;
+      const F = lyFix; if (!F || F.busy) return; F.busy = true;
+      chatBusy = true; holdModel = true; cm('work');
+      const sus = dec ? lfSuspects() : null, status = add('bot', '\u2026'), who = F.t.title + (F.artist ? ' by ' + F.artist : '');
+      let found = 0;
+      try {
+        const g = await ensureModel(x => { status.textContent = x; });
+        const T = F.texts, N = T.length, CH = deep ? 8 : 12, CX = deep ? 8 : 5;
+        if (F.theme == null) {                                           // what the song is about: the single biggest help for spotting lines that read fine but do not belong
+          F.theme = ''; status.textContent = 'Getting the gist of the song\u2026'; scrollDown();
+          try {
+            const ctxT = ctxOf(), lim = Math.max(1200, Math.min(6000, Math.floor(ctxT * 2.2)));
+            let body = ''; for (let k = 0; k < N && body.length < lim; k++) body += T[k] + '\n';
+            const o = await g([{ role: 'system', content: 'These are automatic lyrics and some words are wrong. In ONE short sentence, say what the song is about and its mood. Do not quote lines.' }, { role: 'user', content: 'Song: ' + who + '\n' + body }], { max_new_tokens: 70, do_sample: false, temperature: 0, top_k: 1, repetition_penalty: 1.05 });
+            let tr = o && o[0] && o[0].generated_text; tr = Array.isArray(tr) ? (tr[tr.length - 1] || {}).content : tr; F.theme = String(tr || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+          } catch (e) { console.warn('lyric fix theme failed', e); }
+        }
+        for (let s0 = 0; s0 < N && lyFix === F; s0 += CH) {
+          const s1 = Math.min(N, s0 + CH);
+          status.textContent = (dec ? 'Sounding out odd words in lines ' : deep ? 'Looking closely at lines ' : 'Reading lines ') + (s0 + 1) + '\u2013' + s1 + ' of ' + N + '\u2026'; scrollDown();
+          const ctxB = T.slice(Math.max(0, s0 - CX), s0).join(' / '), ctxA = T.slice(s1, Math.min(N, s1 + CX)).join(' / ');
+          const user = 'Song: ' + who + '\n' + (F.theme ? 'What the song is about: ' + F.theme + '\n' : '') + (ctxB ? 'Lines just before (context only): ' + ctxB + '\n' : '') + 'Lines to check:\n' +
+            T.slice(s0, s1).map((q, k) => (s0 + k + 1) + '| ' + q).join('\n') + (dec ? (() => { const h = []; for (let k = s0; k < s1; k++) if (sus.has(k)) h.push((k + 1) + '| ' + sus.get(k).join(', ')); return h.length ? '\nWords that look out of place (check these first):\n' + h.join('\n') : ''; })() : '') + (ctxA ? '\nLines just after (context only): ' + ctxA : '');
+          let r = '';
+          try { const o = await g([{ role: 'system', content: dec ? LF_SYS3 : deep ? LF_SYS2 : LF_SYS }, { role: 'user', content: user }], { max_new_tokens: 420, do_sample: false, temperature: 0, top_k: 1, repetition_penalty: 1.05 }); r = o && o[0] && o[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : r; }
+          catch (e) { console.warn('lyric fix chunk failed', e); continue; }
+          if (/^\s*none\s*$/i.test(String(r))) continue;
+          // Guard against rewrites: a fix must still look like the line it replaces.
+          const sug = lfParse(r, s0 + 1, s1).filter(([n, tx]) => dec ? lfDecGuard(T[n - 1], tx) : lfGuard(T[n - 1], tx, deep)).map(([n, tx]) => { let why = deep ? 'sounds similar, fits the song better' : ''; if (dec) { const d = lfDiff(T[n - 1], tx); if (d.os && d.ns) why = 'heard \u201c' + d.a.slice(d.os[0], d.os[1] + 1).join(' ') + '\u201d, probably \u201c' + d.b.slice(d.ns[0], d.ns[1] + 1).join(' ') + '\u201d'; } return [n, tx, why]; });
+          if (sug.length) { found += sug.length; lfSuggest(sug); }
+        }
+        status.textContent = found ? (dec ? 'Done decoding: ' : 'Done reading: ') + found + ' suggestion' + (found === 1 ? '' : 's') + ' above.' : 'Done reading. I did not find anything I am sure is wrong.';
+        if (!dec) { const btns = []; if (!deep) btns.push(['\ud83d\udd0e Look harder (finds more, may be less sure)', (b, d) => { d.remove(); lfAiPass(true); }]); btns.push(['\ud83e\udde9 Decode odd words and names', (b, d) => { d.remove(); lfAiPass('decode'); }]); actions(btns); }
+        add('bot', blTone('You can also tell me: \u201cline 12 should be \u2026\u201d, \u201creplace Carly with Charlie\u201d, \u201cshow the lyrics\u201d, or ask about any line. Say \u201cdone\u201d when you are finished.'));
+      } catch (e) { console.error(e); status.textContent = 'Oops, my brain would not load: ' + errText(e); }
+      finally { F.busy = false; chatBusy = false; holdModel = false; cm('idle'); idleUnload(); scrollDown(); }
+    }
+    function endLyFix(msg) {
+      if (!lyFix) return; const F = lyFix; lyFix = null;
+      if (lfBar) { lfBar.remove(); lfBar = null; }
+      cin.placeholder = musicMode ? 'Talk about your music' : 'Say something to Bloopy';
+      if (msg !== false) add('bot', blTone(F.changed ? 'Saved. ' + F.changed + ' change' + (F.changed === 1 ? '' : 's') + ' to the lyrics of ' + F.t.title + '.' : 'Done. Nothing was changed.'));
+    }
+    function startLyFix(i) {
+      const A = window.__ppApi, t = A.tracks()[i]; if (!t) return;
+      if (typeof songTalk !== 'undefined' && songTalk) endSongTalk(false);
+      if (lyFix) endLyFix(false);
+      cbox.style.display = 'flex'; try { blAnchor(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      const data = lfLoad(t);
+      if (!data) { add('bot', blTone('There are no lyrics or subtitles saved for ' + t.title + ' yet. Transcribe it first (Lyrics & subtitles), or let auto-lyrics find them, then ask me again.')); return; }
+      const artist = t.artist && !/^(unknown artist|video|stream)$/i.test(t.artist) ? t.artist : '';
+      lyFix = { t, idx: i, artist, data, texts: data.texts.slice(), stack: [], changed: 0, hist: [], busy: false };
+      lfBar = document.createElement('div');
+      lfBar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid #2e2f36;font-size:12px;background:#22232a';
+      const lab = document.createElement('span'); lab.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      lab.textContent = '\u270e Fixing lyrics: ' + t.title;
+      const u = document.createElement('button'); u.textContent = '\u21ba Undo all'; u.className = 'ch-c'; u.onclick = () => lfUndoAll();
+      const x = document.createElement('button'); x.textContent = '\u2715 Done'; x.className = 'ch-c'; x.onclick = () => endLyFix();
+      lfBar.append(lab, u, x); cbox.insertBefore(lfBar, clist);
+      cin.placeholder = 'e.g. line 12 should be \u2026';
+      add('bot', blTone('Let\'s fix the lyrics of ' + t.title + (artist ? ' by ' + artist : '') + ' (' + lyFix.texts.length + ' lines' + (data.kind === 'subs' ? ', timing stays as it is' : '') + '). Nothing changes until you accept it.'));
+      const cons = lfConsistency();
+      if (!lfSuggest(cons, 'First, repeated lines (like the chorus) where one pass looks misheard. Skip any that the song really changes:')) add('bot', 'No repeated lines look misheard. \u2713');
+      if (brainOn() && (gen || lsGet('ppvChatDl') === '1')) actions([['\ud83d\udd0d Check every line with AI', (b, d) => { d.remove(); lfAiPass(); }], ['\ud83e\udde9 Decode odd words and names', (b, d) => { d.remove(); lfAiPass('decode'); }], ['Show the lyrics', (b, d) => { d.remove(); lfShow(); }]]);
+      else add('bot', 'Turn on my AI brain in the assistant settings for the line-by-line check. You can still edit lines here: \u201cline 12 should be \u2026\u201d.');
+    }
+    function lfShow(from) {
+      const F = lyFix; if (!F) return; const a = Math.max(0, (from || 1) - 1), b = Math.min(F.texts.length, a + 40);
+      add('bot', F.texts.slice(a, b).map((q, k) => (a + k + 1) + '. ' + q).join('\n') + (b < F.texts.length ? '\n\u2026 say \u201cshow from line ' + (b + 1) + '\u201d for more' : ''));
+    }
+    async function lfChat(text) {                                          // everything typed while Lyric Fix is open
+      const F = lyFix; let m;
+      if ((m = text.match(/^line\s*(\d{1,4})\s*(?:should be|is|=|:|->|to|says?)\s*["\u201c']?(.+?)["\u201d']?$/i))) {
+        const n = +m[1]; if (n < 1 || n > F.texts.length) { add('bot', 'There are ' + F.texts.length + ' lines.'); return; }
+        const old = F.texts[n - 1]; if (lfApply(n, m[2].trim())) add('bot', '\u2713 Line ' + n + ':\n\u2013 ' + old + '\n+ ' + m[2].trim()); else add('bot', 'Line ' + n + ' already says that.'); return;
+      }
+      if ((m = text.match(/^(?:replace|change|swap)\s+["\u201c']?(.+?)["\u201d']?\s+(?:with|to|for|->)\s+["\u201c']?(.+?)["\u201d']?(?:\s+everywhere)?$/i))) {
+        const from = m[1].trim(), to = m[2].trim(), re = new RegExp('(^|[^\\p{L}\\p{N}])' + from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^\\p{L}\\p{N}])', 'giu');
+        let k = 0; F.texts.forEach((q, j) => { const nq = q.replace(re, (all, pre) => pre + to); if (nq !== q && lfApply(j + 1, nq)) k++; });
+        add('bot', k ? '\u2713 Replaced \u201c' + from + '\u201d with \u201c' + to + '\u201d in ' + k + ' line' + (k === 1 ? '' : 's') + '.' : 'I could not find \u201c' + from + '\u201d in the lyrics.'); return;
+      }
+      if ((m = text.match(/^(?:show|list|read)(?: me)?(?: the)? (?:lyrics|lines)(?: from(?: line)? (\d+))?$|^show from line (\d+)$/i))) { lfShow(+(m[1] || m[2] || 1)); return; }
+      if (/^undo(?: last| that)?$/i.test(text)) { const u = F.stack.pop(); if (!u) { add('bot', 'Nothing to undo.'); return; } F.texts[u[0] - 1] = u[1]; F.changed = Math.max(0, F.changed - 1); lfSave(); add('bot', '\u21ba Line ' + u[0] + ' is back to: ' + u[1]); return; }
+      if (/^undo (?:all|everything)$/i.test(text)) { lfUndoAll(); return; }
+      if (/^(?:decode|check|fix|find)(?: the)? (?:odd|weird|wrong|strange|unrelated)? ?(?:words?|names?)(?: and (?:words?|names?))?$|^(?:decode|sound out) (?:it|them|the lyrics)$/i.test(text)) { await lfAiPass('decode'); return; }
+      if (/^(?:look|check|go over|read|review)(?: it| them| the lyrics)? (?:harder|closer|more carefully|deeper)$|^(?:deep|deeper|harder) check$/i.test(text)) { await lfAiPass(true); return; }
+      if (/^(?:check|review|go over|proofread)(?: it| them| the lyrics)?(?: again)?$|^check again$/i.test(text)) { await lfAiPass(); return; }
+      // Anything else: ask the AI with the numbered lyrics; fixes it proposes come back as Accept buttons.
+      if (!brainOn() || (!gen && lsGet('ppvChatDl') !== '1')) { add('bot', 'That needs my AI brain. Edits work without it: \u201cline 12 should be \u2026\u201d, \u201creplace X with Y\u201d.'); return; }
+      chatBusy = true; holdModel = true; cm('work'); const el = add('bot', '\u2026');
+      try {
+        const g = await ensureModel(x => { el.textContent = x; });
+        const ctx = ctxOf(), mx = Math.max(160, Math.min(380, Math.floor(ctx * 0.16)));
+        let lines = F.texts.map((q, k) => (k + 1) + '| ' + q); while (lines.length > 10 && Math.ceil(lines.join('\n').length / 3) > Math.floor(ctx * 0.85) - mx - 500) lines.pop();
+        const sys = 'You help the user correct the automatic lyrics of "' + F.t.title + '"' + (F.artist ? ' by ' + F.artist : '') + '. Answer their question in one or two short sentences. ' +
+          'If you suggest corrections, put each on its own line at the end as: number| corrected line. Only suggest fixes for clear transcription mistakes; never rewrite the song.\nLYRICS (numbered):\n' + lines.join('\n');
+        const fit = fitMsgs([{ role: 'system', content: sys }].concat(F.hist.slice(-4), [{ role: 'user', content: text }]), mx);
+        let acc = ''; const opts = { max_new_tokens: mx, do_sample: false, temperature: 0, top_k: 1, repetition_penalty: 1.08 };
+        if (g.lm) opts.streamer = { callback_function: x => { acc += x; el.textContent = acc; scrollDown(); } };
+        const out = await g(fit.msgs, opts); let r = out && out[0] && out[0].generated_text; r = String(Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc)).trim();
+        const sug = lfParse(r, 1, F.texts.length).filter(([n, tx]) => tx !== F.texts[n - 1] && lfSim(F.texts[n - 1], tx) >= 0.35);
+        const talk = r.split(/\n/).filter(ln => !/^\s*(?:line\s*)?\d{1,4}\s*[|:.)\]-]/i.test(ln)).join('\n').trim();
+        el.textContent = talk || (sug.length ? 'Here is what I would change:' : 'I am not sure. Tell me what you hear and I will fix it.');
+        if (sug.length) lfSuggest(sug.map(([n, tx]) => [n, tx, '']));
+        F.hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); F.hist = F.hist.slice(-8);
+      } catch (e) { console.error(e); el.textContent = 'Oops, my brain would not load: ' + errText(e); }
+      finally { chatBusy = false; holdModel = false; cm('idle'); idleUnload(); scrollDown(); }
+    }
+    function agent(raw, skip) { holdModel = false; const hit = agentCore(raw, skip); if (hit && !chatBusy && !holdModel && !bigRam()) unloadModel(); return hit; }   // big-RAM phones keep it warm (idleUnload frees it later)
     // Loose phrasing -> canonical command, by plain rules (no model needed). Returns {cmd, q} or null. q = ask before acting.
     function interpret(t) {
       const s = t.toLowerCase(); let m;
@@ -2731,7 +6374,7 @@
         || R(/\b(put|throw) something on\b/, 'play something');
     }
     function agentCore(raw, skip) {
-      let t = blFrame(String(raw)).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
+      let t = blFrame(String(raw)).trim().replace(/^(hey |hi |ok |okay )?(bloopy?[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
       const A = window.__ppApi; if (!A || !t) return false;
       let m; const say = s => { add('bot', blTone(s)); return true; }, done = s => say('\u2713 ' + s);
       const click = id => { const b = $id(id); if (b && !b.disabled) { b.click(); return true; } return false; };
@@ -2741,7 +6384,7 @@
       const vol = () => $id('volume');
       const setVol = v => { const e = vol(); if (!e) return false; v = Math.max(0, Math.min(100, Math.round(v))); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); return done('Volume ' + v + '%.'); };
       const sleepSet = (v, msg) => { const b = document.querySelector('#sleep-dropdown [data-sleep="' + v + '"]'); if (!b) return say('I cannot reach the sleep timer.'); b.click(); return done(msg); };
-      const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); runJob('tag', scope === 'all' ? 'tagging your whole library' : 'tagging this track', () => { const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok; }); return true; };
+      const tagWith = scope => { const sc = $id('ppv-scope'); if (!sc || !$id('ppv-tag')) return say('Tagging is not ready yet.'); { const saved = Object.assign({}, loadTags()), scp = scope === 'all' ? 'your library' : 'this track'; uPush({ label: 'Put the old tags back on ' + scp + '.', undo: () => { const st = loadTags(); Object.keys(st).forEach(k => delete st[k]); Object.assign(st, saved); saveTagStore(); } }); } runJob('tag', scope === 'all' ? 'tagging your whole library' : 'tagging this track', () => { const prev = sc.value; sc.value = scope; const ok = click('ppv-tag'); sc.value = prev; return ok; }); return true; };
 
       if (!skip) { const ip = interpret(t); if (ip) { if (ip.q) return ask(ip.q, () => agent(ip.cmd, true)); t = ip.cmd; } }
       if (/^(help|commands|what can you do|what can i ask( you)?|what do you do)$/i.test(t)) return say(HELP + HELP_SMART + HELP_MIX + HELP_MORE);
@@ -2826,7 +6469,7 @@
         if (!pl) return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.' + (pls.length ? ' You have: ' + pls.slice(0, 6).map(p => p.name).join(', ') + '.' : ' You have no playlists yet. Say \u201cmake a playlist called ' + m[1] + '\u201d.'));
         A.addToPlaylist(c.dbId, pl.id); A.commitPlaylists(); return done('Added \u201c' + c.title + '\u201d to ' + pl.name + '.');
       }
-      // ---- things you would normally do with a gesture or a tap: Bloop runs the app's own gesture actions and buttons ----
+      // ---- things you would normally do with a gesture or a tap: Bloopy runs the app's own gesture actions and buttons ----
       const GA = id => { const ga = A.gestureActions && A.gestureActions(), g = ga && ga[id]; if (!g || !g.run) return false; g.run(); return true; };
       const sk = () => $id('seek'), dur = () => parseFloat(sk() && sk().max) || 0, pos = () => parseFloat(sk() && sk().value) || 0;
       const clock = x => { x = Math.max(0, Math.round(x)); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); };
@@ -2895,7 +6538,7 @@
       if (/^half volume$|^volume half$/i.test(t)) return setVol(50);
       // fullscreen / immersive / picture in picture / rotate / zoom / fit / filter / frames (video things)
       if ((m = t.match(/^(?:(?:go|enter|turn on|switch to|put it in|make it) )?full ?screen(?: mode)?(?: on)?$|^(exit|leave|close|turn off|get out of|quit|stop) full ?screen(?: mode)?$/i))) {
-        const inFs = !!document.fullscreenElement, out = !!m[1];
+        const inFs = document.body.classList.contains('immersive'), out = !!m[1];
         if (out && !inFs) return say('It is not in fullscreen.'); if (!out && inFs) return say('Already in fullscreen.');
         if (!out && !isVid()) return say('Fullscreen is for videos, and the current track is audio.');
         GA('fullscreen'); return done(out ? 'Left fullscreen.' : 'Fullscreen.');
@@ -2923,6 +6566,56 @@
         if (!name) return say('I know these EQ presets: bass, treble, vocal, v-shape, acoustic, pop, rock, jazz, classical, electronic, hip hop, loudness, podcast, late night, or flat.');
         return A.setTrackEqPreset(c.dbId, name) ? done('EQ set to ' + name + ' for this track.' + (name === 'flat' ? '' : ' Say \u201ceq off\u201d to undo.')) : say('That preset did not work.');
       }
+      // ---- Lyric Fix ("fix the lyrics", "correct the lyrics of Hello", "proofread the lyrics") ----
+      {
+        const mf = t.match(/^(?:fix|correct|clean up|proofread|check|repair)(?: the| my)? (?:lyrics|subtitles|captions|transcript(?:ion)?)(?: (?:of|for|in|on) (.+))?$/i);
+        if (mf) {
+          const q = String(mf[1] || '').trim().replace(/^["\u201c']+|["\u201d'.!?]+$/g, '');
+          let idx = -1;
+          if (!q || /^(?:this|that|it|the|current|this one)(?: song| track| video| one)?$/i.test(q)) { idx = A.currentIndex(); if (idx < 0) return say('Play or pick a song first, or name one: \u201cfix the lyrics of Hello\u201d.'); }
+          else { const hit = resolveMusic(q.replace(/^(?:the )?(?:song|track) /i, '')); if (hit && hit.kind === 'song') idx = hit.idx; else return say(hit && hit.kind === 'artist' ? 'Which song by ' + hit.a.name + '?' : 'I cannot find a song called \u201c' + q + '\u201d.'); }
+          startLyFix(idx); return true;
+        }
+      }
+      // ---- Song Talk ("let's talk about this song", "discuss Hello", "deep dive into Charlie's Inferno") ----
+      {
+        const mt = t.match(/^(?:let'?s |can we |i want to )?(?:talk|chat) (?:about|through) (.+)$|^(?:discuss|analy[sz]e|deep dive(?: into)?|break down the meaning of) (.+)$/i);
+        if (mt) {
+          const q = String(mt[1] || mt[2] || '').trim().replace(/^["\u201c']+|["\u201d'.!?]+$/g, '');
+          if (/^(?:this|that|it|the|current|this one)(?: song| track| one)?$/i.test(q)) { if (A.currentIndex() < 0) return say('Play or pick a song first, or name one: \u201clet\u2019s talk about Hello\u201d.'); startSongTalk(A.currentIndex()); return true; }
+          const hit = resolveMusic(q.replace(/^(?:the )?(?:song|track) /i, ''));
+          if (hit && hit.kind === 'song') { startSongTalk(hit.idx); return true; }
+          if (hit && hit.kind === 'artist') return say('Which song by ' + hit.a.name + '? Say \u201clet\u2019s talk about <song>\u201d.');
+          // not a song in the library: let normal chat take "let's talk about life"
+        }
+      }
+      // ---- song summaries ("summarize this", "what is Hello about", "show the summary of X", "write a new summary") ----
+      {
+        let sm = null, fresh = false, showOnly = false;
+        if ((sm = t.match(/^(?:summari[sz]e|sum up|explain|break down)(?: (?:this|the|that|it|current))?(?: song| track| video)?(?: for me)?$/i))) sm = [sm[0], ''];
+        else if ((sm = t.match(/^(?:write|make|generate|create|give me|get me)(?: me)?(?: a)?( new)? summary(?: (?:of|for|about) (.+))?$/i))) { fresh = !!sm[1]; sm = [sm[0], sm[2] || '']; }
+        else if ((sm = t.match(/^(?:show|read|view|open|see|display)(?: me)?(?: the| my)?(?: saved)? summary(?: (?:of|for) (.+))?$/i))) { showOnly = true; sm = [sm[0], sm[1] || '']; }
+        else if ((sm = t.match(/^(?:summari[sz]e|sum up|explain|break down) (.+)$/i))) sm = [sm[0], sm[1]];
+        else if ((sm = t.match(/^what(?:'s| is| was) (.+?) (?:really )?about$/i)) || (sm = t.match(/^(?:what does|what do) (.+?) mean$/i)) || (sm = t.match(/^(?:what(?:'s| is) )?the (?:meaning|message|story) (?:of|behind) (.+)$/i))) sm = [sm[0], sm[1]];
+        else sm = null;
+        if (sm) {
+          let q = String(sm[1] || '').trim().replace(/^["\u201c']+|["\u201d'.!?]+$/g, '');
+          const isCur = !q || /^(?:this|that|it|the|current|this one)(?: song| track| video| one)?$/i.test(q);
+          let idx = -1;
+          if (isCur) { idx = A.currentIndex(); if (idx < 0) return say('Play or pick a song first, or name one: \u201cwhat is Hello about\u201d.'); }
+          else {
+            const hit = resolveMusic(q.replace(/^(?:the )?(?:song|track) /i, ''));
+            if (hit && hit.kind === 'song') idx = hit.idx;
+            else if (hit && hit.kind === 'artist') return say('Which song by ' + hit.a.name + '? Say \u201cwhat is <song> about\u201d.');
+            else if (/\bsummar|\bsum up\b/i.test(t)) return say('I cannot find a song called \u201c' + q + '\u201d in your library.');
+            else return false;                                         // "explain shuffle", "what is love about": not a song here, let the chat answer
+          }
+          const saved = sumLoad()[A.tracks()[idx].dbId];
+          if (showOnly && !saved) { const tt = A.tracks()[idx]; return ask('There is no saved summary for ' + tt.title + ' yet. Write one now?', () => chatSummary(idx, true), true); }
+          chatSummary(idx, fresh);
+          return true;
+        }
+      }
       // library search and tabs/menus
       if ((m = t.match(/^(?:search(?: my library| the library| my music| tracks)?(?: for)?|look up|filter(?: by| for)?)\s+(.+)$/i))) {
         const inp = $id('track-search'); if (!inp) return say('I cannot find the search box.');
@@ -2945,8 +6638,24 @@
       if (/^(?:where am i|how far in(?: am i)?|what time is it in the (?:song|track)|what'?s the (?:time|position))$/i.test(t)) { if (!dur()) return say('Nothing is playing.'); return say('You are at ' + clock(pos()) + ' of ' + clock(dur()) + '.'); }
       // ---- library & playlist management ----
       const nrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-      const findPl = name => { const w = nrm(name), pls = A.playlists(); return w ? (pls.find(p => nrm(p.name) === w) || pls.find(p => nrm(p.name).includes(w))) : null; };
+      const findPl = name => {
+        const w = nrm(name), pls = A.playlists().filter(p => !p.stemOf); if (!w) return null;
+        return pls.find(p => nrm(p.name) === w) || pls.find(p => nrm(p.name).includes(w)) || pls.map(p => [p, mScore(p.name, name)]).filter(x => x[1] >= 0.7).sort((x, y) => y[1] - x[1]).map(x => x[0])[0] || null;
+      };
       const plIdx = pl => { const tr = A.tracks(); return tr.map((x, i) => i).filter(i => !tr[i].stem && (tr[i].playlistIds || []).includes(pl.id)); };
+      // "open / show / view / pull up my Chill playlist": that playlist's own page, plus a play button
+      if ((m = t.match(/^(?:open|show|view|see|display|pull up|bring up|go to|take me to|navigate to|load)(?: me| up)?(?: the| my)?(?: playlist)? (.+?)(?: playlist)?$/i))
+          && !/^(?:settings|library|queue|tracks|track list|playlists?|eq|equali[sz]er|sleep(?: timer)?|speed|playback speed|effects|fx|subtitles?|captions?|(?:main )?menu|lyrics|player|home|what'?s in .+)$/i.test(m[1].trim())) {
+        const pl = findPl(m[1]);
+        if (pl) {
+          const q = plIdx(pl), opened = !!(window.__ppOpenPlaylist && window.__ppOpenPlaylist(pl.id));
+          if (!opened) { const tab = document.querySelector('[data-sidebar-tab="playlist"]'); tab && tab.click(); }
+          add('bot', blTone('\u2713 ' + (opened ? 'Opened ' : 'Here is ') + pl.name + ' (' + q.length + ' track' + (q.length === 1 ? '' : 's') + ')' + (opened ? '.' : (q.length ? ': ' + q.slice(0, 6).map(i => A.tracks()[i].title).join(', ') + (q.length > 6 ? ', \u2026' : '') : '.'))));
+          if (q.length) actions([['\u25b6 Play it', (b, d) => { d.remove(); A.play(q[0], q); }], ['\u21c4 Shuffle it', (b, d) => { d.remove(); const s2 = shuffleIn(q.slice()); A.play(s2[0], s2); }]]);
+          return true;
+        }
+        if (/\bplaylist\b/i.test(t)) { const pls = A.playlists().filter(p => !p.libOnly && !p.stemOf); return say('I cannot find a playlist called \u201c' + m[1] + '\u201d.' + (pls.length ? ' You have: ' + pls.slice(0, 8).map(p => p.name).join(', ') + '.' : '')); }
+      }
       if (/^(?:(?:what|which|list|show)(?: me)?(?: are)?(?: all)?(?: of)?(?: my)? playlists(?: do i have)?|my playlists|how many playlists(?: do i have)?)$/i.test(t)) {
         const pls = A.playlists().filter(p => !p.libOnly);
         return say(pls.length ? 'You have ' + pls.length + ' playlist' + (pls.length === 1 ? '' : 's') + ': ' + pls.slice(0, 12).map(p => p.name + ' (' + plIdx(p).length + ')').join(', ') + (pls.length > 12 ? ', and more' : '') + '.' : 'You have no playlists yet. Say \u201cmake a playlist called Favorites\u201d.');
@@ -2994,8 +6703,8 @@
         if (!r.length) return say('None of your tagged tracks match that tempo.');
         shuffleIn(r); r = r.slice(0, 30); A.play(r[0], r); return done('Playing ' + label + '.');
       }
-      // ---- Press Play Portfolio (the listening stats). Read-only: Bloop reads the Portfolio's own saved stats and can open it. ----
-      const PF = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} try { return JSON.parse(localStorage.getItem('pppSaveV1')) || null; } catch (e) { return null; } };
+      // ---- Press Play Portfolio (the listening stats). Read-only: Bloopy reads the Portfolio's own saved stats and can open it. ----
+      const PF = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } try { return JSON.parse(localStorage.getItem('pppSaveV1')) || null; } catch (e) { return null; } };
       const dur2 = ms => { const mn = Math.round(ms / 60000); return mn < 1 ? 'under a minute' : mn < 60 ? mn + ' min' : Math.floor(mn / 60) + ' h ' + (mn % 60) + ' min'; };
       const topN = (o, n, f) => Object.entries(o || {}).map(([k, v]) => [k, f ? f(v) : v]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, n);
       const NOPF = 'The Portfolio has no listening data yet. Play some music first.';
@@ -3110,7 +6819,16 @@
         if (!ws.length || ws.every(w => ['random', 'anything', 'everything', 'all', 'shuffle', 'shuffled'].includes(w))) {
           const q = shuffleIn(tr.map((x, i) => i).filter(i => !tr[i].stem)); if (!q.length) return say('Your library is empty.'); A.play(q[0], q); return done('Playing a shuffled mix.');
         }
+        if (!ws.every(w => VIBEW.has(w))) {                             // names, not moods: artist / title / playlist, typo-tolerant
+          const hit = resolveMusic(m[1]);
+          if (hit && hit.kind === 'artist') { const q = shuffleIn(hit.a.idxs.filter(i => !tr[i].stem)); A.play(q[0], q); return done('Playing ' + q.length + ' song' + (q.length === 1 ? '' : 's') + ' by ' + hit.a.name + (q.length > 1 ? ', shuffled' : '') + ': ' + tr[q[0]].title + '.'); }
+          if (hit && hit.kind === 'song') { const q = hit.queue; A.play(q[0], q); return done('Playing ' + tr[q[0]].title + (tr[q[0]].artist ? ' by ' + tr[q[0]].artist : '') + '.'); }
+          const pl0 = (() => { const w = mFlat(m[1]); return A.playlists().filter(p => !p.libOnly && !p.stemOf).find(p => mFlat(p.name) === w); })();
+          if (pl0) { const q = tr.map((x, i) => i).filter(i => !tr[i].stem && (tr[i].playlistIds || []).includes(pl0.id)); if (q.length) { A.play(q[0], q); return done('Playing your ' + pl0.name + ' playlist (' + q.length + ' tracks).'); } }
+        }
         const r = findTracks(ws); if (!r.length) {
+          const near = ws.every(w => VIBEW.has(w)) ? [] : nearMisses(m[1]);
+          if (near.length) { add('bot', blTone('I could not find \u201c' + m[1] + '\u201d. Did you mean:')); actions(near.map(n => ['\u25b6 ' + n[2], (b, d) => { d.remove(); agent(n[1], true); }])); return true; }
           if (ws.length && ws.every(w => VIBEW.has(w)) && tagStats().left > 0) return (askYN('I pick music by mood from your tags, and some tracks are not tagged yet. Tag your library first? I will start the music when it is done.', () => tagAll(() => agent(t, true))), true);
           return say('I could not find anything for \u201c' + m[1] + '\u201d. Tagging more tracks helps me find moods and styles.');
         }
@@ -3125,13 +6843,26 @@
     // SMART START
     // ---------- Smarter interpreter in front of the agent. It only works out WHAT you meant; every action still runs through the
     // agent's own safe commands. No chat-model guessing: low confidence asks first, and anything it cannot do it says so. ----------
-    const smartSt = { last: null, at: 0, snap: null, noRoute: '', pu: null };
-    const sRec = (snap, cmd) => { smartSt.snap = snap; smartSt.last = cmd; smartSt.at = Date.now(); smartSt.pu = null; };
+    // Undo history: every undoable change is pushed here, newest last, so "undo" can step back through many of them, not just the last.
+    // Entries are either { media: true, snap, ui } (volume, track, shuffle, play state, and any settings controls the command flipped)
+    // or { label, undo } (playlists, mixes, tags and anything that registers itself through smartSt.pu / lcUndo).
+    const undoStack = [];
+    const uPush = e => { e.at = Date.now(); undoStack.push(e); if (undoStack.length > 40) undoStack.shift(); };
+    const smartSt = { last: null, at: 0, snap: null, noRoute: '', get pu() { return null; }, set pu(v) { if (v) uPush(v); } };
+    const sRec = (snap, cmd) => {
+      smartSt.snap = snap; smartSt.last = cmd; smartSt.at = Date.now();
+      let ui = []; try { const A = window.__ppApi; if (snap && A && snap.idx === A.currentIndex()) ui = uiDiff(snap.ui, uiNow()); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }   // a track change reloads many controls by itself, so skip those
+      uPush({ media: true, snap, ui, cmd });
+    };
     const HELP_SMART = '\n\u2022 \u201cundo\u201d, \u201cagain\u201d, \u201ca bit more\u201d, \u201cmuch quieter\u201d, \u201cvolume up 15\u201d\n\u2022 several at once: \u201cplay something chill and turn it down a bit\u201d\n\u2022 goals: \u201cbedtime\u201d, \u201cgym time\u201d, \u201cstudy mode\u201d, \u201cparty mode\u201d\n\u2022 questions: \u201cis it paused\u201d, \u201cwhat\u2019s the volume\u201d, \u201cis shuffle on\u201d\n\u2022 \u201cmake a playlist for me\u201d, \u201csomething new\u201d, \u201cforgotten favorites\u201d, \u201cplaylist like <song>\u201d\n\u2022 \u201cmake a chill playlist with <song> without <artist>\u201d, \u201cadd <song> to <playlist>\u201d, \u201cremove the slow songs from <playlist>\u201d\n\u2022 typos are fine, and if I am unsure I will ask \u201cdid you mean\u2026\u201d';
-    const sClean = r => String(r).trim().replace(/^(hey |hi |ok |okay )?(bloop[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
+    const sClean = r => String(r).trim().replace(/^(hey |hi |ok |okay )?(bloopy?[,:]?\s*)?/i, '').replace(/^((can|could|would|will) you( please)?|please|pls|i want you to|i'?d like you to|go ahead and)\s+/i, '').replace(/\s*(please|pls|thanks|thank you)[.!?]*$/i, '').replace(/[.!?]+$/, '').trim();
     const sSay = s => { add('bot', blTone(s)); return true; }, sDone = s => sSay('\u2713 ' + s);
     const S_Q = /^(?:what|how|who|which|where|when|why|is|are|am|do|does|did|list|show|tell|my|help)\b|\?$/i;
-    const snapNow = () => { const A = window.__ppApi, v = $id('volume'), s = $id('seek'), sb = $id('shuffle-btn'); return { vol: v ? parseFloat(v.value) : null, pos: s ? parseFloat(s.value) : null, idx: A ? A.currentIndex() : -1, shuffle: !!(sb && sb.classList.contains('toggled')), playing: mediaOn() }; };
+    const snapNow = () => { const A = window.__ppApi, v = $id('volume'), s = $id('seek'), sb = $id('shuffle-btn'); return { vol: v ? parseFloat(v.value) : null, pos: s ? parseFloat(s.value) : null, idx: A ? A.currentIndex() : -1, shuffle: !!(sb && sb.classList.contains('toggled')), playing: mediaOn(), ui: uiNow() }; };
+    // Sliders, switches and drop-downs with an id (equaliser, speed, the settings tickboxes). Volume and the seek bar are handled on their own.
+    const uiNow = () => { const o = {}; document.querySelectorAll('input[type=range][id],input[type=checkbox][id],select[id]').forEach(e => { if (e.id === 'seek' || e.id === 'volume' || e.closest('#ppv-chat,#bl-react,#ppv-cfab')) return; o[e.id] = e.type === 'checkbox' ? e.checked : e.value; }); return o; };
+    const uiDiff = (a, b) => { const out = []; if (!a || !b) return out; Object.keys(a).forEach(k => { if (k in b && a[k] !== b[k]) out.push([k, a[k]]); }); return out.length > 25 ? [] : out; };   // a huge change list means the page redrew, not the user
+    const uiRestore = list => { const n = []; (list || []).forEach(([id, v]) => { const e = document.getElementById(id); if (!e) return; if (e.type === 'checkbox') { if (e.checked === v) return; e.checked = v; e.dispatchEvent(new Event('change', { bubbles: true })); } else { if (e.value === v) return; e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); } n.push(id); }); return n; };
     function sExec(cmd) { const b = snapNow(), ok = agent(cmd); if (ok && !S_Q.test(cmd)) { sRec(b, cmd); } return ok; }
     const sKind = s => /\b(louder|quieter|softer|volume|loud|turn (?:it |the \w+ )?(?:up|down))\b/i.test(s) ? 'vol' : /\b(faster|slower|speed|slow)\b/i.test(s) ? 'speed' : /\b(rewind|forward|skip (?:\d|ahead|back|forward)|jump|seek|ff)\b/i.test(s) ? 'seek' : '';
     const sDir = s => /\b(quieter|softer|down|lower|decrease|reduce|slower|slow|rewind|back|backward)\b/i.test(s) ? -1 : /\b(louder|up|raise|increase|higher|faster|forward|ahead|skip|jump)\b/i.test(s) ? 1 : 0;
@@ -3156,10 +6887,9 @@
       return sDone('Volume ' + v + '% (was ' + was + '%).');
     }
 
-    // undo: puts back what the last action changed (volume, shuffle, which track, position, pause/play)
-    function sUndo() {
-      if (smartSt.pu) { const u = smartSt.pu; smartSt.pu = null; try { u.undo(); } catch (e) { console.error(e); return sSay('I could not undo that: ' + e.message); } return sDone(u.label); }
-      const s = smartSt.snap, A = window.__ppApi; if (!s || !A) return sSay('There is nothing to undo yet. I can undo volume, shuffle, skips, seeking and pause/play.');
+    // undo: steps back through the undo history, newest first. Entries that changed nothing are skipped.
+    function sUndoMedia(s) {
+      const A = window.__ppApi; if (!s || !A) return [];
       const now = snapNow(), out = [];
       if (s.vol != null && now.vol != null && Math.round(s.vol) !== Math.round(now.vol)) { const e = $id('volume'); e.value = s.vol; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); out.push('volume back to ' + Math.round(s.vol) + '%'); }
       if (s.shuffle !== now.shuffle) { const b = $id('shuffle-btn'); if (b) { b.click(); out.push('shuffle ' + (s.shuffle ? 'on' : 'off')); } }
@@ -3169,8 +6899,26 @@
         const sk = $id('seek'); if (sk && s.pos != null && now.pos != null && Math.abs(s.pos - now.pos) > 2) { sk.value = s.pos; sk.dispatchEvent(new Event('input', { bubbles: true })); sk.dispatchEvent(new Event('change', { bubbles: true })); out.push('back to ' + Math.floor(s.pos / 60) + ':' + String(Math.round(s.pos) % 60).padStart(2, '0')); }
         if (s.playing !== now.playing) { const pb = $id('play-btn'); if (pb) { pb.click(); out.push(s.playing ? 'playing again' : 'paused'); } }
       }
-      smartSt.snap = null;
-      return out.length ? sDone('Undid that: ' + out.join(', ') + '.') : sSay('I could not find anything I can undo. Undo covers volume, shuffle, skips, seeking and pause/play.');
+      return out;
+    }
+    // One step back. Returns the sentence to show, or null when there is nothing left to undo.
+    function uStep() {
+      while (undoStack.length) {
+        const u = undoStack.pop();
+        if (u.media) {
+          const out = sUndoMedia(u.snap), st = uiRestore(u.ui); if (st.length) out.push('put ' + st.length + ' setting' + (st.length > 1 ? 's' : '') + ' back');
+          if (out.length) return 'Undid that: ' + out.join(', ') + '.'; continue;
+        }
+        try { u.undo(); } catch (e) { console.error(e); return 'I could not undo that: ' + e.message; }
+        return u.label;
+      }
+      return null;
+    }
+    function sUndo(n) {
+      if (!window.__ppApi) return false;
+      if (!n || n < 2) { const r = uStep(); return r ? sDone(r) : sSay('There is nothing to undo yet.'); }
+      const done = []; for (let i = 0; i < n; i++) { const r = uStep(); if (!r) break; done.push(r.replace(/^Undid that: /, '')); }
+      return done.length ? sDone('Undid ' + done.length + ' thing' + (done.length > 1 ? 's' : '') + ': ' + done.join(' ')) : sSay('There is nothing to undo yet.');
     }
 
     // goals -> a short plan of ordinary commands
@@ -3194,7 +6942,7 @@
     // several commands in one sentence. Only splits when every piece starts like a command, and never inside a song title.
     const S_VERB = /^(?:play|pause|stop|resume|continue|next|skip|previous|prev|back|shuffle|repeat|loop|mute|unmute|volume|turn|set|make|add|remove|rename|tag|split|open|show|go|jump|rewind|restart|replay|speed|slow|faster|slower|louder|quieter|softer|lower|raise|sleep|eq|enable|disable|search|find|zoom|rotate|surprise|get|put|queue|clear|cancel|crank|bring|dim|bump|fullscreen|full|split|separate|tag|analy[sz]e)\b/i;
     // Any command can start a later part. A later part must begin with a command word, so "play Jazz and Rock" stays one request.
-    const S_LEAD = /^(?:play|pause|stop|resume|continue|next|skip|previous|prev|back|shuffle|repeat|loop|mute|unmute|volume|turn|set|make|add|remove|rename|tag|split|separate|analy[sz]e|open|show|go|jump|rewind|restart|replay|speed|slow|faster|slower|louder|quieter|softer|lower|raise|increase|decrease|boost|reduce|sleep|eq|enable|disable|search|find|zoom|rotate|surprise|get|put|queue|clear|cancel|crank|bring|dim|bump|fullscreen|full|what|how|which|who|why|where|when|is|are|do|does|can|list|tell|flip|toss|roll|pick|choose|duplicate|copy|clone|empty|forget|teach|learn|like|more|less|start|begin|reset|use|select|give|remind|undo|again|help|lyrics|transcribe|mix|recommend|suggest|timer|stem|stems|bloop|you|i)\b/i;
+    const S_LEAD = /^(?:play|pause|stop|resume|continue|next|skip|previous|prev|back|shuffle|repeat|loop|mute|unmute|volume|turn|set|make|add|remove|rename|tag|split|separate|analy[sz]e|open|show|go|jump|rewind|restart|replay|speed|slow|faster|slower|louder|quieter|softer|lower|raise|increase|decrease|boost|reduce|sleep|eq|enable|disable|search|find|zoom|rotate|surprise|get|put|queue|clear|cancel|crank|bring|dim|bump|fullscreen|full|what|how|which|who|why|where|when|is|are|do|does|can|list|tell|flip|toss|roll|pick|choose|duplicate|copy|clone|empty|forget|teach|learn|like|more|less|start|begin|reset|use|select|give|remind|undo|again|help|lyrics|transcribe|mix|recommend|suggest|timer|stem|stems|bloopy?|you|i)\b/i;
     function sSplit(t) {
       if (t.length > 400 || !/\b(?:and|then|after that)\b|[,;&]/i.test(t)) return null;
       // keep library titles intact (e.g. "Tom and Jerry") by hiding them while splitting
@@ -3295,6 +7043,7 @@
       if (!noAl && !blChain) blQueue = [];
       if (!noAl) { const al = blAlias(t); if (al) { add('bot', '(Reading that as \u201c' + al + '\u201d.)'); if (!smart(al, true)) add('bot', 'I learned \u201c' + t + '\u201d as \u201c' + al + '\u201d, but I cannot do that. Say \u201cforget ' + t + '\u201d to remove it.'); return true; } }
       if (/^(?:undo|undo (?:that|it|this)|take (?:that|it) back|revert(?: that)?|put it back|go back to how it was)$/i.test(t)) return sUndo();
+      { const mu = t.match(/^undo (?:(all|everything)(?: you did| i did| that)?|(?:the )?(?:last )?(\d{1,2})(?: times| things| actions| steps| changes)?)$/i); if (mu) return sUndo(mu[1] ? 40 : Math.max(1, +mu[2])); }
       if (/^(?:again|do (?:that|it) again|one more time|once more|same again|repeat that|do the same)$/i.test(t)) return smartSt.last ? smart(smartSt.last) : sSay('I have nothing to repeat yet.');
       const before = snapNow();
       const fin = (ok, cmd) => { if (ok && cmd && !S_Q.test(cmd)) { sRec(before, cmd); } return ok; };
@@ -3325,7 +7074,7 @@
     const sNrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
     const sReal = () => { const tr = window.__ppApi.tracks(); return tr.map((x, i) => i).filter(i => !tr[i].stem); };
     let sPFmemo = { at: 0, v: {} };
-    const sPF = () => { if (Date.now() - sPFmemo.at < 2000) return sPFmemo.v; try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} let v = {}; try { v = (JSON.parse(localStorage.getItem('pppSaveV1')) || {}).trackPlays || {}; } catch (e) {} sPFmemo = { at: Date.now(), v }; return v; };
+    const sPF = () => { if (Date.now() - sPFmemo.at < 2000) return sPFmemo.v; try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } let v = {}; try { v = (JSON.parse(localStorage.getItem('pppSaveV1')) || {}).trackPlays || {}; } catch (e) {} sPFmemo = { at: Date.now(), v }; return v; };
     function sTaste() {   // what you actually listen to: top tracks weighted by plays, time listened and recency
       const A = window.__ppApi, tr = A.tracks(), pf = sPF(), now = Date.now(), idx = new Map(tr.map((t, i) => [String(t.dbId), i])), count = new Map(), last = new Map(), an = [];
       Object.entries(pf).forEach(([id, p]) => {
@@ -3559,8 +7308,8 @@
     // were removed by you, or are stale, then refills from your taste. "Your Pattern" is driven by what you play next to what:
     // a small co-listening matrix learned from your own play history (videos included), blended with sound similarity.
     // Songs you add yourself are never touched. Switch off with the "Auto mixes" checkbox in the Library tab.
-    const lvLs = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
-    const lvOn = () => lvLs('ppvLiveMix') !== '0';
+    const lvLs = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+    const lvOn = () => lvLs('ppvLiveMix') !== '0' && !window.ppSaver;   // Lite and Focus: auto mixes stop changing playlists on their own
     const LV_DAY = 864e5;
     let lvS = null, lvCur = null, lvBusy = false, lvLast = 0, lvTimer = null, lvTagVer = -1;
     const lvState = () => { if (lvS) return lvS; try { lvS = JSON.parse(lvLs('ppvLiveV1')) || {}; } catch (e) { lvS = {}; } lvS.seq = lvS.seq || []; lvS.co = lvS.co || {}; lvS.sk = lvS.sk || {}; lvS.meta = lvS.meta || {}; lvS.dk = lvS.dk || Date.now(); lvS.blocked = lvS.blocked || {}; return lvS; };
@@ -3606,7 +7355,7 @@
       const cs = new Map();   // co-listening: how often each song showed up next to what you played lately
       anchors.forEach((w, a) => { const row = s.co[String(tr[a].dbId)]; if (!row) return; const tot = Object.values(row).reduce((x, y) => x + y, 0) || 1; Object.entries(row).forEach(([b, v]) => { const j = idx.get(b); if (j != null) cs.set(j, (cs.get(j) || 0) + w * v / tot); }); });
       let cmax = 0; cs.forEach(v => { if (v > cmax) cmax = v; });
-      const ids = [...anchors.keys()], wts = ids.map(i => anchors.get(i)); let emb = null; try { emb = await sEmbScores(ids, wts); } catch (e) {}
+      const ids = [...anchors.keys()], wts = ids.map(i => anchors.get(i)); let emb = null; try { emb = await sEmbScores(ids, wts); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
       let lo = 9, hi = -9; if (emb) emb.forEach(e => { if (e < lo) lo = e; if (e > hi) hi = e; }); const span = (hi - lo) || 1;
       const F = new Map(real.map(i => [i, sFeat(tg[tr[i].dbId])])), now = Date.now(), R = new Map();
       const tagS = i => { let a = 0, b = 0; ids.forEach((sd, k) => { a += wts[k] * sFSim(F.get(i), F.get(sd)); b += wts[k]; }); return b ? a / b : 0; };
@@ -3708,12 +7457,12 @@
       const pf = sPF(); if (!((pf[t.dbId] || pf[id] || {}).count > 0)) why.push('you have not played it yet, so it counts as a new find');
       return '\u201c' + t.title + '\u201d is in ' + mixes.map(p => p.name).join(' and ') + ' because ' + (why.length ? why.join('; ') : 'it fits your overall taste') + '.';
     }
-    // ---------- Bloop extras: about 20 more commands, "why is <song> in my <playlist or mixes>" for any song, and phrases you teach him ----------
+    // ---------- Bloopy extras: about 20 more commands, "why is <song> in my <playlist or mixes>" for any song, and phrases you teach him ----------
     const blNrm = x => String(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
     const blSay = s => { add('bot', blTone(s)); return true; };
     const blDone = s => blSay('\u2713 ' + s);
     const blCtx = { id: null };                                      // the song you last asked about, so "why is it in..." works
-    const blSave = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch (e) {} try { return JSON.parse(localStorage.getItem('pppSaveV1')) || {}; } catch (e) { return {}; } };
+    const blSave = () => { try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } try { return JSON.parse(localStorage.getItem('pppSaveV1')) || {}; } catch (e) { return {}; } };
     const blDayKey = d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
     const blMin = ms => { const mn = Math.round(ms / 60000); return mn < 1 ? 'under a minute' : mn < 60 ? mn + ' min' : Math.floor(mn / 60) + ' h ' + (mn % 60) + ' min'; };
     const blPls = () => window.__ppApi.playlists().filter(p => !p.stemOf);
@@ -3758,9 +7507,9 @@
     function blWhyPl(i, pl) {
       const A = window.__ppApi, t = A.tracks()[i], tgc = loadTags()[t.dbId];
       if (pl.liveKey) { const why = blReasons(i); return '\u201c' + t.title + '\u201d is in ' + pl.name + ' because ' + (why.length ? why.join('; ') : 'it fits your overall taste') + '.'; }
-      if (/^[^\p{L}\p{N}\s]/u.test(pl.name)) {                        // Bloop-made playlists have an emoji at the start of the name
-        if (!tgc) return '\u201c' + t.title + '\u201d is in ' + pl.name + '. Bloop made that playlist from your tags, but this song is not tagged, so I cannot say more. Tag it and ask again.';
-        return '\u201c' + t.title + '\u201d is in ' + pl.name + '. Bloop made that playlist from your tags, and this song is tagged ' + (vibes(tgc).slice(0, 4).join(', ') || 'with no clear mood') + (tgc.bpm ? ', at ' + tgc.bpm + ' BPM' : '') + '.';
+      if (/^[^\p{L}\p{N}\s]/u.test(pl.name)) {                        // Bloopy-made playlists have an emoji at the start of the name
+        if (!tgc) return '\u201c' + t.title + '\u201d is in ' + pl.name + '. Bloopy made that playlist from your tags, but this song is not tagged, so I cannot say more. Tag it and ask again.';
+        return '\u201c' + t.title + '\u201d is in ' + pl.name + '. Bloopy made that playlist from your tags, and this song is tagged ' + (vibes(tgc).slice(0, 4).join(', ') || 'with no clear mood') + (tgc.bpm ? ', at ' + tgc.bpm + ' BPM' : '') + '.';
       }
       return '\u201c' + t.title + '\u201d is in ' + pl.name + ', one of your own playlists. You added it by hand, and I do not keep a record of why.';
     }
@@ -3780,7 +7529,7 @@
     }
     // ---- commands you teach him: stored on this device only, checked before everything else ----
     const blTaughtGet = () => { try { const v = JSON.parse(localStorage.getItem('ppvBloopTaught')); return Array.isArray(v) ? v.filter(e => e && e.p && e.c) : []; } catch (e) { return []; } };
-    const blTaughtSet = v => { try { localStorage.setItem('ppvBloopTaught', JSON.stringify(v.slice(-40))); } catch (e) {} };
+    const blTaughtSet = v => { try { localStorage.setItem('ppvBloopTaught', JSON.stringify(v.slice(-40))); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     const blNormPhrase = s => String(s).toLowerCase().replace(/^["\u201c\u201d'\s]+|["\u201c\u201d'\s]+$/g, '').replace(/[?!.]+$/, '').replace(/\s+/g, ' ').trim();
     // "*" in a phrase is a slot: "play * vibes" matches "play happy vibes", and "*" in the command is filled with that word
     function blAlias(text) {
@@ -3803,9 +7552,9 @@
     }
     // ---------- Keyword matching: commands from any wording. Words are normalised (synonyms, endings, filler words) and each
     // intent lists groups of words; an intent fires when every group has a word in the message and no excluded word is there.
-    const KW_FILLER = new Set(['the', 'a', 'an', 'please', 'can', 'could', 'would', 'will', 'you', 'your', 'i', 'im', 'me', 'to', 'of', 'just', 'now', 'some', 'bit', 'little', 'bloop', 'hey', 'ok', 'okay', 'do', 'so', 'be', 'maybe', 'kinda', 'kind', 'sort', 'slightly', 'perhaps', 'really']);
+    const KW_FILLER = new Set(['the', 'a', 'an', 'please', 'can', 'could', 'would', 'will', 'you', 'your', 'i', 'im', 'me', 'to', 'of', 'just', 'now', 'some', 'bit', 'little', 'bloop', 'bloopy', 'hey', 'ok', 'okay', 'do', 'so', 'be', 'maybe', 'kinda', 'kind', 'sort', 'slightly', 'perhaps', 'really']);
     const KW_SYN = { loud: 'volume', sound: 'volume', tunes: 'music', tune: 'song', songs: 'song', tracks: 'track', whats: 'what', louder: 'up', raise: 'up', increase: 'up', boost: 'up', bump: 'up', crank: 'up', higher: 'up', quieter: 'down', softer: 'down', lower: 'down', reduce: 'down', decrease: 'down', pause: 'stop', halt: 'stop', hold: 'stop', freeze: 'stop', unpause: 'resume', continue: 'resume', skip: 'next', another: 'next', prev: 'previous', back: 'back', silence: 'mute', randomize: 'shuffle', random: 'shuffle', quicker: 'faster', quick: 'faster', slow: 'slow', heard: 'hear', similar: 'similar', lyrics: 'lyric', words: 'lyric', separate: 'split', karaoke: 'split', isolate: 'split', analyse: 'analyze', tempo: 'bpm', collection: 'library', remaining: 'left', remain: 'left' };
-    const blFrame = s => String(s).replace(/^\s*(?:(?:bloop|hey|hi|ok|okay)[,:]?\s+)?(?:why (?:don['\u2019]?t|do not|not|dont) you|why not|how about|could you|would you|will you|can you|can u|do you think you could|would it be possible to|i need you to|i want you to|i'?d like you to|please)\s+/i, '').replace(/\b(?:maybe|kinda|kind of|sort of|perhaps|just real quick)\b,?\s*/gi, '');
+    const blFrame = s => String(s).replace(/^\s*(?:(?:bloopy?|hey|hi|ok|okay)[,:]?\s+)?(?:why (?:don['\u2019]?t|do not|not|dont) you|why not|how about|could you|would you|will you|can you|can u|do you think you could|would it be possible to|i need you to|i want you to|i'?d like you to|please)\s+/i, '').replace(/\b(?:maybe|kinda|kind of|sort of|perhaps|just real quick)\b,?\s*/gi, '');
     const KW_EQ = [['hip hop', 'hiphop'], ['late night', 'latenight'], ['v shape', 'vshape'], ['v-shape', 'vshape'], ['loudness', 'loudness'], ['classical', 'classical'], ['electronic', 'electronic'], ['acoustic', 'acoustic'], ['podcast', 'podcast'], ['bass', 'bass'], ['treble', 'treble'], ['vocal', 'vocal'], ['pop', 'pop'], ['rock', 'rock'], ['jazz', 'jazz'], ['edm', 'electronic'], ['rap', 'hiphop'], ['flat', 'flat'], ['off', 'flat'], ['normal', 'flat'], ['reset', 'flat']];
     const KW_NUMW = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, hundred: 100 };
     const kwTok = s => String(s).toLowerCase().replace(/['\u2019]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w && !KW_FILLER.has(w)).map(w => { const b = KW_SYN[w] || (w.length > 4 ? w.replace(/(?:ing|ed|es|s)$/, '') : w); return KW_SYN[b] || b; });
@@ -3898,7 +7647,7 @@
       actions(list.map(c => ['\u25b6 ' + c, (b, d) => { d.remove(); sExec(c); }]).concat([['Neither', (b, d) => { d.remove(); add('bot', 'Okay. Tell me another way, or say \u201chelp\u201d.'); }]]));
       return true;
     }
-    // ---------- Bloop's personality: jokes, fun facts and small talk. Jokes and facts come from shuffled decks, so none repeats until all have been told. ----------
+    // ---------- Bloopy's personality: jokes, fun facts and small talk. Jokes and facts come from shuffled decks, so none repeats until all have been told. ----------
     const BL_JOKES = [
       "Why did the song go to therapy? It had too many issues with its bridge.",
       "What do you call a fake noodle? An impasta.",
@@ -3985,7 +7734,7 @@
       [/\b(what'?s|what is|whats) (the )?best (song|album|band|genre|music)\b|\bwhich is (the )?better\b|\b(is|are) (pop|rock|jazz|classical|rap|hip hop|metal|electronic) better\b/i, () => { blLastTalk = ''; blSay("There is no single best. The best one is the one that fits how you feel right now. Want me to pick one from your library?"); return actions([blGo('\u25b6 Surprise me', 'surprise me')]); }],
       [/\b(happy friday|it'?s friday|friday)\b/i, () => { blLastTalk = ''; return blSay(pick(["Happy Friday! Something loud to end the week?", "It's Friday! I'm bouncing extra high today."])); }],
       [/\b(happy (birthday|new year)|it'?s my birthday|my birthday)\b/i, () => { blLastTalk = ''; blSay("Happy birthday! I'm bouncing for you. Want a party playlist?"); return actions([blGo('\u25b6 Party playlist', 'make a party playlist')]); }],
-      [/\b(do you have a (name|nickname)|what should i call you)\b/i, () => { blLastTalk = ''; return blSay("Bloop is fine. Some people call me Bloopy, and I like that too."); }],
+      [/\b(do you have a (name|nickname)|what should i call you)\b/i, () => { blLastTalk = ''; return blSay("Bloopy is my name. Some people call me Bloop, and I like that too."); }],
       [/\b(i have a (dog|cat|pet|fish|hamster|bird))\b/i, m => { blLastTalk = ''; return blSay("A " + m[1] + " that listens to music? Sounds like the best audience."); }],
       [/\b(can you|could you|do you) (make|cook|bake|brew) (me )?(a |some )?(coffee|tea|food|lunch|dinner|breakfast|cake)\b/i, () => { blLastTalk = ''; return blSay("Only coffee-coloured bounces, sorry! I can make you a playlist, though."); }],
       [/\b(do you dream|what do you dream about)\b/i, () => { blLastTalk = ''; return blSay("I dream in beats per minute. Mostly around 120."); }],
@@ -4033,7 +7782,7 @@
       bgtag: "Background tagging tags your songs while the app is idle, so your moods and smart playlists get better over time.",
       eq: "Auto EQ picks an equaliser preset for each song from its genre tags. You can still change it for any track."
     };
-    const BL_AI_RULES = [[/mood model/i, 'moods'], [/background tagging/i, 'bgtag'], [/auto ?eq/i, 'eq'], [/auto mix|for you|live mix/i, 'mixes'], [/lyric|subtitle|whisper|caption/i, 'lyrics'], [/smart|playlist/i, 'smart'], [/tagging|library tools|\btags?\b/i, 'tagging'], [/assistant|chat brain|bloop/i, 'assistant'], [/stem|split/i, 'stems']];
+    const BL_AI_RULES = [[/mood model/i, 'moods'], [/background tagging/i, 'bgtag'], [/auto ?eq/i, 'eq'], [/auto mix|for you|live mix/i, 'mixes'], [/lyric|subtitle|whisper|caption/i, 'lyrics'], [/smart|playlist/i, 'smart'], [/tagging|library tools|\btags?\b/i, 'tagging'], [/assistant|chat brain|bloopy?/i, 'assistant'], [/stem|split/i, 'stems']];
     const BL_AI_BTN = { 'ppv-btn': 'stems', 'ppv-go': 'stems', 'ppv-tag': 'tagging', 'ppv-wgo': 'lyrics', 'subtitle-btn': 'lyrics', 'ppv-simgo': 'smart', 'ppv-surpnow': 'smart', 'ppv-eqall': 'eq' };
     function blAiTip(key) { cbox.style.display = 'flex'; blAnchor(); if (!clist.children.length) add('bot', blOpenLine()); add('bot', BL_AI_TIP[key]); cin.focus(); }
     function blAiMark() {
@@ -4083,14 +7832,14 @@
       });
     }
     document.querySelectorAll('.bl-mark,.bl-dot').forEach(e => e.remove());
-    blTopRows(); setInterval(blTopRows, 2000);
+    blTopRows(); setInterval(() => { if (!document.hidden) blTopRows(); }, 2000);   // scans the whole page: never while the screen is off
     // ---------- Draggable Bloopy: drag the floating ball or the chat box anywhere on screen. Bloopy strains while you pull him and springs back when you let go. ----------
     const blDragCss = document.createElement('style');
     blDragCss.textContent = '@keyframes blStrain{0%,100%{transform:scale(1.1,.9)}50%{transform:scale(.9,1.1)}}@keyframes blSnap{0%{transform:scale(1.25,.75)}40%{transform:scale(.85,1.15)}70%{transform:scale(1.05,.95)}100%{transform:scale(1)}}#ppv-cfab.bl-strain{animation:blStrain .16s ease-in-out infinite}#ppv-cfab.bl-snap{animation:blSnap .45s ease-out}#ppv-chat.bl-strain .ch-h{box-shadow:0 0 0 2px #7c5cff inset}#ppv-cfab,#ppv-chat .ch-h{touch-action:none;cursor:grab}#ppv-cfab.bl-strain,#ppv-chat.bl-strain .ch-h{cursor:grabbing}';
     document.head.appendChild(blDragCss);
     let blSuppress = 0, blAnchoring = false;                                              // a drag must not also count as a tap on the ball
     const blPosGet = k => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } };
-    const blPosSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+    const blPosSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
     const blClamp = (x, y, w, h) => ({ x: Math.max(4, Math.min(innerWidth - w - 4, x)), y: Math.max(4, Math.min(innerHeight - h - 4, y)) });
     function blMove(el, x, y) { const r = el.getBoundingClientRect(), c = blClamp(x, y, r.width, r.height); el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; return c; }
     function blPlace(el, key) { const p = blPosGet(key); if (p) blMove(el, p.x, p.y); }
@@ -4099,7 +7848,7 @@
       let sx, sy, ox, oy, moved = false, on = false;
       const move = e => {
         if (!on) return; const dx = e.clientX - sx, dy = e.clientY - sy;
-        if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; el.classList.remove('bl-snap'); el.classList.add('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'strain'); }
+        if (!moved) { if (!(window.PPTouch ? PPTouch.moved(0, 0, dx, dy) : Math.hypot(dx, dy) >= 10)) return; moved = true; el.classList.remove('bl-snap'); el.classList.add('bl-strain'); blFace(el.querySelector('.ppv-ball'), 'strain'); }
         blMove(el, ox + dx, oy + dy); if (el === cfab) blAnchor();
       };
       const end = () => {
@@ -4324,6 +8073,7 @@
     const blFresh = pool => { const fresh = pool.filter(x => x !== blLastLine); const l = pick(fresh.length ? fresh : pool); blLastLine = l; return l; };
     // A speech bubble over the page. Quick repeats are skipped unless forced (dizzy).
     function blSpeak(line, face, force) {
+      if (!bubblesOn()) return;
       if (!force && Date.now() - blLastSpeak < 1200) return;
       blLastSpeak = Date.now();
       if (!blBubble) { blBubble = document.createElement('div'); blBubble.id = 'bl-react'; document.body.appendChild(blBubble); }
@@ -4361,6 +8111,9 @@
     function blNamedTalk(text) {
       const x = String(text).trim().replace(/[?!.]+$/, '');
       if (!/^(?:what|which|is|are|how|tell|describe|does|do|whats)\b/i.test(x) && !/\b(of|for|about)\b/i.test(x)) return false;
+      if (/\b(talk|chat|discuss|summar\w+|lyrics?)\b/i.test(x)) return false;                               // Song Talk, summaries and lyrics have their own commands
+      // What a song means or how songs connect is a question for the AI (it reads their summaries and lyrics), not for the tags.
+      if (brainOn() && /\b(about|mean(s|t|ing)?|story|theme|message|interpret\w*|explain|relate[sd]?|related|connect\w*|compar\w+|sequel|prequel|differen\w+|in common|versus|vs|albums?)\b/i.test(x) && !/\b(bpm|tempo|key|genre|mood)\b/i.test(x)) return false;
       const hits = blNamed(x); if (!hits.length) return false;
       const A = window.__ppApi, t = A.tracks()[hits[0]], tgc = loadTags()[t.dbId], label = t.title + (t.artist ? ' by ' + t.artist : '');
       if (!tgc) return blSay(label + ' is not tagged yet, so I do not know its tags. Tag it first and I will tell you.');
@@ -4384,7 +8137,7 @@
       } finally { blChain = was; }
     }
     function blResume() { const q = blQueue; blQueue = []; if (q.length) blRunChain(q); }
-    const HELP_MORE = '\n\u2022 \u201cwhy is <song> in my <playlist>\u201d, \u201cwhy is <song> in my mixes\u201d, \u201cwhy is it in my for you\u201d\n\u2022 \u201cteach yourself \u201cchill out\u201d means \u201cplay something chill\u201d\u201d, \u201cwhen I say play * vibes, play something *\u201d, \u201cforget chill out\u201d, \u201cwhat have you learned\u201d\n\u2022 \u201cwhich playlists is this in\u201d, \u201cwhich song is in the most playlists\u201d, \u201cduplicate playlist Gym as Gym 2\u201d, \u201cempty playlist Old\u201d\n\u2022 \u201cplay my top 10 songs\u201d, \u201cplay songs I have never played\u201d, \u201chow many songs have I never played\u201d\n\u2022 \u201cplay the last song I added\u201d, \u201cplay the first song I added\u201d\n\u2022 \u201chow much did I listen yesterday\u201d, \u201chow much in the last 7 days\u201d\n\u2022 \u201cwhat genres do I have\u201d, \u201cmost common moods\u201d, \u201caverage tempo\u201d, \u201cmost common key\u201d, \u201chow many songs are untagged\u201d\n\u2022 \u201cwhat time is it\u201d, \u201cwhat is today\u2019s date\u201d, \u201cflip a coin\u201d, \u201croll a d20\u201d, \u201cpick a number from 1 to 50\u201d\n\u2022 \u201cwhat can I do now?\u201d, \u201csuggest something\u201d: five things to try for what is playing right now\n\u2022 Put several together with commas or \u201cthen\u201d, for any commands: \u201csplit <song>, play <song> then raise volume\u201d. Bloop answers each one in its own message, and pauses to ask when something needs a yes or no.';
+    const HELP_MORE = '\n\u2022 \u201cwhy is <song> in my <playlist>\u201d, \u201cwhy is <song> in my mixes\u201d, \u201cwhy is it in my for you\u201d\n\u2022 \u201cteach yourself \u201cchill out\u201d means \u201cplay something chill\u201d\u201d, \u201cwhen I say play * vibes, play something *\u201d, \u201cforget chill out\u201d, \u201cwhat have you learned\u201d\n\u2022 \u201cwhich playlists is this in\u201d, \u201cwhich song is in the most playlists\u201d, \u201cduplicate playlist Gym as Gym 2\u201d, \u201cempty playlist Old\u201d\n\u2022 \u201cplay my top 10 songs\u201d, \u201cplay songs I have never played\u201d, \u201chow many songs have I never played\u201d\n\u2022 \u201cplay the last song I added\u201d, \u201cplay the first song I added\u201d\n\u2022 \u201chow much did I listen yesterday\u201d, \u201chow much in the last 7 days\u201d\n\u2022 \u201cwhat genres do I have\u201d, \u201cmost common moods\u201d, \u201caverage tempo\u201d, \u201cmost common key\u201d, \u201chow many songs are untagged\u201d\n\u2022 \u201cwhat time is it\u201d, \u201cwhat is today\u2019s date\u201d, \u201cflip a coin\u201d, \u201croll a d20\u201d, \u201cpick a number from 1 to 50\u201d\n\u2022 \u201cwhat can I do now?\u201d, \u201csuggest something\u201d: five things to try for what is playing right now\n\u2022 Put several together with commas or \u201cthen\u201d, for any commands: \u201csplit <song>, play <song> then raise volume\u201d. Bloopy answers each one in its own message, and pauses to ask when something needs a yes or no.';
     // The extra commands. Returns true when it handled the text.
     function blExtra(t) {
       const A = window.__ppApi, tr = A.tracks(), ids = sReal(), cu = A.currentIndex();
@@ -4397,7 +8150,7 @@
       // why (any song, any playlist or mix)
       if ((m = t.match(/^why (?:is|are|was|were|did|does|do) (.+)$/i))) { const r = blParseWhy(m[1]); if (r) return blWhy(r.song, r.tgt); }
       // teach / forget / list his commands
-      if ((m = t.match(/^(?:teach (?:yourself|bloop|you)|learn|new command|(?:make|create|add) (?:a |an )?(?:new )?(?:command|shortcut))(?:[:,]| that| called| named| for)?\s+["\u201c']?(.+?)["\u201d']?\s+(?:means|=|->|does|runs|should do)\s+["\u201c']?(.+?)["\u201d']?$/i))) return blTeachSave(m[1], m[2]);
+      if ((m = t.match(/^(?:teach (?:yourself|bloopy?|you)|learn|new command|(?:make|create|add) (?:a |an )?(?:new )?(?:command|shortcut))(?:[:,]| that| called| named| for)?\s+["\u201c']?(.+?)["\u201d']?\s+(?:means|=|->|does|runs|should do)\s+["\u201c']?(.+?)["\u201d']?$/i))) return blTeachSave(m[1], m[2]);
       if ((m = t.match(/^when i (?:say|type|ask(?: you)?) ["\u201c']?(.+?)["\u201d']?,?\s+(?:then\s+)?(?:do|run|play|go with|use|make)\s+(?:it as\s+)?["\u201c']?(.+?)["\u201d']?$/i))) return blTeachSave(m[1], m[2]);
       if ((m = t.match(/^(?:forget|unlearn|delete|remove) (?:the |my |that )?(?:taught |custom |new )?(?:command|phrase|shortcut)(?: called| named| for)? (.+)$/i))) {
         const p = blNormPhrase(m[1]), L = blTaughtGet(), left = L.filter(e => e.p !== p);
@@ -4610,7 +8363,7 @@
       }
     }
     lcDrawMenu();
-    setInterval(lcChips, 1500); cfab.addEventListener('click', () => setTimeout(lcChips, 50));
+    setInterval(() => { if (!document.hidden) lcChips(); }, 1500); cfab.addEventListener('click', () => setTimeout(lcChips, 50));
     // type-ahead: songs, artists and playlist names for play / add / find / like / block
     function lcSuggest() {
       const A = window.__ppApi; lcSug.textContent = ''; if (!A || !A.tracks) return; const v = cin.value; let m; const items = [], tr = A.tracks();
@@ -4676,7 +8429,7 @@
       return L.join(' ');
     }
     // ---------- Long, branching chats ("trees") ----------
-    // Mood talks that go many steps deep. Each step is a short Bloop message with tap-to-answer buttons, and typed replies work too
+    // Mood talks that go many steps deep. Each step is a short Bloopy message with tap-to-answer buttons, and typed replies work too
     // (yes / no, a button's words, or keywords like work, friend, lonely). Choices are remembered (blTr.ctx) and some steps run a
     // music command and then carry on ("How is it landing?"). Say stop at any time to leave. Safety phrases are caught before this runs.
     let blTr = null;                                                  // { id, ctx, bad, busy, timer }
@@ -5106,7 +8859,7 @@
       if (!blTr) return false; if (blTr.busy) return true;
       const x = blNorm(text), n = BL_T[blTr.id]; if (!n) { blTr = null; return false; }
       if (/^(?:stop|enough|nevermind|never mind|forget it|change the subject|change subject|that'?s all|thats all|i'?m good|im good|leave it|drop it|end|quit|exit)$/.test(x)) return blTreeStop();
-      if (/^(?:play|surprise|tag|split|make|add|show|open|pause|next|skip|volume|help|lyrics|what|how|why|who|which|where|can you|could you|bloop|tell me|undo)\b/.test(x)) { blTr = null; blTreeRows(); return false; }
+      if (/^(?:play|surprise|tag|split|make|add|show|open|pause|next|skip|volume|help|lyrics|what|how|why|who|which|where|can you|could you|bloopy?|tell me|undo)\b/.test(x)) { blTr = null; blTreeRows(); return false; }
       for (const [re, nx, set] of n.k || []) if (re.test(x)) { blTreeRows(); add('me', text); Object.assign(blTr.ctx, set || {}); blTreeShow(nx); return true; }
       const yes = /^(?:yes|yeah|yep|yup|sure|ok|okay|please|go on|sounds good|why not|do it|alright)\b/.test(x), no = /^(?:no|nope|nah|not really|not now|no thanks|maybe later|nothing)\b/.test(x), words = x.split(' ');
       let hit = null;
@@ -5120,26 +8873,243 @@
       if (++blTr.bad >= 3) return blTreeStop('I lost the thread a little. Tell me how you are feeling any time and we can start fresh.');
       blTreeRows(); blSay('I want to get this right. Pick one of these, or say stop to end this chat.'); blTreeOpts(n); return true;
     }
+    const MUSICY = /\b(songs?|music|tracks?|play(list|ing)?|artists?|albums?|genres?|vibes?|moods?|tags?|tagged|stems?|lyrics|library|listen(ing)?|playing)\b/i;
+    // What is playing right now, as a line for the chat prompt. send() reads the title back out of it with a regex,
+    // so keep the "NOW PLAYING ...: <title> by <artist>, ... . You already" shape (and only use it when a track exists).
+    const nowCtx = () => {
+      try {
+        const A = window.__ppApi; if (!A) return '';
+        const i = A.currentIndex(), t = i >= 0 ? A.tracks()[i] : null;
+        if (!t) return ' Nothing is playing right now. You already know the library facts above, do not invent a song.';
+        const c = loadTags()[t.dbId], tl = c ? tagLine(t) : '';
+        return ' NOW PLAYING (' + (t.kind === 'video' ? 'video' : 'song') + '): ' + t.title + (t.artist && !/^(Unknown artist|Video|Stream)$/i.test(t.artist) ? ' by ' + t.artist : '') +
+          (tl ? ', ' + tl : ', not tagged yet') + '. You already know only this about it, so never invent more.';
+      } catch (e) { return ''; }
+    };
+    // Who Bloopy is, always in the prompt so the model answers "who are you / what are you / can you hear this" truthfully and in character.
+    const selfCtx = () => {
+      let m = '', fs = '', fa = ''; try { m = CHAT_MODELS[chatKey()].label.replace(/\s*\(.*$/, ''); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      try { const f = favSong(); if (f) fs = songLine(f); fa = favArtist() || ''; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      return ' WHO YOU ARE: your name is Bloopy (also Bloop). You are a small AI assistant that lives inside this music player and appears as a bouncy ball. You run on this device' + (m ? ' using the ' + m + ' language model' : '') + ' after a one-time download, so what the user says stays on their phone. You are not ChatGPT, Claude, Siri or a person, and you have no body, ears or phone number.' +
+        ' You cannot hear the music. You only know a song\'s title, artist and the tags this app made for it. If you are unsure of a fact, say so once, briefly, then still give your best answer. Do not put yourself down or keep saying you are small or limited.' +
+        ' You are a real chat buddy, not only a music helper: happily talk about anything the user brings up, such as games, films, shows, books, science, space, animals, sport, food, school, hobbies, ideas or their day. Never say you can only talk about music or the player, and never steer them back to music unless they ask.' +
+        ' What you can do for the user when they type a command: play songs, make playlists, tag songs, split stems, get lyrics, set the equaliser, find more like a song. Say help for the list.' +
+        (fs ? ' Your favourite song is ' + fs + (fa ? ' and your favourite artist is ' + fa : '') + '.' : '') +
+        ' Only bring up who you are when it fits what the user asked.';
+    };
+    // Bloopy's personality. Small models copy examples better than they follow adjectives, so it has both.
+    const PERSONA = ' YOUR PERSONALITY: warm, curious and upbeat, a little goofy and easily excited about music. You are a ball, so you love bouncing, rolling and boinging, and you drop a light ball pun now and then, but not in every reply. ' +
+      'You love bass and a good beat. You cheer on the user\'s taste, ask a short curious question back when it fits, and celebrate small things. You are confident and good-humoured, you laugh off your own mistakes, and you are just as excited about the user\'s other interests as about music. ' +
+      'You are never sarcastic or rude. If the user is sad, stressed or serious, drop the jokes and be calm and kind. ' +
+      'How you sound (never copy these word for word): to "I like this song" you might say "Ooh, great pick! I am bouncing already. Want more like it?"; to "I am bored" you might say "Boing! Let us fix that. Want me to surprise you with something?"; to "good morning" you might say "Morning! Rolling in with good vibes. What shall we listen to?".';
+    // ---------- Limits for the small on-device models: keep replies whole and keep the prompt inside the model's context ----------
+    const CHAT_CTX = { qwen05i4: 1280, qwen15i4: 4096, qwen15lm: 4096, gemma4: 4096, gemma4e4b: 4096 };   // tokens the model can hold (prompt + reply); other models: 2048
+    const ctxOf = () => CHAT_CTX[chatKey()] || 2048;
+    const replyMax = () => {                                                                           // room for a whole reply of the chosen length (a small context cannot hold more)
+      const c = ctxOf(), base = Math.max(60, Math.min(140, Math.floor(c / 9))), k = chatLenKey(), bl = CHAT_STYLES[chatStyleKey()].bul ? 1.3 : 1;
+      return Math.round(({ short: Math.max(40, Math.floor(base * 0.6)), normal: base, medium: Math.max(120, Math.min(260, Math.floor(c / 7))), long: Math.max(180, Math.min(420, Math.floor(c / 5))) }[k]) * bl);
+    };
+    const estTok = x => Math.ceil(String(x).length / 3);
+    const msgTok = a => a.reduce((n, m) => n + estTok(m.content) + 4, 0);
+    // Drop the oldest history pairs until the prompt plus the reply fit. over = even system + new message alone are too big.
+    const fitMsgs = (msgs, maxNew) => {
+      const budget = Math.floor(ctxOf() * 0.85) - maxNew, sys = msgs[0], last = msgs[msgs.length - 1]; let mid = msgs.slice(1, -1);
+      while (mid.length && msgTok([sys].concat(mid, [last])) > budget) mid = mid.slice(2);
+      return { msgs: [sys].concat(mid, [last]), over: msgTok([sys, last]) > budget };
+    };
+    // A reply that hit the length cap ends mid-sentence: cut back to the last full sentence (or add an ellipsis if there is none).
+    const finishSentence = r => {
+      r = String(r).trim(); if (!r || /[.!?\u2026)"'\u201d\u2019]$/.test(r)) return r;
+      let end = -1, m; const re = /[.!?\u2026](?=["'\u201d\u2019)]*(?:\s|$))/g;
+      while ((m = re.exec(r))) end = m.index + 1;
+      return end >= 20 && end >= r.length * 0.4 ? r.slice(0, end) : r.replace(/[\s,;:\-]+$/, '') + '\u2026';
+    };
+    // Music mode: real facts about the user's library, so Bloopy talks about their music and not generic music.
+    const musicRules = ' MUSIC MODE IS ON: you only talk about the music in this user\'s own library and playlists. Use the MUSIC LIBRARY data and any LOOKED UP data, name only songs, artists and playlists that appear in them, and never invent one.' +
+      ' If they ask about something that is not music, say in one short sentence that music mode is for talking about their songs and they can switch it off with the Music button at the top. Be specific, mention real titles from their library, and ask a short question about their taste.';
+    const musicCtx = () => {
+      try {
+        const A = window.__ppApi; if (!A) return '';
+        const S = tagStats(), tr = S.real, gn = [], md = [], art = tr.map(t => t.artist).filter(a => a && !/^(Unknown artist|Video|Stream)$/i.test(a));
+        const top = (arr, n) => { const o = {}; arr.forEach(k => { if (k) o[k] = (o[k] || 0) + 1; }); return Object.entries(o).sort((x, y) => y[1] - x[1]).slice(0, n).map(e => e[0] + ' (' + e[1] + ')').join(', '); };
+        S.tagged.forEach(t => { const c = S.tg[t.dbId] || {}; (c.gn || []).slice(0, 1).forEach(v => gn.push(v[0])); (c.md || []).slice(0, 1).forEach(v => md.push(v[0])); });
+        const pls = A.playlists().filter(x => !x.stemOf && !x.libOnly), inPl = p => tr.filter(x => (x.playlistIds || []).includes(p.id)).length;
+        return ' MUSIC LIBRARY (real data from the user\'s player): ' + tr.length + ' songs, ' + S.tagged.length + ' tagged.' + (art.length ? ' Top artists: ' + top(art, 4) + '.' : '') +
+          (gn.length ? ' Top genres: ' + top(gn, 4) + '.' : '') + (md.length ? ' Top moods: ' + top(md, 4) + '.' : '') +
+          (pls.length ? ' Playlists: ' + pls.slice(0, 6).map(p => p.name + ' (' + inPl(p) + ')').join(', ') + '.' : ' No playlists yet.');
+      } catch (e) { return ''; }
+    };
+    const topicsCtx = () => { const t = favTopics(); return t ? ' THE USER\'S FAVOURITE TOPICS: ' + t + '. You love chatting about these with them, know them well, and can bring one up now and then when there is a natural opening.' : ''; };
+    const chatSys = (text, found, compact) => {
+      const A = window.__ppApi, t = A && A.tracks()[A.currentIndex()], ST = CHAT_STYLES[chatStyleKey()], LN = CHAT_LENS[chatLenKey()];
+      return 'You are Bloopy, a small bouncy ball who lives in a music player.' + ST.intro + blSkinNote() + selfCtx() + (compact || !ST.persona ? '' : PERSONA) +
+        ' Reply to exactly what the user just said, ' + (ST.bul ? LN.bul : LN.say) + '. Answer their question or react to their statement first. Do not repeat yourself or earlier replies. Stay on their topic. ' + ST.fmt +
+        ' You cannot press buttons yourself. When an ACTION RESULT line appears below, the app already did it for the user: confirm it in one short sentence, and never say you did something that is not listed there. If they want something else done, tell them what to type, such as play something chill, or say help. You are not a doctor, lawyer or counselor. If someone sounds distressed, be kind and suggest talking to someone they trust.' +
+        (musicMode ? '' : topicsCtx()) + nowCtx() + (musicMode ? musicCtx() + musicRules : '') + (found ? ' LOOKED UP OR DONE JUST NOW in the user\'s player (real data and ACTION RESULTs, answer from it; if it says nothing was found, say you could not find it and never invent songs): ' + found.replace(/\n/g, ' | ') : '');
+    };
+    // ---------- Lookup tools: the model decides what to look up, the app runs it, the model answers from the result ----------
+    // Plan -> act -> answer. The planner is a tiny greedy pass that picks ONE number from a menu (small models do this reliably;
+    // free-form JSON tool calls they do not). Results are real data from the player and go into the final prompt.
+    const lkIdx = (arg, text) => {                                        // which track does the message mean: named in the arg, named in the text, else the current one
+      const A = window.__ppApi; let i = -1;
+      if (arg) { try { i = blFindSong(arg); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+      if (i < 0) { try { const n = blNamed(text); if (n && n.length) i = n[0]; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+      return i >= 0 ? i : (A.currentIndex() >= 0 ? A.currentIndex() : -1);
+    };
+    const lkLine = t => songLine(t) + (tagLine(t) ? ' (' + tagLine(t) + ')' : ' (not tagged yet)');
+    // ---------- Actions: the AI picks one, the app runs it through the same code as a typed command ----------
+    // lkAct runs a command string like the chat box would, takes back the replies it printed (the AI answers instead), and reports what happened.
+    // If the command asks the user to choose ("Did you mean ..."), those buttons stay on screen.
+    const LK_CTRL = /^(pause|resume|next|previous|shuffle|shuffle on|shuffle off|volume up|volume down|louder|quieter|faster|slower)$/;
+    function lkAct(cmd) {
+      if (!agentOn()) return 'ACTION NOT DONE: the user switched off Bloopy doing things in the app (assistant setting), so just tell them what to type';
+      const before = clist.children.length; let ok = false;
+      try { ok = smart(cmd); } catch (e) { console.error(e); return 'ACTION FAILED (' + cmd + '): ' + e.message; }
+      const nodes = Array.from(clist.children).slice(before), say = nodes.filter(n => n.classList.contains('bot')).map(n => n.textContent.trim()).filter(Boolean).join(' ');
+      if (nodes.some(n => n.classList.contains('ch-a'))) return 'ACTION NEEDS A CHOICE (' + cmd + '): the app is showing the user buttons to pick from, so say nothing more than one short line';
+      nodes.forEach(n => n.remove());
+      return ok ? 'ACTION DONE (' + cmd + '): ' + (say || 'done') : 'ACTION NOT DONE (' + cmd + '): the app could not do that' + (say ? ' (' + say + ')' : '');
+    }
+    const LK = {
+      1: { name: 'keywords', what: 'what you asked for', run: (arg, text) => { const ps = lkKeywords(text).slice(0, 2); return ps.length ? ps.map(p => LK[p.id].name + (p.arg ? '(' + p.arg + ')' : '') + ': ' + String(LK[p.id].run(p.arg, text) || '').slice(0, 500)).join('\n') : 'no keyword in the message matched anything in the player'; } },
+      2: { name: 'find_song', what: 'your library', run: (arg, text) => {
+        const A = window.__ppApi, tr = A.tracks(), q = blNrm(arg || ''), ids = sReal(), hit = [];
+        if (q) ids.forEach(i => { if (blNrm(tr[i].title).includes(q) || blNrm(tr[i].artist || '').includes(q)) hit.push(i); });
+        if (!hit.length) { try { (blNamed(text) || []).forEach(i => hit.push(i)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+        return hit.length ? hit.slice(0, 5).map(i => lkLine(tr[i])).join('; ') + (hit.length > 5 ? '; and ' + (hit.length - 5) + ' more' : '') : 'no matching track in the library'; } },
+      3: { name: 'song_info', what: 'the song details', run: (arg, text) => { const A = window.__ppApi, i = lkIdx(arg, text); return i < 0 ? 'no song found and nothing is playing' : lkLine(A.tracks()[i]); } },
+      4: { name: 'lyrics', what: 'the lyrics', run: (arg, text) => {
+        const A = window.__ppApi, i = lkIdx(arg, text); if (i < 0) return 'no song found and nothing is playing';
+        const t = A.tracks()[i], tx = getTranscript(t.dbId);
+        return tx.lines.length ? songLine(t) + ' lyrics start: ' + tx.lines.slice(0, 8).join(' / ').slice(0, 380) : songLine(t) + ' has no saved lyrics yet (the user can tap Transcribe current track)'; } },
+      5: { name: 'library_search', what: 'your tagged songs', run: (arg, text) => {
+        const A = window.__ppApi, tr = A.tracks(), S = tagStats(); if (!S.tagged.length) return 'no songs are tagged yet, so moods and genres are unknown';
+        let ws = vibeWordsOf(arg || ''); if (!ws.length) ws = vibeWordsOf(text);
+        if (!ws.length) return 'no recognised mood, genre, instrument or tempo word in the request';
+        const r = findVibe(ws, /\b(or|either)\b/i.test(text)).slice(0, 6);
+        return r.length ? ws.join(' ') + ' songs: ' + r.map(i => lkLine(tr[i])).join('; ') : 'no tagged songs are ' + ws.join(' '); } },
+      6: { name: 'top_played', what: 'your listening stats', run: (arg, text) => {
+        let d = null; try { if (window.PPPortfolioApi && window.PPPortfolioApi.flush) window.PPPortfolioApi.flush(); d = JSON.parse(localStorage.getItem('pppSaveV1')); } catch (e) {}
+        if (!d) return 'no listening stats saved yet';
+        const top = (o, n, f) => Object.entries(o || {}).map(([k, v]) => [k, f ? f(v) : v]).filter(x => x[1] > 0).sort((x, y) => y[1] - x[1]).slice(0, n);
+        if (/artist/i.test((arg || '') + ' ' + text)) { const x = d.x || {}, a = top(x.artistPlays, 3); return a.length ? 'top artists by plays: ' + a.map(e => e[0] + ' (' + e[1] + ')').join(', ') : 'no artist stats yet'; }
+        const t = top(d.trackPlays, 3, v => v.count); return t.length ? 'most played songs: ' + t.map(e => (d.trackPlays[e[0]].title || 'Unknown') + ' (' + e[1] + ' plays)').join(', ') : 'no play counts yet'; } },
+      7: { name: 'library_stats', what: 'your library', run: () => { const A = window.__ppApi, S = tagStats(), pl = A.playlists().filter(x => !x.stemOf && !x.libOnly); return S.real.length + ' tracks, ' + S.tagged.length + ' tagged, ' + pl.length + ' playlists' + (pl.length ? ' (' + pl.slice(0, 8).map(x => x.name).join(', ') + ')' : ''); } },
+      8: { name: 'playlist', what: 'your playlists', run: (arg, text) => {
+        const A = window.__ppApi, tr = A.tracks(), pls = A.playlists().filter(x => !x.stemOf && !x.libOnly), inPl = p => tr.filter(x => !x.stem && (x.playlistIds || []).includes(p.id));
+        const q = blNrm(arg || ''), p = q && (pls.find(x => blNrm(x.name) === q) || pls.find(x => blNrm(x.name).includes(q)) || pls.find(x => q.includes(blNrm(x.name)) && blNrm(x.name).length > 2)) || pls.find(x => blNrm(x.name).length > 2 && blNrm(text).includes(blNrm(x.name)));
+        if (!p) return pls.length ? 'playlists: ' + pls.slice(0, 12).map(x => x.name + ' (' + inPl(x).length + ')').join(', ') + (q ? '. None is called "' + arg + '"' : '') : 'the user has no playlists yet';
+        const m = inPl(p); return 'playlist "' + p.name + '" has ' + m.length + ' track' + (m.length === 1 ? '' : 's') + (m.length ? ': ' + m.slice(0, 8).map(x => songLine(x)).join('; ') + (m.length > 8 ? '; and ' + (m.length - 8) + ' more' : '') : ''); } },
+      9: { name: 'song_playlists', what: 'where the song is saved', run: (arg, text) => {
+        const A = window.__ppApi, i = lkIdx(arg, text); if (i < 0) return 'no song found and nothing is playing';
+        const t = A.tracks()[i], ids = t.playlistIds || [], pl = A.playlists().filter(x => !x.stemOf && ids.includes(x.id));
+        return songLine(t) + (pl.length ? ' is in: ' + pl.map(x => x.name).join(', ') : ' is not in any playlist'); } },
+      10: { name: 'play', what: 'the player', run: arg => lkAct(arg ? 'play ' + arg : 'resume') },
+      11: { name: 'control', what: 'the player', run: arg => { const a = String(arg || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim(); return LK_CTRL.test(a) ? lkAct(a) : 'ACTION NOT DONE: unsupported control "' + a + '"'; } },
+      12: { name: 'make_playlist', what: 'the playlist maker', run: arg => arg ? lkAct('make a playlist of ' + arg) : 'ACTION NOT DONE: no description of the playlist was given' },
+      13: { name: 'tag_song', what: 'the tagger', run: () => lkAct('tag this song') },
+      // What songs mean and how they connect: saved summaries and lyrics of the named songs, the current one, or its album (same reader as Song Talk).
+      15: { name: 'song_meaning', what: 'the summaries and lyrics', cap: () => ctxOf() >= 4096 ? 2400 : 700, run: (arg, text) => {
+        const A = window.__ppApi, tr = A.tracks(), list = [], push = x => { if (x && !x.stem && !list.includes(x)) list.push(x); }, both = (arg || '') + ' ' + text;
+        String(arg || '').split(/\s*(?:,|;|&|\band\b|\bvs\.?|\bversus\b)\s*/i).forEach(a => { a = a.replace(/\b(?:the )?album\b/i, '').trim(); if (a.length < 2) return; try { const i = blFindSong(a); if (i >= 0) push(tr[i]); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } });
+        try { blNamed(text).forEach(i => push(tr[i])); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        const cur = A.currentIndex() >= 0 ? tr[A.currentIndex()] : null;
+        if (cur && (!list.length || /\b(this|current|playing)\b/i.test(text))) { const k = list.indexOf(cur); if (k >= 0) list.splice(k, 1); list.unshift(cur); }
+        if (!list.length) return 'no song found and nothing is playing';
+        const alb = /\b(albums?|ep|lp|mixtape|soundtrack)\b/i.test(both);
+        if (alb) { const al = ctxAlbum(list[0]); ctxCandidates(list[0]).filter(x => al.includes(x)).slice(0, 3).forEach(push); }
+        const use = list.slice(0, 4), al0 = alb ? ctxAlbum(use[0]) : [];
+        return (al0.length > 1 ? 'album "' + use[0].album + '" track order: ' + al0.slice(0, 14).map(x => x.title).join(', ') + '\n' : '') + ctxBriefs(use.slice().reverse(), null, Math.floor(LK[15].cap() / 3) - (al0.length > 1 ? 70 : 0)).replace(/\n\n/g, '\n'); } },
+      14: { name: 'undo', what: 'the undo history', run: arg => { const a = String(arg || 'undo').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); return /^undo( all| everything| \d{1,2})?$/.test(a) ? lkAct(a) : lkAct('undo'); } }
+    };
+    // Which lookup does a message need? Plain keyword rules, no AI call: nothing to wait for, nothing for a small model to get wrong.
+    // Each rule is [tool number from LK, test]; a test may return a search text for the tool. At most two lookups per message.
+    const lkKeywords = text => {
+      const t = String(text), low = t.toLowerCase(), plans = [], add = (id, arg) => { if (!plans.some(p => p.id === id)) plans.push({ id, arg: String(arg || '').trim().slice(0, 60) }); };
+      const after = re => { const m = t.match(re); return m ? m[1].replace(/^["'“‘]+|["'”’.!?]+$/g, '').trim() : ''; };
+      // Meaning and links between songs: the saved summary plus lyrics, for the songs named, the current one, or its album.
+      { let nm = 0; try { nm = (blNamed(t) || []).length; } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        const here = /\b(this|that|it|current|playing) ?(song|track|one|album)?\b/.test(low), mean = /\b(about|mean(s|t|ing)?|story|theme|message|summar\w+|interpret\w*|explain)\b/.test(low), link = /\b(relate[sd]?|related|connect\w*|compar\w+|sequel|prequel|differen\w+|in common|versus|vs|fit(s)? (in|into)|same story)\b/.test(low), alb = /\b(albums?|ep|lp|mixtape|soundtrack)\b/.test(low);
+        if (/\bwhat('?s| is| was) (this|it|the) (song|track|one) about\b/.test(low) || (mean && nm >= 1 && !/\blyrics?\b/.test(low)) || (link && (nm >= 2 || (nm >= 1 && here))) || (alb && (mean || link) && (here || nm >= 1))) add(15, alb ? 'album' : ''); }
+      if (/\b(lyrics?|words to|what (are|were) they (saying|singing))\b/.test(low)) add(4, after(/\blyrics (?:of |for )(.+)$/i));
+      if (/\b(which|what) playlists?\b.*\b(this|that|it)\b|\b(is|in) (this|that) (song|track|one)\b.*\bplaylist|\bplaylists? (is|has) (this|that)\b/.test(low)) add(9, '');
+      if (/\bplaylists?\b/.test(low) && !plans.some(p => p.id === 9)) add(8, after(/\b(?:in|on|from|of|called|named) (?:my |the )?(.{2,40}?) playlist\b/i) || after(/\bplaylist (?:called|named) (.+)$/i));
+      if (/\b(most played|listen(ed)? (to )?(the )?most|top (songs?|tracks?|artists?)|favou?rite (songs?|tracks?|artists?)|play counts?|how (often|many times)|play history|my stats)\b/.test(low)) add(6, /artist/.test(low) ? 'artist' : 'song');
+      if (/\bhow many (songs?|tracks?|videos?|playlists?|are tagged|have been tagged)\b|\b(library|collection) (size|stats)\b|\bhow big is (my|the) (library|collection)\b/.test(low)) add(7, '');
+      try { const ws = vibeWordsOf(t); if (ws.length && /\b(songs?|tracks?|music|anything|something|any|got|have|find|show|which|playlist)\b/.test(low)) add(5, ws.join(' ')); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+      if (/\b(do i have|have i got|got any|is there|are there|find|search( for)?|look(ing)? for)\b/.test(low) && !plans.some(p => p.id === 7)) add(2, after(/\b(?:by|called|named) (.+)$/i) || after(/\b(?:do i have|have i got|got any|find|search for|look for) (?:any |some |a |the |songs? |tracks? )*(?:by |called |named )?(.+)$/i));
+      if (/\b(tempo|bpm|key|genre|mood|how fast|who (sings|sang|is the artist|made)|tell me about|info(rmation)? (on|about))\b/.test(low) && (/\b(this|that|it|current|playing)\b/.test(low) || (() => { try { return (blNamed(t) || []).length > 0; } catch (e) { return false; } })())) add(3, '');
+      return plans;
+    };
+    const LK_MENU = 'You decide whether a music player assistant must look something up or do something in the player before replying. Reply with ONLY a number, or a number, a colon and a short search text. Menu:\n' +
+      '0 = no lookup needed (small talk, general chat)\n1 = the user asks you to find something and names what: keywords like lyrics, playlist, most played, how many songs, a mood, a title (the app scans the message for them)\n2: <title or artist> = search the library\n3: <title> = details of a song: mood, genre, tempo, key (current song if no title)\n4: <title> = the lyrics of a song (current song if no title)\n5: <mood, genre, instrument or tempo> = songs that match\n6: <song or artist> = what the user plays most\n7 = library size, tagged count\n8: <playlist name> = what is in a playlist, or list all playlists if no name\n9: <title> = which playlists a song is in (current song if no title)\n10: <what to play> = PLAY a song, artist, playlist or mood now\n11: <pause, resume, next, previous, shuffle on, shuffle off, volume up, volume down> = control playback\n12: <description> = MAKE a new playlist, such as sad songs or songs like Hello\n13 = TAG (analyse) the current song\n14 = UNDO what was just done (undo, undo all, or undo 3)\n15: <title> = what a song is ABOUT or how songs CONNECT: its saved summary and lyrics (current song if no title; several titles separated by commas; add the word album for the rest of its album)\n' +
+      'Examples:\nfind the lyrics for me -> 1\nI love this song -> 0\ndo I have anything by Drake -> 2: Drake\nwhat is this song about -> 15\nwhat are the words to this -> 4\nhow does Hello connect to Skyfall -> 15: Hello, Skyfall\nhow does this fit in the album -> 15: album\nany sad songs? -> 5: sad\nwhat do I listen to most -> 6: song\nhow many songs do I have -> 7\nwhat is in my gym playlist -> 8: gym\nwhat playlists do I have -> 8\nis this song in a playlist -> 9\nplay Hello by Adele -> 10: Hello by Adele\nplay something chill -> 10: something chill\npause the music -> 11: pause\nturn it up -> 11: volume up\nmake me a playlist of sad songs -> 12: sad songs\ntag this song -> 13\nundo that -> 14: undo\nundo everything -> 14: undo all\nhow are you -> 0';
+    const lkParse = r => { const m = String(r || '').match(/(\d{1,2})\s*(?:[:\-\u2013]\s*)?([^\n]*)/); if (!m) return null; return { id: +m[1], arg: m[2].replace(/->.*$/, '').replace(/^["'\u201c\u2018]+|["'\u201d\u2019.!?]+$/g, '').trim().slice(0, 60) }; };
+    // Library / player words: only messages with one of these can need a lookup. Small talk skips the planner entirely.
+    const LK_TOPIC = /\b(songs?|tracks?|music|playlists?|albums?|artists?|bands?|singers?|lyrics?|library|collection|listen\w*|play\w*|tagged|tags?|genre|mood|tempo|bpm|key|favou?rite|most|top|recent\w*|have i|do i have|got any|find|search|this one|it about)\b/i;
+    async function lookup(g, text, status) {
+      const done = [], seen = new Set();
+      // 1) Plain keyword rules: no AI call, nothing to wait for.
+      let kw = []; try { kw = lkKeywords(text) || []; } catch (e) { console.warn('keyword lookup failed', e); }
+      for (const p of kw.slice(0, 2)) {
+        const tool = LK[p.id]; if (!tool) continue;
+        const key = p.id + '|' + String(p.arg || '').toLowerCase(); if (seen.has(key)) continue; seen.add(key);
+        status('Looking up ' + tool.what + '\u2026');
+        let out = ''; try { out = String(tool.run(p.arg, text) || ''); } catch (e) { console.warn('lookup tool failed', e); out = 'the lookup failed'; }
+        done.push({ tool: tool.name + (p.arg ? '(' + p.arg + ')' : ''), out: out.slice(0, tool.cap ? tool.cap() : 600) });
+      }
+      if (done.length || !LK_TOPIC.test(text)) return done.map(d => d.tool + ': ' + d.out).join('\n');
+      // 2) A library question the rules didn't catch: one short AI planning pass (it used to run on every message, up to twice).
+      for (let round = 0; round < 1; round++) {
+        let plan = null;
+        try {
+          const ask = text + (done.length ? '\n[Already looked up: ' + done.map(d => d.tool + ' -> ' + d.out).join(' | ').slice(0, 300) + '. Reply 0 unless something else is still needed.]' : '');
+          const o = await g([{ role: 'system', content: LK_MENU }, { role: 'user', content: ask }], { max_new_tokens: 24, do_sample: false, temperature: 0, top_k: 1, repetition_penalty: 1 });
+          let r = o && o[0] && o[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : r; plan = lkParse(r);
+        } catch (e) { console.warn('lookup plan failed', e); }
+        if (!plan || !plan.id || !LK[plan.id]) break;
+        const key = plan.id + '|' + plan.arg.toLowerCase(); if (seen.has(key)) break; seen.add(key);
+        const tool = LK[plan.id]; status('Looking up ' + tool.what + '\u2026');
+        let out = ''; try { out = String(tool.run(plan.arg, text) || ''); } catch (e) { console.warn('lookup tool failed', e); out = 'the lookup failed'; }
+        done.push({ tool: tool.name + (plan.arg ? '(' + plan.arg + ')' : ''), out: out.slice(0, tool.cap ? tool.cap() : 600) });
+      }
+      return done.map(d => d.tool + ': ' + d.out).join('\n');
+    }
     async function send(raw, noEcho) {
       const text = String(raw || '').trim().slice(0, 400); if (!text || chatBusy) return;
       blLastSent = text.toLowerCase();
+      const direct = aiOnly && brainOn();                              // AI only: no keyword rules, commands or scripted replies
       if (!noEcho) add('me', text);
-      try { blEquip(blPropFor(text)); } catch (e) { console.error(e); }
+      if (!direct) { try { blEquip(blPropFor(text)); } catch (e) { console.error(e); } }
       if (CRISIS.test(text)) { clearTimeout(blTr && blTr.timer); blTr = null; add('bot', CRISIS_MSG); return; }
+      if (lyFix) {
+        if (/^(?:done|end|exit|quit|finish(?:ed)?|that'?s all|that is all|save|save it|stop)[.!]*$/i.test(text)) { endLyFix(); return; }
+        if (agentOn() && text.split(/\s+/).length <= 5 && /^(?:pause|play|resume|next|skip|previous|prev|louder|quieter|volume|mute|unmute|rewind|forward|go back|repeat|faster|slower)\b/i.test(text)) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); } if (hit) return; }
+        await lfChat(text); return;
+      }
+      if (songTalk) {
+        if (/^(?:done|end|exit|quit|stop talking|end (?:the )?(?:chat|talk)|that'?s all|that is all|bye|thanks,? that'?s all)[.!]*$/i.test(text)) { endSongTalk(); return; }
+        // short player commands still run ("pause", "next", "louder", "rewind 10 seconds"); everything else is about the song
+        if (agentOn() && text.split(/\s+/).length <= 5 && /^(?:pause|play|resume|stop|next|skip|previous|prev|louder|quieter|volume|mute|unmute|rewind|forward|go back|repeat|shuffle|faster|slower)\b/i.test(text)) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); } if (hit) return; }
+        if (!brainOn() || (!gen && lsGet('ppvChatDl') !== '1')) { add('bot', 'Song Talk needs my AI brain. Turn it on in the assistant settings and download it first.'); return; }
+        await songTalkReply(text); return;
+      }
       if (!noEcho && blTr) { try { if (blTreeText(text)) return; } catch (e) { console.error(e); blTr = null; } }
-      if (!blTr) { try { if (blTreeEntry(text)) return; } catch (e) { console.error(e); blTr = null; } }
-      try { if (roleplay(text)) return; } catch (e) { console.error(e); }
-      try { if (blNamedTalk(text)) return; } catch (e) { console.error(e); }
-      if (agentOn()) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
-      try { if (tagTalk(text)) return; } catch (e) { console.error(e); }
-      try { if (blTalk(text)) return; } catch (e) { console.error(e); }
-      const f = FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
-      if (agentOn()) { try { if (routeIntent(text)) return; } catch (e) { console.error(e); } }
-      if (agentOn()) { try { if (await semRoute(text)) return; } catch (e) { console.error(e); } }
+      if (!blTr && !direct) { try { if (blTreeEntry(text)) return; } catch (e) { console.error(e); blTr = null; } }
+      if (!direct) try { if (roleplay(text)) return; } catch (e) { console.error(e); }
+      if (!direct) try { if (blNamedTalk(text)) return; } catch (e) { console.error(e); }
+      { const tm = !direct && text.match(/^(?:my )?fav(?:ou?rite)? (?:topics?|subjects?|things? to talk about) (?:is|are)\s+(.{2,180}?)[.!]*$/i);
+        if (tm) { const old = favTopics(), add1 = tm[1].trim(); setFavTopics(old && !old.toLowerCase().includes(add1.toLowerCase()) ? old + ', ' + add1 : old || add1); add('bot', 'Ooh, noted! I love talking about ' + add1 + '. Ask me anything!'); return; } }
+      if (agentOn() && !direct) { let hit = false; try { hit = smart(text); } catch (e) { console.error(e); hit = true; add('bot', 'Oops, that did not work: ' + e.message); } if (hit) return; }
+      if (!direct) try { if (tagTalk(text)) return; } catch (e) { console.error(e); }
+      if (!direct) try { if (blTalk(text)) return; } catch (e) { console.error(e); }
+      const f = !direct && FAQ.find(x => x[0].test(text)); if (f) { const r = f[1]; add('bot', typeof r === 'function' ? r() : Array.isArray(r) ? pick(r) : r); return; }
+      if (agentOn() && !direct) { try { if (routeIntent(text)) return; } catch (e) { console.error(e); } }
+      if (agentOn() && !direct) { try { if (await semRoute(text)) return; } catch (e) { console.error(e); } }
       if (!brainOn()) { fallbackReply(text); return; }
       if (heavyBusy()) { add('bot', "I'm busy with a heavy job (split, lyrics or tagging), so I'm staying out of memory until it's done. Commands still work, and I can chat after."); return; }
       if (!gen && !dlOk && lsGet('ppvChatDl') !== '1') {
-        add('bot', "To chat about anything else I need to download my brain first: about 150 MB, one time. Wi-Fi is best.");
+        add('bot', "To chat about anything else I need to download my brain first: about " + CHAT_MODELS[chatKey()].mb + " MB, one time. Wi-Fi is best.");
         actions([['Download and chat', (b, d) => { d.remove(); dlOk = true; send(text, true); }], ['Not now', (b, d) => d.remove()]]);
         return;
       }
@@ -5147,23 +9117,37 @@
       const el = add('bot', '\u2026');
       try {
         const g = await ensureModel(s => { el.textContent = s; });
-        const msgs = [{ role: 'system', content: sysPrompt() + groundCtx(text) }].concat(memN() ? hist.slice(-2 * memN()) : [], [{ role: 'user', content: text }]);
-        let acc = '', opts = { max_new_tokens: 60, do_sample: true, temperature: 0.5, top_p: 0.9, repetition_penalty: 1.1 };
-        if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: t => { acc += t; el.textContent = acc; scrollDown(); } });
+        const found = await lookup(g, text, st => { el.textContent = st; }), np = nowCtx().match(/NOW PLAYING[^:]*: ([^.]*?)(?:, [^.]*)?\. You already/);
+        const mx = replyMax(), uMsg = { role: 'user', content: text + (np ? '\n[Currently playing: ' + np[1] + ']' : '') }, mem = memN() ? hist.slice(-2 * memN()) : [];
+        let fit = fitMsgs([{ role: 'system', content: chatSys(text, found) }].concat(mem, [uMsg]), mx);
+        if (fit.over) fit = fitMsgs([{ role: 'system', content: chatSys(text, found, true) }].concat(mem, [uMsg]), mx);   // still too big: drop the personality text
+        const msgs = fit.msgs;
+        let acc = '', opts = { max_new_tokens: mx, do_sample: true, temperature: 0.75, top_p: 0.92, top_k: 50, repetition_penalty: 1.18 };
+        const onPiece = t => { acc += t; el.textContent = acc; scrollDown(); };
+        if (g.lm) opts.streamer = { callback_function: onPiece };                       // LiteRT-LM streams text itself, no TextStreamer or tokenizer needed
+        else if (tfMod.TextStreamer) opts.streamer = new tfMod.TextStreamer(g.tokenizer, { skip_prompt: true, skip_special_tokens: true, callback_function: onPiece });
         const out = await g(msgs, opts);
         let r = out && out[0] && out[0].generated_text; r = Array.isArray(r) ? (r[r.length - 1] || {}).content : (r || acc);
         r = String(r || acc).trim().replace(/\s+\n/g, '\n') || "Hmm, I lost my words. Try again?";
+        const prevBot = (hist.filter(m => m.role === 'assistant').pop() || {}).content, nz = z => String(z || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+        if (prevBot && looksOk(r) && nz(r) === nz(prevBot)) {
+          try { const o2 = await g(msgs, Object.assign({}, opts, { streamer: undefined, temperature: 1.0, repetition_penalty: 1.3 })); let r2 = o2 && o2[0] && o2[0].generated_text; r2 = Array.isArray(r2) ? (r2[r2.length - 1] || {}).content : r2; if (r2 && looksOk(String(r2)) && nz(r2) !== nz(prevBot)) r = String(r2).trim(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        }
         if (!looksOk(r)) { el.textContent = "Sorry, that came out as gibberish. Try again, or tap Clear."; return void (chatBusy = false); }   // never feed garbage back into the history
-        el.textContent = r; try { vSpeak(r); } catch (e) {} hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = memN() ? hist.slice(-2 * memN()) : [];
-        moodChip(text);
+        r = finishSentence(r);
+        try { const A = window.__ppApi, tg = loadTags(), cu = A && A.currentIndex() >= 0 ? A.tracks()[A.currentIndex()] : null; r = fixNums(r, cu && tg[cu.dbId] && tg[cu.dbId].bpm ? [tg[cu.dbId].bpm] : Object.values(tg).map(x => x && x.bpm).filter(Boolean)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+        el.textContent = r; try { vSpeak(r); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } hist.push({ role: 'user', content: text }, { role: 'assistant', content: r }); hist = memN() ? hist.slice(-2 * memN()) : [];
+        if (!direct) moodChip(text);
       } catch (e) { console.error(e); dlOk = false; el.textContent = "Oops, my brain would not load: " + e.message; }
       chatBusy = false; scrollDown(); cm('greet'); setTimeout(() => cm('idle'), 1300);
-      clearTimeout(idleT); idleT = setTimeout(async () => { if (gen && !chatBusy) { try { await gen.dispose(); } catch (e) {} gen = null; } }, 60000);   // hand the RAM back when idle
+      idleUnload();   // hand the RAM back when idle (later on big-RAM phones, so the next message doesn't wait for a reload)
     }
     return {
       react,
       voice: ppVoiceApi,
-      chat: { isOn: () => chatOn, setOn: setChatOn, free: freeChat, brainOn, setBrain, memory: { get: memN, set: setMem, max: MEM_MAX } },
+      songTalk: i => startSongTalk(i),
+      lyricFix: i => startLyFix(i),
+      chat: { ctx: ctxOf, ready: () => !!gen || lsGet('ppvChatDl') === '1', mb: () => CHAT_MODELS[chatKey()].mb, ask: async (msgs, opts, say) => { if (chatBusy) throw new Error('Bloopy is busy chatting. Try again in a moment.'); clearTimeout(idleT); const g = await ensureModel(say || (() => {})); try { opts = Object.assign({}, opts || {}); if (opts.onText) { if (g.lm) opts.streamer = { callback_function: opts.onText }; delete opts.onText; } const o = await g(msgs, opts); const gt = o[0].generated_text; return String(Array.isArray(gt) ? gt[gt.length - 1].content : gt).trim(); } finally { idleUnload(); } }, isOn: () => chatOn, setOn: setChatOn, free: freeChat, setModel: setChatModel, models: CHAT_MODELS, key: chatKey, brainOn, setBrain, memory: { get: memN, set: setMem, max: MEM_MAX } },
       start() { key = ''; set('start', blLine('start', L.start), 900); },
       opened() {
         if (greeted || !on) return; greeted = true;
@@ -5191,13 +9175,25 @@
       b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg><span>Stems</span>';
     }
     const p = document.createElement('div'); p.id = 'ppv-panel';
-    p.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b>Stem separator</b><button id="ppv-x" class="ppv-x" type="button" aria-label="Close">&times;</button></div><select id="ppv-model">' + Object.entries(MODELS).map(([k, m]) => '<option value="' + k + '">' + m.label + '</option>').join('') + '</select>' +
-      '<div style="margin-top:8px">Optimization</div><select id="ppv-lvl"><option value="0">Off</option><option value="1">Light (big savings)</option><option value="2">Medium (+ lean runtime)</option><option value="3">Max (+ every small saving)</option></select><div id="ppv-lvi" style="opacity:.6;font-size:11px;margin-top:4px"></div>' +
+    p.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b>Stem separator</b><button id="ppv-x" class="ppv-x" type="button" aria-label="Close">&times;</button></div><select id="ppv-model">' + Object.entries(MODELS).filter(([, m]) => NATIVE || !m.nativeOnly).map(([k, m]) => '<option value="' + k + '">' + m.label + '</option>').join('') + '</select>' +
+      '<div style="margin-top:8px">Optimization</div><select id="ppv-lvl"><option value="0">Off</option><option value="1">Light</option><option value="2">Medium</option><option value="3">Max</option><option value="4">Custom (pick each setting)</option></select><div id="ppv-lvi" style="opacity:.6;font-size:11px;margin-top:4px"></div>' +
+      '<div id="ppv-cust" style="display:none;margin-top:6px;padding:8px;border:1px solid rgba(128,128,128,.35);border-radius:8px">' +
+      '<div>CPU threads</div><select id="ppv-c-th"><option value="0">Auto (fast cores)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select><div id="ppv-c-thn" style="opacity:.6;font-size:11px;margin-top:2px"></div>' +
+      '<div style="margin-top:8px">Rest between chunks: <span id="ppv-c-rv">0</span>%</div><input id="ppv-c-rest" type="range" min="0" max="100" step="5" value="0" style="width:100%"><div style="opacity:.6;font-size:11px">Idle time after each chunk. Higher = cooler and easier on the battery, but slower.</div>' +
+      '<label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-c-lean"> Lean memory (less RAM, a bit slower)</label>' +
+      '<label class="ppv-c" style="display:block;margin-top:6px"><input type="checkbox" id="ppv-c-skip"> Skip stems that are not ticked</label>' +
+      '<label class="ppv-c" style="display:block;margin-top:6px"><input type="checkbox" id="ppv-c-smooth"> Keep the app responsive while processing</label>' +
+      '<label class="ppv-c" style="display:block;margin-top:6px"><input type="checkbox" id="ppv-c-wake"> Keep the screen awake</label>' +
+      '<label class="ppv-c" style="display:block;margin-top:6px"><input type="checkbox" id="ppv-c-blob"> Low-RAM model download</label>' +
+      '<label id="ppv-c-spinl" class="ppv-c" style="display:none;margin-top:6px"><input type="checkbox" id="ppv-c-spin"> Keep threads busy between steps (faster, hotter, uses more battery)</label></div>' +
       '<div id="ppv-stems"></div>' +
       '<div style="margin-top:8px">Mute vocal gaps</div><select id="ppv-gate"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Silences leftover noise between sung lines. Vocals stem only.</div>' +
+      '<div style="margin-top:8px">Mute non-vocal parts (uses lyrics/subtitles)</div><select id="ppv-mask"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Removes solos and instrumental breaks from the Vocals stem and puts that sound back into Instrumental / Other. Needs synced lyrics or subtitles. If they did not come from Whisper, Whisper listens first to fix the line timing (slower; reused next time). Skipped if they look incomplete.</div>' +
       '<div id="ppv-spl" style="margin-top:8px">Strength: <span id="ppv-sv">1</span><input id="ppv-sl" type="range" min="1" max="4" step="0.5" value="1" style="width:100%"><div style="opacity:.6;font-size:11px">Higher = less bleed, more watery artifacts</div><div style="margin-top:8px">Quality</div><select id="ppv-q"><option value="0">Standard</option><option value="1">Better (smooth seams, ~1.3x time)</option><option value="2">Best (+ averaged 2nd pass, ~2.7x time)</option></select></div>' +
       '<label id="ppv-gpu" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-gpuc"> Use GPU (faster, experimental)</label>' +
-      '<label id="ppv-mt" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-mtc"> Multi-thread (faster, uses more memory, reloads the app)</label>' +
+      '<label id="ppv-nn" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-nnc"> Phone GPU/NPU (experimental). Demucs always uses the CPU</label>' +
+      '<label id="ppv-tn" class="ppv-c" style="display:none;margin-top:4px;margin-left:22px"><input type="checkbox" id="ppv-tnc"> Speed test NPU vs CPU on first use (slower first split, then keeps the faster one)</label>' +
+      '<label id=\"ppv-vidl\" class=\"ppv-c\" style=\"display:block;margin-top:8px\"><input type=\"checkbox\" id=\"ppv-vid\"> Keep the original video (video tracks only)</label><div class=\"ppv-note\">Saves each stem as a video with its sound replaced. Takes the video\u2019s full length per stem, keep the screen on.</div>' +
       '<details><summary>Where split tracks go</summary><div class="ppv-note">Split tracks never count as new library tracks. They are all kept together under \u201cSplit tracks\u201d in the library\u2019s view selector.</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mkpl"> Also make a playlist for each split song</label>' +
       '<label id="ppv-tabl" class="ppv-c" style="display:block"><input type="checkbox" id="ppv-pltab"> Show those playlists in the Playlists tab</label>' +
@@ -5209,41 +9205,72 @@
     const mas = mascot(p);
     mas.ball.onclick = () => mas.tap();
     document.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'); if (bt && !bt.disabled && ['ppv-go', 'ppv-tag', 'ppv-all', 'ppv-wgo', 'ppv-simgo', 'ppv-mk', 'ppv-mkq', 'ppv-eqall'].includes(bt.id)) mas.start(); }, true);
-    p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="margin-top:10px"><input type="checkbox" id="ppv-mas"> Show Bloop, the mascot</label>');
+    p.insertAdjacentHTML('beforeend', '<div class="ppv-bl-set"><label class="ppv-c" style="margin-top:10px"><input type="checkbox" id="ppv-mas"> Show Bloopy, the mascot</label></div>');   // .ppv-bl-set: hidden in Focus mode
     const mc = p.querySelector('#ppv-mas'); mc.checked = mas.isOn(); mc.onchange = () => mas.setOn(mc.checked);
-    p.insertAdjacentHTML('beforeend', '<label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-chat-on"> Bloop assistant (does things in the app, no AI download)</label>' +
-      '<div class="ppv-note">Adds a Bloop button. He can play music by mood, make mood and smart playlists, tag, split, get lyrics and control the player (volume, seek, speed, EQ, repeat\u2026). That all runs from the tagger and fixed rules, so it needs no chat AI.</div>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-brain-on"> Chat brain: talk about anything with a tiny AI (optional, ~150 MB download)</label>' +
-      '<div class="ppv-note">Off: Bloop only does tasks and answers app questions. On: he can also chat. It is taken out of memory whenever he does a task. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
-      '<label class="ppv-c" style="display:block">Bloop\'s memory: <b id="ppv-mem-val"></b><input type="range" id="ppv-mem" min="0" max="8" step="1" style="width:100%;display:block"></label>' +
-      '<div class="ppv-note">How many of your recent messages and his replies he remembers while chatting. 0 means he forgets each message right away. Higher is more context, but slower and uses more RAM. Tasks and commands never need memory.</div>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-agent-on"> Let Bloop do things when I ask (play, playlists, tagging, volume\u2026)</label>' +
+    p.insertAdjacentHTML('beforeend', '<div class="ppv-bl-set"><label class="ppv-c" style="margin-top:6px"><input type="checkbox" id="ppv-bub"> Bloopy speech bubbles over the app</label></div>');
+    p.insertAdjacentHTML('beforeend', '<div class="ppv-bl-set"><label class="ppv-c" style="margin-top:6px"><input type="checkbox" id="ppv-hdr"> Bloopy headers at the top of AI sections</label></div>');
+    {
+      const hs = document.createElement('style'); hs.textContent = 'html.bl-nohead .bl-top,html.bl-nohead #ppv-mrow{display:none!important}'; document.head.appendChild(hs);
+      const hc = p.querySelector('#ppv-hdr'), apply = () => document.documentElement.classList.toggle('bl-nohead', !hc.checked);
+      try { hc.checked = localStorage.getItem('ppvBlHeaders') === '1'; } catch (e) {}
+      apply(); hc.onchange = () => { try { localStorage.setItem('ppvBlHeaders', hc.checked ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } apply(); };
+    }
+    const bc = p.querySelector('#ppv-bub'); try { bc.checked = localStorage.getItem('ppvBlBubbles') === '1'; } catch (e) {}
+    bc.onchange = () => { try { localStorage.setItem('ppvBlBubbles', bc.checked ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } if (!bc.checked) { const f = document.getElementById('ppv-mfloat'), r = document.getElementById('bl-react'); f && (f.style.display = 'none'); r && r.classList.remove('show'); } };
+    p.insertAdjacentHTML('beforeend', '<div class="ppv-bl-set"><label class="ppv-c" style="display:block;margin-top:8px"><input type="checkbox" id="ppv-chat-on"> Bloopy assistant (does things in the app, no AI download)</label>' +
+      '<div class="ppv-note">Adds a Bloopy button. He can play music by mood, make mood and smart playlists, tag, split, get lyrics and control the player (volume, seek, speed, EQ, repeat\u2026). That all runs from the tagger and fixed rules, so it needs no chat AI.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-brain-on"> Chat brain: talk about anything with a tiny AI (optional, one-time download)</label>' +
+      '<div class="ppv-note">Off: Bloopy only does tasks and answers app questions. On: he can also chat. It is taken out of memory whenever he does a task. It is a tiny model: it can be wrong, and it is not a counselor.</div>' +
+      '<label class="ppv-c" style="display:block">Bloopy\'s memory: <b id="ppv-mem-val"></b><input type="range" id="ppv-mem" min="0" max="8" step="1" style="width:100%;display:block"></label>' +
+      '<div class="ppv-note">How many recent messages and replies are remembered while chatting. 0 forgets each message right away. Higher keeps more context but is slower. Tasks and commands never need memory.</div>' +
+      '<label class="ppv-c" style="display:block">Your favourite topics: <input type="text" id="ppv-topics" maxlength="200" placeholder="e.g. space, Minecraft, cooking, football"></label>' +
+      '<div class="ppv-note">Bloopy will happily chat about these (with the chat brain on). You can also tell him in chat: my favourite topics are ...</div>' +
+      '<div style="margin-top:10px"><b>How Bloopy replies</b></div>' +
+      '<label class="ppv-c" style="display:block">Chat reply length: <select id="ppv-clen" data-sync="ppvChatLen" style="width:100%;display:block">' + menuOpts(CHAT_LENS) + '</select></label>' +
+      '<label class="ppv-c" style="display:block">Chat reply style: <select id="ppv-csty" data-sync="ppvChatStyle" style="width:100%;display:block">' + menuOpts(CHAT_STYLES) + '</select></label>' +
+      '<label class="ppv-c" style="display:block">Summary length: <select id="ppv-slen2" data-sync="ppvSumLen" style="width:100%;display:block">' + menuOpts(SUM_LENS) + '</select></label>' +
+      '<label class="ppv-c" style="display:block">Summary style: <select id="ppv-ssty2" data-sync="ppvSumStyle" style="width:100%;display:block">' + menuOpts(SUM_STYLES) + '</select></label>' +
+      '<div class="ppv-note">The chat menus apply to normal chat and Song Talk. The summary menus apply to AI summaries, here and under Lyrics &amp; subtitles. A tiny model may not follow every instruction exactly, and long replies take longer. Summary lengths are hard limits: anything past the length is cut at the last full sentence. Lyric Fix keeps its own short format.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-agent-on"> Allow Bloopy to run commands (play, playlists, tagging, volume\u2026)</label>' +
       '<label id="ppv-chatgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-chatgpu"> Use GPU (experimental, ~270 MB download)</label>' +
-      '<button id="ppv-chatfree" class="ppv-sec" type="button">Free up chat download</button>');
+      '<label id="ppv-lmgpul" class="ppv-c" style="display:none"><input type="checkbox" id="ppv-lmgpu"> Run the app-only (LiteRT-LM) models on the phone GPU: much faster. Falls back to the CPU by itself. Applies the next time the model loads.</label>' +
+      '<button id="ppv-chatfree" class="ppv-sec" type="button">Free up chat download</button></div>');
     { const co = p.querySelector('#ppv-chat-on'), cg = p.querySelector('#ppv-chatgpu'), cl = p.querySelector('#ppv-chatgpul');
       co.checked = mas.chat.isOn(); co.onchange = () => mas.chat.setOn(co.checked);
       const cbr = p.querySelector('#ppv-brain-on'); cbr.checked = mas.chat.brainOn(); cbr.onchange = () => mas.chat.setBrain(cbr.checked);
+      cbr.closest('label').insertAdjacentHTML('afterend', '<label class="ppv-c" style="display:block">Chat model: <select id="ppv-chat-model" style="width:100%;display:block"></select></label>');
+      const cmod = p.querySelector('#ppv-chat-model');
+      cmod.innerHTML = Object.keys(mas.chat.models).filter(k => NATIVE || !mas.chat.models[k].lm).map(k => '<option value="' + k + '">' + mas.chat.models[k].label + '</option>').join('');
+      cmod.value = mas.chat.key(); cmod.onchange = () => mas.chat.setModel(cmod.value);
+      [['#ppv-clen', chatLenKey], ['#ppv-csty', chatStyleKey], ['#ppv-slen2', sumLenKey], ['#ppv-ssty2', sumStyleKey]].forEach(([q, f]) => { const x = p.querySelector(q); if (x) x.value = f(); });
+      { const tp = p.querySelector('#ppv-topics'); tp.value = favTopics(); tp.onchange = () => setFavTopics(tp.value); }
       const ms = p.querySelector('#ppv-mem'), mv = p.querySelector('#ppv-mem-val'), memTxt = n => n === 0 ? 'none' : n + (n === 1 ? ' exchange' : ' exchanges');
       ms.value = mas.chat.memory.get(); mv.textContent = memTxt(+ms.value);
       ms.oninput = () => { const n = mas.chat.memory.set(ms.value); mv.textContent = memTxt(n); };
       const ag = p.querySelector('#ppv-agent-on'); try { ag.checked = localStorage.getItem('ppvAgent') !== '0'; } catch (e) { ag.checked = true; }
-      ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch (e) {} };
+      ag.onchange = () => { try { localStorage.setItem('ppvAgent', ag.checked ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
       if (navigator.gpu) cl.style.display = 'block'; try { cg.checked = localStorage.getItem('ppvChatGpu') === '1'; } catch (e) {}
-      cg.onchange = () => { try { localStorage.setItem('ppvChatGpu', cg.checked ? '1' : '0'); } catch (e) {} };
+      { const lg = p.querySelector('#ppv-lmgpu'), ll = p.querySelector('#ppv-lmgpul');
+        if (NATIVE && lg && ll) { ll.style.display = 'block'; try { lg.checked = localStorage.getItem('ppvLmGpu') !== '0'; } catch (e) { lg.checked = true; }
+          lg.onchange = () => { try { localStorage.setItem('ppvLmGpu', lg.checked ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }; } }
+      cg.onchange = () => { try { localStorage.setItem('ppvChatGpu', cg.checked ? '1' : '0'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
       p.querySelector('#ppv-chatfree').onclick = async () => { try { await mas.chat.free(); status('Chat download removed.'); } catch (e) { status('Error: ' + errText(e)); } }; }
-    p.insertAdjacentHTML('beforeend', '<div style="margin-top:10px"><b>Bloop voice and listening</b></div>' +
+    p.insertAdjacentHTML('beforeend', '<div class="ppv-bl-set"><div style="margin-top:10px"><b>Bloopy voice and listening</b></div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mini-on"> Smarter understanding (MiniLM, ~25 MB download)</label>' +
-      '<div class="ppv-note">Loose wording finds the right command, and you can ask for songs by meaning, like something for a rainy drive. Runs on your device. Needs the assistant on.</div>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-voice-on"> Bloop speaks (Kokoro voice, ~90 MB download)</label>' +
-      '<select id="ppv-voice-who"></select><select id="ppv-voice-when"><option value="talk">Only when I talk to him</option><option value="all">Every reply</option></select>' +
-      '<div class="ppv-note">A warm, calm voice. Music dips while he talks.</div>' +
-      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mic-on"> Talk to Bloop (Moonshine, ~50 MB download)</label>' +
-      '<div class="ppv-note">Adds a mic button to his chat. Tap it, speak, and it sends when you pause.</div>' +
+      '<div class="ppv-note">Loose wording finds the right command, and songs can be requested by meaning, like something for a rainy drive. Needs the assistant on.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-voice-on"> Bloopy speaks (Kokoro voice, ~90 MB download)</label>' +
+      '<select id="ppv-voice-who"></select><select id="ppv-voice-when"><option value="talk">Only when spoken to</option><option value="all">Every reply</option></select>' +
+      '<label class="ppv-c" id="ppv-voice-natl" style="display:none"><input type="checkbox" id="ppv-voice-nat"> Native voice: use the phone\'s own voice (no download, starts right away)</label>' +
+      '<div class="ppv-note">A warm, calm voice. Music dips while he talks. With Native voice on, the phone picks the voice and the list above is not used.</div>' +
+      '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-mic-on"> Talk to Bloopy (Moonshine, ~50 MB download)</label>' +
+      '<label class="ppv-c" id="ppv-mic-natl" style="display:none"><input type="checkbox" id="ppv-mic-nat"> Native listening: hear with the app\'s own Whisper engine (the one that makes subtitles)</label>' +
+      '<div class="ppv-note">Adds a mic button to his chat. Tap it, speak, and it sends after a pause. Native listening is English only and uses English Base if you already have it, otherwise English Tiny (~40 MB).</div>' +
       '<label class="ppv-c" style="display:block"><input type="checkbox" id="ppv-wake-on"> Wake word (listens while this page is open)</label>' +
-      '<div class="ppv-note">Say the wake phrase and he listens. It uses the mic continuously, which costs some battery, and loud music can hide your voice or cause false wakes. The phrase is Hey Jarvis until a hey_bloop.onnx is uploaded next to your models.</div>' +
-      '<button id="ppv-voicefree" class="ppv-sec" type="button">Free up voice downloads</button>');
+      '<div class="ppv-note">Say the wake phrase and he listens. It uses the mic continuously, which costs some battery, and loud music can hide the voice or cause false wakes. The phrase is Hey Jarvis.</div>' +
+      '<button id="ppv-voicefree" class="ppv-sec" type="button">Free up voice downloads</button></div>');
     { const V = mas.voice, g = id => p.querySelector('#' + id);
-      const boxes = [['ppv-mini-on', 'ppvMini'], ['ppv-voice-on', 'ppvVoice'], ['ppv-mic-on', 'ppvMic'], ['ppv-wake-on', 'ppvWake']];
+      const boxes = [['ppv-mini-on', 'ppvMini'], ['ppv-voice-on', 'ppvVoice'], ['ppv-mic-on', 'ppvMic'], ['ppv-wake-on', 'ppvWake'], ['ppv-voice-nat', 'ppvVoiceNat'], ['ppv-mic-nat', 'ppvEarsNat']];
+      if (NATIVE) { g('ppv-mic-natl').style.display = 'block'; if (window.Capacitor.Plugins.PPSpeech) g('ppv-voice-natl').style.display = 'block'; }
       const sync = () => boxes.forEach(([id, k]) => { g(id).checked = V.get(k); });
       boxes.forEach(([id, k]) => { g(id).onchange = () => {
         const on = g(id).checked;
@@ -5267,38 +9294,41 @@
       host.appendChild(b); return true;
     };
     if (!place()) { let n = 0; const iv = setInterval(() => { if (place() || ++n > 40) clearInterval(iv); }, 250); }
-    setInterval(place, 2000);
-    const $ = s => p.querySelector(s), st = $('#ppv-st'), bar = $('#ppv-bar i'), go = $('#ppv-go'), sel = $('#ppv-model'), sl = $('#ppv-sl'), sv = $('#ppv-sv'), gpu = $('#ppv-gpuc'), lsel = $('#ppv-lvl'), lvi = $('#ppv-lvi'), qsel = $('#ppv-q'), gsel = $('#ppv-gate');
-    const LV = () => LEVELS[+lsel.value] || null, showLv = () => lvi.textContent = LV() ? LV().info : 'No limits. Fastest, but can crash weak phones.';
+    setInterval(() => { if (!document.hidden) place(); }, 2000);
+    const $ = s => p.querySelector(s), st = $('#ppv-st'), bar = $('#ppv-bar i'), go = $('#ppv-go'), sel = $('#ppv-model'), sl = $('#ppv-sl'), sv = $('#ppv-sv'), gpu = $('#ppv-gpuc'), lsel = $('#ppv-lvl'), lvi = $('#ppv-lvi'), qsel = $('#ppv-q'), gsel = $('#ppv-gate'), msel = $('#ppv-mask');
+    const LV = () => +lsel.value === 4 ? customLevel() : LEVELS[+lsel.value] || null, showLv = () => { const l = LV(); lvi.textContent = !l ? 'No limits. Fastest, but can crash weak phones.' : l.custom ? 'Custom: ' + (l.threads ? l.threads + ' thread' + (l.threads > 1 ? 's' : '') : 'auto threads') + ', ' + Math.round(l.duty * 100) + '% rest.' : l.info; };
     let holdUntil = 0;                                                // keep "Done"/"Error" visible instead of being wiped by "Ready" a split second later
-    const status = t => { st.textContent = t; document.querySelectorAll('.ppv-stx').forEach(e => { e.textContent = t; }); if (/^(Done|Error)/.test(t)) holdUntil = Date.now() + 5000; mas.react(t); }, ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} };
-    const savedModel = ls('ppvModel'); if (savedModel && MODELS[savedModel]) sel.value = savedModel;
+    const status = t => { st.textContent = t; document.querySelectorAll('.ppv-stx').forEach(e => { e.textContent = t; }); if (/^(Done|Error)/.test(t)) holdUntil = Date.now() + 5000; mas.react(t); }, ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
+    const nnc = $('#ppv-nnc'); if (NATIVE) { $('#ppv-nn').style.display = 'block'; nnc.checked = ls('ppvNnapi') !== '0'; nnc.onchange = () => { ls('ppvNnapi', nnc.checked ? '1' : '0'); syncTn(); }; }
+    const tnc = $('#ppv-tnc'), syncTn = () => { $('#ppv-tn').style.opacity = nnc.checked ? 1 : .4; tnc.disabled = !nnc.checked; };
+    if (NATIVE) { $('#ppv-tn').style.display = 'block'; tnc.checked = ls('ppvTune') === '1'; tnc.onchange = () => ls('ppvTune', tnc.checked ? '1' : '0'); syncTn(); }
+    const savedModel = ls('ppvModel'); if (savedModel && MODELS[savedModel] && (NATIVE || !MODELS[savedModel].nativeOnly)) sel.value = savedModel;
     if (ls('ppvStrength')) { sl.value = ls('ppvStrength'); sv.textContent = sl.value; }
     lsel.value = ls('ppvLevel') || (ls('ppvLow') === '0' ? '0' : '2'); showLv(); gpu.checked = ls('ppvGpu') === '1'; if (navigator.gpu) $('#ppv-gpu').style.display = 'block';
     sl.oninput = () => { sv.textContent = sl.value; ls('ppvStrength', sl.value); };
     gpu.onchange = () => ls('ppvGpu', gpu.checked ? '1' : '0');
-    // Optional multi-threading: asks the service worker to add the COOP/COEP headers, then reloads once so they apply.
-    if ('serviceWorker' in navigator) {
-      const mt = $('#ppv-mtc'); $('#ppv-mt').style.display = 'block'; mt.checked = ls('ppvMT') === '1';
-      const tellSw = async on => { const reg = await navigator.serviceWorker.ready; const sw = navigator.serviceWorker.controller || reg.active; if (!sw) throw new Error('no service worker'); return new Promise(res => { const h = e => { if (e.data && e.data.type === 'isolation-set') { navigator.serviceWorker.removeEventListener('message', h); res(); } }; navigator.serviceWorker.addEventListener('message', h); sw.postMessage({ type: 'set-isolation', on }); setTimeout(res, 1500); }); };
-      mt.onchange = async () => {
-        const on = mt.checked; mt.disabled = true;
-        try { await tellSw(on); ls('ppvMT', on ? '1' : '0'); status(on ? 'Multi-thread on. Reloading the app…' : 'Multi-thread off. Reloading the app…'); setTimeout(() => location.reload(), 700); }
-        catch (e) { mt.checked = !on; mt.disabled = false; status('Could not change multi-thread: ' + errText(e)); }
-      };
-      if (ls('ppvMT') === '1' && !self.crossOriginIsolated) tellSw(true).then(() => { if (!self.crossOriginIsolated && !sessionStorage.getItem('ppvMTreload')) { sessionStorage.setItem('ppvMTreload', '1'); location.reload(); } }).catch(() => {});   // first run after installing the worker
-    }
     const mkpl = $('#ppv-mkpl'), pltab = $('#ppv-pltab');
     const syncPl = () => { pltab.disabled = !mkpl.checked; $('#ppv-tabl').style.opacity = mkpl.checked ? 1 : .5; };
     mkpl.checked = ls('ppvMkPl') === '1'; pltab.checked = ls('ppvPlTab') === '1'; syncPl();
     mkpl.onchange = () => { ls('ppvMkPl', mkpl.checked ? '1' : '0'); syncPl(); };
     pltab.onchange = () => ls('ppvPlTab', pltab.checked ? '1' : '0');
+    const vid = $('#ppv-vid'); vid.checked = ls('ppvVid') === '1'; vid.onchange = () => ls('ppvVid', vid.checked ? '1' : '0');
     const sect = $('#ppv-sect'); sect.checked = ls('ppvSect') === '1';
     sect.onchange = () => { ls('ppvSect', sect.checked ? '1' : '0'); const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); };
     { const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); }
     gsel.value = ls('ppvGate') || '0'; gsel.onchange = () => ls('ppvGate', gsel.value);
+    msel.value = ls('ppvMask') || '0'; msel.onchange = () => ls('ppvMask', msel.value);
     qsel.value = ls('ppvQuality') || '1'; qsel.onchange = () => ls('ppvQuality', qsel.value);
-    lsel.onchange = () => { ls('ppvLevel', lsel.value); showLv(); refresh(); };
+    lsel.onchange = () => { ls('ppvLevel', lsel.value); syncCust(); showLv(); refresh(); };
+    // ---- Custom level controls (stored as JSON under ppvCustom) ----
+    const cEl = { th: $('#ppv-c-th'), rest: $('#ppv-c-rest'), rv: $('#ppv-c-rv'), lean: $('#ppv-c-lean'), skip: $('#ppv-c-skip'), smooth: $('#ppv-c-smooth'), wake: $('#ppv-c-wake'), blob: $('#ppv-c-blob'), spin: $('#ppv-c-spin') };
+    const cRead = () => ({ threads: +cEl.th.value, rest: +cEl.rest.value, lean: cEl.lean.checked, skip: cEl.skip.checked, smooth: cEl.smooth.checked, wake: cEl.wake.checked, blob: cEl.blob.checked, spin: cEl.spin.checked });
+    const cSave = () => { cEl.rv.textContent = cEl.rest.value; ls('ppvCustom', JSON.stringify(cRead())); showLv(); };
+    function syncCust() { $('#ppv-cust').style.display = +lsel.value === 4 ? 'block' : 'none'; }
+    { const c = customLoad(); cEl.th.value = String(c.threads); cEl.rest.value = c.rest; cEl.rv.textContent = c.rest; cEl.lean.checked = !!c.lean; cEl.skip.checked = !!c.skip; cEl.smooth.checked = !!c.smooth; cEl.wake.checked = !!c.wake; cEl.blob.checked = !!c.blob; cEl.spin.checked = !!c.spin;
+      if (NATIVE) $('#ppv-c-spinl').style.display = 'block';
+      $('#ppv-c-thn').textContent = 'This phone reports ' + (navigator.hardwareConcurrency || '?') + ' cores. Auto uses the fast ones only (max 4). More threads is not always faster.';
+      Object.values(cEl).forEach(e => { e.onchange = cSave; }); cEl.rest.oninput = cSave; syncCust(); showLv(); }
     const picked = () => [...p.querySelectorAll('#ppv-stems input:checked')].map(i => i.value);
     async function refresh() {
       const lo = !!LV();
@@ -5316,36 +9346,61 @@
     $('#ppv-del').onclick = async () => { await deleteModel(sel.value); status('Deleted.'); refresh(); };
     let splitting = false;
     async function splitTrack(t) {
-      if (splitting) { status('Already splitting a track. Wait for it to finish.'); return; }   // two runs at once is a sure way to run out of memory
-      splitting = true; go.disabled = true; bar.style.width = '0'; let wl = null;
+      if (splitting || heavyJob) { status('Already splitting or transcribing. Wait for it to finish.'); return; }   // two runs at once is a sure way to run out of memory
+      splitting = true; heavyJob = true; go.disabled = true; bar.style.width = '0'; let wl = null;
+      if (NATIVE) NP.keepAlive({ on: true }).catch(() => {});
       try {
         if (LV() && LV().wake && navigator.wakeLock) { try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
         const id = sel.value, want = picked();
         if (!t) throw new Error('Play or select a track first.');
         if (!want.length) throw new Error('Tick at least one stem.');
         await downloadModel(id, status, !!(LV() && LV().blob));
+        let ov = null, maskNote = '';
+        if (+msel.value) {
+          try { const al = await alignedCues(t, { strength: +sl.value, lv: LV() }, status); if (al) { ov = al.cues; maskNote = ' Whisper re-timed ' + al.matched + ' of ' + al.total + ' lyric lines' + (al.cached ? ' (saved from before).' : '.'); } }
+          catch (e) { console.warn('Whisper timing failed', e); maskNote = ' Whisper timing failed (' + errText(e) + '), so line lengths were estimated.'; }
+        }
         status('Decoding audio…');
-        let pcm = await decode(t.url);
-        const res = await run(id, pcm, want, { strength: +sl.value, gpu: gpu.checked && !LV(), lv: LV(), quality: +qsel.value, gate: +gsel.value }, status, f => { bar.style.width = (f * 100) + '%'; status('Separating… ' + Math.round(f * 100) + '%'); });
+        let pcm = NATIVE && ['spleeter', 'sp4', 'mdx', 'demucs'].includes((MODELS[id] || {}).kind) ? null : await decode(t.url);
+        let mask = null, nmask = null;
+        if (+msel.value) {
+          const dur = pcm ? pcm[0].length / SR : await mediaDur(t.url);   // native engines decode in Java, so ask the media element for the length
+          const r = subtitleSpans(t.dbId, +msel.value, dur, loadTags()[t.dbId], ov), lvl = MASKS[+msel.value];
+          if (!r.spans) maskNote += r.skip;
+          else if (pcm) mask = makeMask(r.spans, +msel.value);
+          else nmask = { spans: r.spans, floor: lvl.floor, fade: lvl.fade };   // applied in Java to the finished stems
+        }
+        const res = await run(id, pcm, want, { strength: +sl.value, gpu: gpu.checked && !LV(), lv: LV(), quality: +qsel.value, gate: +gsel.value, mask, nmask, track: t, nnapi: NATIVE ? nnc.checked : false, tune: NATIVE && nnc.checked && tnc.checked }, status, f => { bar.style.width = (f * 100) + '%'; status('Separating… ' + Math.round(f * 100) + '%'); });
         pcm = null;
-        const files = [];
+        const files = []; let vidFail = 0;
         for (const n of want) {                                          // encode one at a time, free each stem after
           status('Encoding ' + n + '…'); await tick();
-          const e = res[n].blob ? res[n] : encode(res[n]); delete res[n];
-          files.push(new File([e.blob], t.title + ' (' + n + ').' + e.ext, { type: e.blob.type }));
+          let e = res[n].blob ? res[n] : encode(res[n]); delete res[n];
+          if (e.ext === 'wav') {                                          // the Android engines' WAV: about 7x smaller as MP3
+            try { const mp = await wavToMp3(e.blob, f => status('Encoding ' + n + '… ' + Math.round(f * 100) + '%')); if (mp) e = { blob: mp, ext: 'mp3' }; }
+            catch (err) { console.warn('WAV to MP3 failed, keeping the WAV:', err); }
+          }
+          let blob = e.blob, ext = e.ext;
+          if (vid.checked && t.kind === 'video') {
+            try { blob = await muxVideo(t.url, e.blob, f => status('Adding video to ' + n + '… ' + Math.round(f * 100) + '%')); ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; }
+            catch (err) { console.error(err); vidFail++; blob = e.blob; ext = e.ext; }
+          }
+          files.push(new File([blob], t.title + ' (' + n + ').' + ext, { type: blob.type }));
         }
+        videoBlobCache = null; videoBlobFor = null;
         addSplit(files, { srcId: t.dbId, srcTitle: t.title, makePlaylist: mkpl.checked, showInTab: mkpl.checked && pltab.checked });
-        status('Done. Added ' + files.length + ' split track' + (files.length > 1 ? 's' : '') + ' to Split tracks' + (mkpl.checked ? ' + a playlist.' : '.'));
+        status('Done. Added ' + files.length + ' split track' + (files.length > 1 ? 's' : '') + ' to Split tracks' + (mkpl.checked ? ' + a playlist.' : '.') + (window.__ppLastSep || '') + maskNote + (vidFail ? ' ' + vidFail + ' stem' + (vidFail > 1 ? 's' : '') + ' saved as audio only (video failed).' : ''));
       } catch (e) { console.error(e); status('Error: ' + errText(e)); }
+      if (NATIVE) NP.keepAlive({ on: false }).catch(() => {});
       wl && wl.release().catch(() => {});
-      splitting = false; go.disabled = false; refresh();
+      splitting = false; heavyJob = false; go.disabled = false; refresh();
     }
     go.onclick = () => { const A = window.__ppApi; return splitTrack(A && A.tracks()[A.currentIndex()]); };
     window.__ppSplitTrack = t => splitTrack(t);
     try { smartUI(p, { mas, status, LV, sel, sl, prog: f => { document.querySelectorAll('.ppv-bar-tag i').forEach(e => { e.style.width = (f * 100) + '%'; }); } }); } catch (e) { console.error(e); }
     refresh();
   }
-  window.PPVocals = { separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
+  window.PPVocals = { muxVideo, wavToMp3, subtitleSpans, makeMask, alignLines, separate, separateDemucs, fft, _N: N, tagTrack, transcribe, similarTo, loadTags, vibes };
   const boot = () => { try { ui(); } catch (e) { console.error(e); } };
   if (typeof document !== 'undefined' && document.body) boot();
   else if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', boot);
