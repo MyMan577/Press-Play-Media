@@ -5461,6 +5461,42 @@ window.ppSaveBlob = async function(blob, filename, onProgress){
           <button type="button" id="licences-btn" class="lt-btn" style="flex-shrink:0;padding:8px 12px;">View</button>
         </div>
       </div>
+      <div class="settings-section" id="downloads-section">
+        <div class="settings-section-label">Downloads</div>
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">AI models and add-ons</div>
+            <div class="settings-row-sub" id="dl-summary">Open this to see what is on this device.</div>
+          </div>
+          <button type="button" id="dl-refresh" class="lt-btn" style="flex-shrink:0;padding:8px 12px;">Refresh</button>
+        </div>
+        <div id="dl-installed"></div>
+        <div id="dl-available"></div>
+      </div>
+      <div class="settings-section" id="tab-headers-section">
+        <div class="settings-section-label">Headers and Games button</div>
+        <div class="settings-row-sub" style="margin-bottom:8px">Show or hide the title and the Games button at the top of each tab. On Home and your own pages, remove them in Customize, Layout. The Games screen stays reachable from Home and the game tab.</div>
+        <div class="settings-row th-row">
+          <div class="settings-row-text"><div class="settings-row-title">Playlists</div></div>
+          <label class="th-opt"><input type="checkbox" data-th="playlists:head" checked> Header</label>
+          <label class="th-opt th-none" aria-hidden="true"><input type="checkbox" data-th="playlists:games" checked> Games</label>
+        </div>
+        <div class="settings-row th-row">
+          <div class="settings-row-text"><div class="settings-row-title">Library</div></div>
+          <label class="th-opt"><input type="checkbox" data-th="library:head" checked> Header</label>
+          <label class="th-opt"><input type="checkbox" data-th="library:games" checked> Games</label>
+        </div>
+        <div class="settings-row th-row">
+          <div class="settings-row-text"><div class="settings-row-title">Pendulum</div></div>
+          <label class="th-opt"><input type="checkbox" data-th="pendulum:head" checked> Header</label>
+          <label class="th-opt th-none" aria-hidden="true"><input type="checkbox" data-th="pendulum:games" checked> Games</label>
+        </div>
+        <div class="settings-row th-row">
+          <div class="settings-row-text"><div class="settings-row-title">Settings</div></div>
+          <label class="th-opt"><input type="checkbox" data-th="settings:head" checked> Header</label>
+          <label class="th-opt"><input type="checkbox" data-th="settings:games" checked> Games</label>
+        </div>
+      </div>
       <div class="settings-section" id="audio-quality-section">
         <div class="settings-section-label">Audio quality and decoding</div>
         <div class="settings-row">
@@ -33008,7 +33044,7 @@ body.pp-lite .pp-adv, body.pp-lite .pp-sg[data-sg="fun"], body.pp-lite #pw-custo
 <script id="pp-settings-groups">
 (function(){
   var pane=document.getElementById('sidebar-pane-settings'); if(!pane)return;
-  var GROUPS=[['play','Playback'],['lib','Library & playlists'],['look','Appearance & layout'],['data','Backup & storage'],['fun','Rewards & games'],['credits','Credits']];
+  var GROUPS=[['play','Playback'],['lib','Library & playlists'],['look','Appearance & layout'],['data','Backup & storage'],['dl','Downloads'],['fun','Rewards & games'],['credits','Credits']];
   var root=null,cards={},wraps={},advD=null,advBody=null;
 
   function build(){
@@ -33049,6 +33085,8 @@ body.pp-lite .pp-adv, body.pp-lite .pp-sg[data-sg="fun"], body.pp-lite #pw-custo
     if(id==='extras-settings-section'||id==='playlists-manager-section'||sec.querySelector('#detailed-mode-toggle')||/^Keep MP3 conversions/.test(ft))return 'lib';
     if(id==='auto-scan-section')return 'lib';
     if(id==='leave-section')return 'play';
+    if(id==='downloads-section')return 'dl';
+    if(id==='tab-headers-section')return 'look';
     if(id==='storage-section'||id==='progress-section'||id==='update-section'||id==='errlog-section')return 'data';
     if(id==='pw-customize-section'||/^Retro layout/.test(ft)||id==='pp-refined-section'||id==='ppxp-accent-section'||id==='pp-modes-section')return 'look';
     return 'fun';
@@ -33117,6 +33155,59 @@ body.pp-lite .pp-adv, body.pp-lite .pp-sg[data-sg="fun"], body.pp-lite #pw-custo
     for(var i=0;i<ms.length;i++){ var t=ms[i].target; t=t&&t.nodeType===1?t:t&&t.parentElement; if(!t||!t.closest||!t.closest('.ls-slot')){ sched(); return; } }
   }).observe(pane,{childList:true,subtree:true});
   window.__ppSettings={ key:key, groups:GROUPS, card:function(g){ build(); return cards[g]; }, wrap:function(g){ build(); return wraps[g]; }, adv:function(){ return advBody; }, run:function(){ run(); } };
+})();
+</script>
+<style id="pp-tab-headers-css">
+/* Settings, Headers and Games button (pp-tab-headers.js). The Library and Settings tabs share #sidebar-header; the
+   retro layout (no tab bar, no data-pl-view) follows the Library choice. Playlists and Pendulum only hide the title,
+   so the Select button and the next-alarm pill stay. */
+body.pp-th-library-head[data-pl-view="library"] #sidebar-header,
+body.pp-th-library-head:not([data-pl-view]) #sidebar-header,
+body.pp-th-settings-head[data-pl-view="settings"] #sidebar-header{ display:none !important; }
+body.pp-th-library-games[data-pl-view="library"] #sidebar-header .pp-games-btn,
+body.pp-th-library-games:not([data-pl-view]) #sidebar-header .pp-games-btn,
+body.pp-th-settings-games[data-pl-view="settings"] #sidebar-header .pp-games-btn{ display:none !important; }
+body.pp-th-playlists-head[data-pl-view="playlists"] .ph-pl-titlebar .ph-app-title{ visibility:hidden; }
+body.pp-th-pendulum-head .ppp-h > div:first-child{ display:none; }
+/* the switches */
+#tab-headers-section .th-row{ display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:4px 16px; padding:6px 0; }
+#tab-headers-section .th-row .settings-row-text{ min-width:0; }
+#tab-headers-section .th-opt{ display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap; flex-shrink:0; }
+#tab-headers-section .th-none{ visibility:hidden; }
+#downloads-section .dl-row{ margin-top:8px; }
+#downloads-section .dl-btn{ flex-shrink:0; padding:8px 12px; }
+#downloads-section .dl-btn.danger{ color:#ff6b6b; }
+#downloads-section .dl-all{ display:flex; justify-content:flex-end; margin-top:10px; }
+#downloads-section .dl-msg{ margin-top:4px; }
+</style>
+<script id="pp-tab-headers">
+/* Settings, Headers and Games button: hide the title and/or the Games button at the top of each tab.
+   Home and the user's own pages already do this with widgets (Customize, Layout); this covers Playlists, Library,
+   Pendulum and Settings. Saved per tab as ppTabHeadV1 = { library: { head: false, games: false }, ... }.
+   Applied as body classes (pp-th-<tab>-head / pp-th-<tab>-games = hidden), which pp-tab-headers.css reads together
+   with body[data-pl-view] (the tab that is showing). */
+(function(){
+  var KEY = 'ppTabHeadV1', TABS = ['playlists', 'library', 'pendulum', 'settings'];
+  function load(){ try { var o = JSON.parse(localStorage.getItem(KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch(e){ return {}; } }
+  function save(o){ try { localStorage.setItem(KEY, JSON.stringify(o)); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } }
+  function apply(o){
+    var b = document.body; if (!b) return;
+    TABS.forEach(function(t){
+      var s = o[t] || {};
+      b.classList.toggle('pp-th-' + t + '-head', s.head === false);
+      b.classList.toggle('pp-th-' + t + '-games', s.games === false);
+    });
+  }
+  var st = load();
+  apply(st);
+  document.querySelectorAll('[data-th]').forEach(function(cb){
+    var p = cb.getAttribute('data-th').split(':'), t = p[0], what = p[1];
+    cb.checked = !(st[t] && st[t][what] === false);
+    cb.addEventListener('change', function(){
+      st[t] = st[t] || {}; st[t][what] = cb.checked;
+      save(st); apply(st);
+    });
+  });
 })();
 </script>
 <script>
