@@ -447,137 +447,7 @@ html, body {
   white-space: nowrap;
 }
 
-/* The physical counter: fills the remaining viewport, never scrolls */
-.shop-counter {
-  position: relative;
-  width: 100%; max-width: 640px;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex; flex-direction: column;
-  margin-top: 10px;
-  border-radius: 20px 20px 8px 8px;
-  background:
-    repeating-linear-gradient(100deg, #00000000 0px, #00000000 38px, #00000018 38px, #00000018 40px),
-    linear-gradient(175deg, #5C4128 0%, #3D2B1C 55%, #291C12 100%);
-  box-shadow: 0 2px 0 #E9C56855 inset, 0 20px 44px -12px #00000090, inset 0 1px 0 #ffffff10;
-  padding: 12px 12px 10px;
-}
-.shop-counter::before {
-  /* brass trim along the front edge of the counter */
-  content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, #E9C568 15%, #E9C568 85%, transparent);
-  opacity: .65;
-}
-.counter-section-label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: 1.5px; color: #C9A22799;
-  text-transform: uppercase; margin-bottom: 6px; flex-shrink: 0;
-}
-
-/* Vouchers laid flat on top of the counter surface */
-.counter-vouchers {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
-  margin-bottom: 12px; flex-shrink: 0;
-}
-.voucher-chit {
-  position: relative; cursor: pointer;
-  background: linear-gradient(160deg, #2A1E12 0%, #1B120B 100%);
-  border: 1px solid color-mix(in srgb, var(--glow, #C9A227) 55%, transparent);
-  border-radius: 10px; padding: 8px 5px 6px;
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
-  box-shadow: 0 5px 12px -5px #00000090, 0 1px 0 #ffffff10 inset;
-}
-.voucher-chit-orb {
-  flex-shrink: 0;
-  width: 20px; height: 20px; border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, var(--glow, #C9A227) 0%, #1c140c 72%);
-  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--glow, #C9A227) 55%, transparent);
-}
-.voucher-chit-name {
-  font-family: 'Fraunces', Georgia, serif; font-size: 10px; font-weight: 600;
-  color: var(--glow, #EAD9AE); line-height: 1.15;
-}
-.voucher-chit-price {
-  font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 10px; color: #E9C568;
-}
-.voucher-chit-btn {
-  font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 8.5px;
-  letter-spacing: .3px; text-transform: uppercase; padding: 4px 6px; border-radius: 14px;
-  width: 100%; margin-top: 1px; cursor: pointer; border: none;
-  background: linear-gradient(180deg, #DFC066 0%, #C9A227 100%); color: #16230E;
-}
-.voucher-chit-btn:disabled { background: #2E24186e; color: #6E6350; cursor: not-allowed; }
-
-/* The 6 recessed openings for charms + consumables, cut into the counter */
-.counter-openings {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: minmax(96px, 1fr);
-  gap: 8px;
-  flex: 1 1 auto; min-height: 0;
-}
-.opening-slot {
-  position: relative; cursor: pointer;
-  border-radius: 12px;
-  background: radial-gradient(circle at 50% 15%, #00000070 0%, #00000095 75%);
-  box-shadow: inset 0 7px 16px -5px #000000D0, inset 0 -3px 6px #ffffff09, inset 0 0 0 1px #00000090;
-  padding: 10px 5px 7px;
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
-}
-.opening-slot.sold { opacity: .45; cursor: default; }
-.opening-slot.sold .shop-item-orb { box-shadow: none; background: #2A2015; filter: grayscale(1); }
-.opening-type-label {
-  font-size: 7px; letter-spacing: .5px; color: #9A917A; font-weight: 700; text-transform: uppercase;
-}
-.opening-name {
-  font-family: 'Fraunces', Georgia, serif; font-size: 11px; font-weight: 600;
-  color: var(--glow, #EAD9AE); line-height: 1.15;
-}
-.opening-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; margin-top: auto; }
-.opening-price {
-  font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 10.5px; color: #E9C568;
-  background: #00000030; border-radius: 20px; padding: 1px 9px;
-}
-.opening-buy-btn {
-  font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 9px;
-  letter-spacing: .3px; text-transform: uppercase; padding: 5px 8px; border-radius: 16px; cursor: pointer;
-  width: 100%; border: none; color: #16230E;
-  background: linear-gradient(180deg, #DFC066 0%, #C9A227 100%);
-  box-shadow: 0 3px 10px -3px #C9A22766;
-  transition: transform .12s ease, filter .12s ease;
-}
-.opening-buy-btn:hover:not(:disabled) { filter: brightness(1.07); }
-.opening-buy-btn:active:not(:disabled) { transform: scale(.96); }
-.opening-buy-btn:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
-
-/* small glowing trinket resting in the case, tinted by the item's own color */
-.shop-item-orb {
-  flex-shrink: 0;
-  width: 30px; height: 30px; border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, var(--glow, #C9A227) 0%, #1c140c 72%);
-  box-shadow: 0 0 14px 3px color-mix(in srgb, var(--glow, #C9A227) 50%, transparent),
-              inset 0 -3px 6px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.25);
-}
-.shop-empty {
-  width: 100%; padding: 30px 20px; margin-top: 10px;
-  text-align: center; color: #6E6350; font-size: 13px; letter-spacing: .3px;
-  background: linear-gradient(160deg, #1B2A1E60 0%, #12191460 100%);
-  border: 1px dashed #3A3529; border-radius: 16px;
-}
 .shop-deck-corner { flex-shrink: 0; transform: scale(.85); transform-origin: right center; }
-.shop-continue-row { flex-shrink: 0; margin-top: 10px; display: flex; gap: 10px; align-items: stretch; justify-content: center; }
-.reroll-btn {
-  font-family: inherit; font-weight: 700; font-size: 13px; padding: 14px 18px;
-  border-radius: 10px; border: 1px solid #6FA8A855; cursor: pointer;
-  background: linear-gradient(160deg, #223B2E, #172922); color: #C9E8D9;
-  display: flex; align-items: center; gap: 7px; white-space: nowrap;
-  box-shadow: 0 8px 20px -8px #00000090;
-  transition: transform .12s ease, filter .12s ease;
-}
-.reroll-btn:hover:not(:disabled) { filter: brightness(1.1); }
-.reroll-btn:active:not(:disabled) { transform: scale(.97); }
-.reroll-btn:disabled { opacity: .45; cursor: not-allowed; }
-.reroll-btn-icon { font-size: 15px; line-height: 1; }
-.reroll-btn-cost { color: #E9C568; }
-
 /* Tap-to-reveal detail popup — shown when a slot/chit is tapped (not its buy button) */
 .shop-detail-backdrop {
   position: fixed; inset: 0; z-index: 60;
@@ -752,52 +622,159 @@ html, body {
 
 .charm-activation-orb { background: none !important; box-shadow: none; width: 72px; height: 72px; filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)); }
 
-/* ============================== SHOP: WOODEN CASE ============================== */
+/* ============================== SHOP: THE BIG PANEL ==============================
+   One chunky panel with a hanging sign. Top: tall Next Round (red) and Reroll
+   (green) buttons beside the wares. Bottom: this ante's voucher on a plinth,
+   and the booster packs. Every ware stands as a card with its price on top. */
 .shop-overlay .gear-shelf { margin: 6px 0 4px; }
-.shop-case { overflow-y: auto; overscroll-behavior: contain; }
-.shop-vouchers { flex-shrink: 0; display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; margin-bottom: 4px; }
-.shop-voucher {
-  position: relative; flex: 0 0 auto; width: 92px; padding: 10px 6px 8px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font: inherit; color: #F3ECD9; background: #f3e6c71a; border: 1px solid #E9C56830; border-radius: 6px;
-  box-shadow: 0 6px 12px -4px #0008; transform: rotate(-1.5deg);
+.bshop {
+  --panel: #23332c; --well: #131d18; --rim: #C9A227;
+  position: relative; width: 100%; max-width: 640px; flex: 1 1 auto; min-height: 0;
+  margin-top: 22px; padding: 22px 10px 10px; border-radius: 18px;
+  background: linear-gradient(180deg, #2c3f36 0%, var(--panel) 60%, #1b2822 100%);
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #C9A22766, 0 22px 50px -14px #000000c0, inset 0 2px 0 #ffffff14;
+  display: flex; flex-direction: column; gap: 10px; overflow-y: auto; overscroll-behavior: contain;
 }
-.shop-voucher:nth-child(even) { transform: rotate(1.5deg); }
-.shop-voucher.poor { opacity: .6; }
-.shop-voucher-pin {
-  position: absolute; top: -4px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #ff8f7f, #A23B3B); box-shadow: 0 1px 2px #000a;
+.bshop-sign {
+  position: sticky; top: -22px; z-index: 3; align-self: center; margin: -36px 0 -2px; pointer-events: none;
 }
-.shop-voucher-art { width: 54px; height: 54px; }
-.shop-voucher-name { font-size: 10px; font-weight: 700; text-align: center; line-height: 1.2; }
-.shop-wares { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; padding-bottom: 6px; }
-.ware {
-  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  cursor: pointer; padding-top: 4px;
+.bshop-sign span {
+  display: block; padding: 3px 26px 4px; border-radius: 10px; font-size: 21px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;
+  color: #FFE9A8; background: linear-gradient(180deg, #D8473A 0%, #A8302A 100%);
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #E9C568aa, 0 5px 0 #6e1d18, 0 10px 18px #0008; text-shadow: 0 2px 0 #6e1d18;
 }
-.ware-art { width: 66px; height: 66px; position: relative; z-index: 1; filter: drop-shadow(0 6px 6px rgba(0,0,0,.55)); transition: transform .15s ease; }
-.ware:hover .ware-art { transform: translateY(-3px); }
-.ware-plank {
-  width: 100%; height: 8px; margin-top: -6px; border-radius: 3px;
-  background: linear-gradient(180deg, #7a5836 0%, #4a3320 100%);
-  box-shadow: 0 4px 8px rgba(0,0,0,.45), inset 0 1px 0 #E9C56855;
+.bwell {
+  position: relative; background: var(--well); border-radius: 12px; border: 1px solid #00000080;
+  box-shadow: inset 0 3px 10px #000000a0, 0 1px 0 #ffffff10;
 }
-.ware-tag {
-  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 12px; color: #2a1d12;
-  background: #EAD9AE; padding: 1px 8px 1px 12px; border-radius: 2px 4px 4px 2px; position: relative;
-  clip-path: polygon(7px 0, 100% 0, 100% 100%, 7px 100%, 0 50%); box-shadow: 0 2px 4px #0006; margin-top: 4px;
+.bwell-label {
+  align-self: center; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; white-space: nowrap;
+  color: #E9C568; background: #0a0f0c; border: 1px solid #C9A22755; border-radius: 8px; padding: 2px 9px; margin-bottom: 6px;
 }
-.ware-tag s { opacity: .55; font-weight: 500; }
-.ware-kind { font-size: 8px; letter-spacing: 1.2px; text-transform: uppercase; color: #9A917A; font-weight: 800; margin-top: 2px; }
-.ware-name { font-size: 12px; text-align: center; line-height: 1.15; color: #F3ECD9; min-height: 2.3em; }
-.ware-buy {
+.bshop-top { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; flex-shrink: 0; }
+.bshop-actions { display: flex; flex-direction: column; gap: 8px; align-self: start; position: sticky; top: 0; z-index: 2; }
+.bshop-actions .bbtn-red { min-height: 150px; }
+.bshop-actions .bbtn-green { min-height: 104px; }
+body.landscape .bshop-actions { align-self: stretch; position: static; }
+body.landscape .bshop-actions .bbtn { min-height: 0; }
+.bbtn {
+  font-family: 'Fraunces', Georgia, serif; border: 2px solid #0a0f0c; border-radius: 12px; cursor: pointer; color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 8px 4px; line-height: 1.05;
+  transition: transform .08s ease, box-shadow .08s ease, filter .12s ease; text-shadow: 0 2px 0 #0006;
+}
+.bbtn:active:not(:disabled) { transform: translateY(4px); }
+.bbtn:hover:not(:disabled) { filter: brightness(1.08); }
+.bbtn:disabled { filter: grayscale(.7) brightness(.6); cursor: not-allowed; }
+.bbtn-red { flex: 1.25; background: linear-gradient(180deg, #E5574A 0%, #C23A30 100%); box-shadow: 0 5px 0 #7d231c, 0 9px 16px #0007; }
+.bbtn-red:active:not(:disabled) { box-shadow: 0 1px 0 #7d231c; }
+.bbtn-green { flex: 1; background: linear-gradient(180deg, #4DB873 0%, #2E8E50 100%); box-shadow: 0 5px 0 #1b5a31, 0 9px 16px #0007; }
+.bbtn-green:active:not(:disabled) { box-shadow: 0 1px 0 #1b5a31; }
+.bbtn-big { font-size: 19px; font-weight: 700; }
+.bbtn-small { font-size: 12px; font-weight: 600; letter-spacing: .5px; opacity: .95; }
+.bshop-wares {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 6px; padding: 16px 6px 8px; align-content: start; min-height: 120px;
+}
+.bshop-soldout { grid-column: 1 / -1; align-self: center; text-align: center; color: #6E6350; font-size: 16px; letter-spacing: 2px; text-transform: uppercase; }
+
+/* A ware standing as a card, price tag on top */
+.bcard { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; }
+.bcard-face {
+  position: relative; width: 100%; max-width: 84px; aspect-ratio: 5 / 6; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .15s ease; animation: bfloat 3.2s ease-in-out infinite;
+}
+.bcard:nth-child(3n+2) .bcard-face { animation-delay: -1.1s; }
+.bcard:nth-child(3n) .bcard-face { animation-delay: -2.2s; }
+@keyframes bfloat { 0%, 100% { transform: translateY(0) rotate(-.6deg); } 50% { transform: translateY(-3px) rotate(.6deg); } }
+.kind-charm .bcard-face, .kind-item .bcard-face {
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--glow) 70%, #E9C568), 0 8px 14px -4px #000c;
+}
+.kind-charm .bcard-face { background: radial-gradient(circle at 50% 35%, #34503d 0%, #172219 80%); }
+.kind-item .bcard-face { background: radial-gradient(circle at 50% 35%, #f1e2bd 0%, #c9ae78 90%); }
+.bcard.legendary .bcard-face { box-shadow: 0 0 0 1.5px #F2A65A, 0 0 16px -2px #E8743B, 0 8px 14px -4px #000c; background: radial-gradient(circle at 50% 35%, #4a2c1c 0%, #1b0e08 80%); }
+.bcard-art { width: 78%; filter: drop-shadow(0 4px 4px #0008); }
+.bcard-art svg { width: 100%; height: auto; display: block; }
+.bcard-kind {
+  position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: 7.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding: 1px 6px; border-radius: 6px;
+  color: #fff; background: #3a5a45; border: 1.5px solid #0a0f0c;
+}
+.kind-item .bcard-kind { background: #4a6fb3; }
+.bcard.legendary .bcard-kind { background: #C0623A; }
+.is-pack .bcard-face { aspect-ratio: 5 / 6; background: none; }
+.is-pack .bcard-art { width: 96%; }
+.bprice {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 13px; color: #FFD45E; line-height: 1;
+  padding: 3px 8px 4px; border-radius: 8px; background: #2a1d12; border: 2px solid #0a0f0c; box-shadow: 0 0 0 1px #E9C56866, 0 3px 6px #0009;
+}
+.bprice s { color: #b9a77a; font-weight: 500; font-size: 10px; margin-right: 3px; }
+.bcard-name { font-size: 11px; line-height: 1.15; text-align: center; color: #F3ECD9; font-weight: 700; min-height: 2.3em; display: flex; align-items: center; margin-top: 4px; overflow-wrap: anywhere; }
+.bbuy {
   font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 10px; letter-spacing: .6px; text-transform: uppercase;
-  border: none; border-radius: 12px; padding: 5px 14px; cursor: pointer; color: #16230E;
-  background: linear-gradient(180deg, #DFC066 0%, #C9A227 100%); box-shadow: 0 3px 10px -3px #C9A22788;
+  border: 2px solid #0a0f0c; border-radius: 9px; padding: 4px 12px; cursor: pointer; color: #fff;
+  background: linear-gradient(180deg, #F29A2E 0%, #D9761B 100%); box-shadow: 0 3px 0 #8a4a10;
 }
-.ware-buy:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
-.ware.sold { cursor: default; }
-.ware.sold .ware-art { border: 1.5px dashed #ffffff18; border-radius: 12px; width: 56px; height: 56px; margin: 5px; filter: none; }
+.bbuy:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #8a4a10; }
+.bbuy:disabled { background: #2E2418; color: #6E6350; box-shadow: none; cursor: not-allowed; }
+.bcard.poor .bcard-face, .bvoucher.poor .bvoucher-art { filter: saturate(.55) brightness(.8); }
+.bcard.sold { cursor: default; }
+.bcard.sold .bcard-face { border: 2px dashed #ffffff14; background: none; animation: none; max-width: 70px; }
+
+.bshop-bottom { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; flex-shrink: 0; }
+.bshop-voucher, .bshop-packs { display: flex; flex-direction: column; align-items: center; padding: 8px 6px 8px; }
+.bvoucher { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; margin-top: 10px; }
+.bvoucher .bprice { top: -14px; }
+.bvoucher-art { width: 64px; filter: drop-shadow(0 6px 6px #000a); animation: bvfloat 2.6s ease-in-out infinite; position: relative; z-index: 1; }
+.bvoucher-art svg { width: 100%; height: auto; display: block; }
+@keyframes bvfloat { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-4px) rotate(2deg); } }
+.bvoucher-plinth {
+  width: 78px; height: 10px; margin-top: -4px; border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 30%, #6a7d70 0%, #2b3a31 60%, #0a0f0c 100%); box-shadow: 0 3px 6px #000a;
+}
+.bvoucher.empty { cursor: default; }
+.bvoucher-ghost {
+  width: 64px; aspect-ratio: 64 / 86; border: 2px dashed #ffffff18; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px;
+}
+.bvoucher-none { font-size: 9px; color: #6E6350; line-height: 1.3; }
+.bredeemed {
+  font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #7FD08A;
+  border: 2px solid #7FD08A; border-radius: 5px; padding: 1px 4px; transform: rotate(-14deg);
+}
+.bredeemed.fresh { animation: bstamp .45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes bstamp { from { transform: rotate(-14deg) scale(2.4); opacity: 0; } to { transform: rotate(-14deg) scale(1); opacity: 1; } }
+.bpack-row { display: grid; grid-template-columns: repeat(2, minmax(0, 92px)); justify-content: center; gap: 10px; margin-top: 10px; width: 100%; }
+
+/* Detail popup for a voucher shows the whole coupon */
+.detail-art.is-voucher { width: 76px; height: 102px; }
+.detail-art svg { width: 100%; height: 100%; }
+
+body.landscape .shop-overlay {
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 16px; padding: 10px 16px max(8px, env(safe-area-inset-bottom));
+  align-items: stretch;
+}
+body.landscape .shop-header-row { grid-column: 1; grid-row: 1; max-width: none; padding-right: 0; }
+body.landscape .shop-overlay .gear-shelf { grid-column: 2; grid-row: 1; margin: 0 56px 0 0; width: auto; max-width: none; }
+body.landscape .shop-header-row, body.landscape .shop-overlay .gear-shelf { align-self: center; }
+body.landscape .bshop {
+  grid-column: 1 / -1; grid-row: 2; max-width: none; margin-top: 20px; padding: 16px 10px 10px;
+  display: grid; grid-template-columns: 96px minmax(0, 1fr) 112px auto; grid-template-rows: minmax(0, 1fr); gap: 8px; overflow: visible;
+}
+body.landscape .bshop-sign { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); margin: 0; }
+body.landscape .bshop-sign span { font-size: 17px; padding: 2px 22px 3px; }
+body.landscape .bshop-top, body.landscape .bshop-bottom { display: contents; }
+body.landscape .bshop-actions { grid-column: 1; }
+body.landscape .bshop-wares {
+  grid-column: 2; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(74px, 1fr);
+  overflow-x: auto; overflow-y: hidden; align-content: center; min-height: 0;
+}
+body.landscape .bshop-voucher { grid-column: 3; justify-content: center; }
+body.landscape .bshop-packs { grid-column: 4; justify-content: center; }
+body.landscape .bpack-row { grid-template-columns: repeat(2, 78px); }
+body.landscape .bcard-face { max-width: 74px; }
+body.landscape .bcard-name { font-size: 10.5px; }
 /* ============================== HAND LEVELS ============================== */
 .lv-tag {
   font-family: 'Manrope', sans-serif; font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .5px;
@@ -878,36 +855,163 @@ html, body {
 
 /* ============================== BOOSTER PACK SCREEN ============================== */
 .pack-overlay {
-  position: fixed; inset: 0; z-index: 90; overflow-y: auto;
-  background: radial-gradient(ellipse at 50% 0%, #2a2618 0%, #0d120e 70%);
-  display: flex; flex-direction: column; align-items: center; gap: 14px;
-  padding: 22px 16px max(16px, env(safe-area-inset-bottom));
+  position: fixed; inset: 0; z-index: 90; overflow-y: auto; overscroll-behavior: contain;
+  background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--pc, #C9A227) 22%, #16241A) 0%, #16241A 45%, #0A100C 100%);
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  padding: 16px 14px max(12px, env(safe-area-inset-bottom));
   animation: zonesIn .2s ease-out;
 }
-.pack-head { display: flex; align-items: center; gap: 12px; }
-.pack-art { width: 64px; height: 64px; }
-.pack-title { font-size: 24px; color: #F3ECD9; }
-.pack-sub { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: #9A917A; font-weight: 700; }
-.pack-choices { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 720px; }
-.pack-choice {
-  width: 150px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 10px;
-  font: inherit; color: #F3ECD9; cursor: pointer; text-align: center;
-  background: #16241A; border: 1px solid #C9A22744; border-radius: 14px;
-  box-shadow: 0 10px 24px -10px #000c; transition: transform .12s ease, border-color .12s ease;
+.pack-overlay .gear-shelf { margin: 6px 0 4px; }
+.pack-spacer { flex: 1 1 0; min-height: 0; }
+body.landscape .pack-spacer { display: none; }
+.pack-stage {
+  position: relative; width: 100%; max-width: 640px; margin-top: 24px; padding: 30px 8px 22px; border-radius: 18px; flex-shrink: 0;
+  background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc, #C9A227) 60%, #C9A227), 0 22px 50px -14px #000000c0, inset 0 2px 0 #ffffff14;
+  display: flex; flex-direction: column; align-items: center; overflow: visible;
 }
-.pack-choice:hover:not(:disabled) { transform: translateY(-3px); border-color: #E9C568; }
-.pack-choice:disabled { opacity: .5; cursor: not-allowed; }
-.pack-choice-art { width: 72px; height: 72px; }
-.pack-choice-art.legendary { filter: drop-shadow(0 0 12px #E8743B99); }
-.pack-choice-name { font-size: 15px; }
-.pack-choice-desc { font-size: 11px; color: #C9BFA4; line-height: 1.35; }
-.pack-choice-desc b { color: #E9C568; }
-.pack-choice-full { font-size: 10px; color: #E8A8A8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-.pack-card { width: 62px !important; height: 87px !important; margin: 0 !important; pointer-events: none; }
-.pack-skip {
-  font: inherit; font-weight: 700; font-size: 12px; letter-spacing: .6px; text-transform: uppercase;
-  color: #9A917A; background: none; border: 1px solid #3A4A38; border-radius: 20px; padding: 8px 26px; cursor: pointer;
+.pack-rays {
+  position: absolute; inset: 0; border-radius: 16px; overflow: hidden; pointer-events: none; opacity: .5;
+  background: repeating-conic-gradient(from 0deg at 50% 62%, color-mix(in srgb, var(--pc, #C9A227) 30%, transparent) 0deg 8deg, transparent 8deg 20deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 62%, #000 0%, transparent 70%); mask-image: radial-gradient(circle at 50% 62%, #000 0%, transparent 70%);
+  animation: packSpin 40s linear infinite;
 }
+@keyframes packSpin { to { transform: rotate(360deg); } }
+.pack-sign { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); margin: 0; }
+.pack-sign span { font-size: 17px; padding: 2px 20px 3px; }
+.pack-torn {
+  position: absolute; left: 10px; top: 10px; width: 46px; opacity: .9; transform: rotate(-12deg);
+  filter: drop-shadow(0 4px 6px #000a); animation: packTear .5s cubic-bezier(.2,1.4,.4,1) both;
+}
+.pack-torn svg { width: 100%; height: auto; display: block; }
+@keyframes packTear { from { transform: translate(60px, 40px) rotate(0) scale(1.8); opacity: 0; } }
+.pack-fan {
+  position: relative; display: flex; justify-content: center; align-items: flex-start; width: 100%;
+  gap: 8px; padding: 8px 0 6px; min-height: 140px;
+}
+.pchoice {
+  position: relative; flex: 0 0 var(--cw, 96px); width: var(--cw, 96px); padding: 0; border: none; background: none; cursor: pointer; font: inherit;
+  transform: translateY(var(--drop)) rotate(var(--rot));
+  transition: transform .2s cubic-bezier(.2,1.4,.4,1), filter .15s ease;
+  animation: packDeal .45s cubic-bezier(.2,1.2,.4,1) var(--delay) both;
+}
+@keyframes packDeal { from { transform: translateY(-60px) scale(.4) rotate(0); opacity: 0; } }
+.pchoice-face { width: 100%; max-width: none; aspect-ratio: 62 / 87; animation: bfloat 3.2s ease-in-out infinite; }
+.pchoice:nth-child(2n) .pchoice-face { animation-delay: -1.4s; }
+.pchoice-face.is-playing { display: flex; align-items: center; justify-content: center; }
+.pchoice .bcard-art { width: 84%; }
+.pchoice.picked { transform: translateY(-14px) rotate(0) scale(1.08); z-index: 2; }
+.pchoice.picked .pchoice-face { box-shadow: 0 0 0 2.5px #FFD45E, 0 0 24px -2px #FFD45E, 0 12px 18px -4px #000c; border-radius: 9px; }
+.pchoice.full .pchoice-face { filter: saturate(.4) brightness(.7); }
+.pchoice.legendary .pchoice-face { box-shadow: 0 0 0 1.5px #F2A65A, 0 0 18px -2px #E8743B, 0 8px 14px -4px #000c; background: radial-gradient(circle at 50% 35%, #4a2c1c 0%, #1b0e08 80%); }
+.pchoice.legendary.picked .pchoice-face { box-shadow: 0 0 0 2.5px #FFD45E, 0 0 28px 0 #E8743B, 0 12px 18px -4px #000c; }
+.pack-info {
+  width: 100%; max-width: 520px; margin-top: 14px; min-height: 96px; padding: 10px 14px; border-radius: 12px; flex-shrink: 0;
+  background: #131d18; border: 1px solid #00000080; box-shadow: inset 0 3px 10px #000000a0, 0 1px 0 #ffffff10;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-align: center;
+}
+.pack-info-hint { font-size: 12px; color: #9A917A; letter-spacing: .3px; }
+.pack-info-kind {
+  font-size: 8.5px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: #fff;
+  background: color-mix(in srgb, var(--pc, #C9A227) 70%, #222); border: 1.5px solid #0a0f0c; border-radius: 7px; padding: 1px 8px;
+}
+.pack-info-name { font-size: 18px; color: #F3ECD9; font-weight: 600; }
+.pack-info-desc { font-size: 12px; color: #C9BFA4; line-height: 1.45; }
+.pack-info-desc b { color: #E9C568; }
+.pack-choice-full { font-size: 10px; color: #E8A8A8; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-top: 2px; }
+.pack-card { margin: 0 !important; pointer-events: none; }
+.pack-actions { display: flex; gap: 10px; margin-top: 12px; width: 100%; max-width: 420px; flex-shrink: 0; }
+.pack-actions .bbtn { flex: 1; min-height: 52px; }
+.bbtn-grey { flex: 0 0 34% !important; background: linear-gradient(180deg, #6b7a72 0%, #4a5751 100%); box-shadow: 0 5px 0 #2a332e, 0 9px 16px #0007; }
+.bbtn-grey:active:not(:disabled) { box-shadow: 0 1px 0 #2a332e; }
+.bbtn-orange { background: linear-gradient(180deg, #F29A2E 0%, #D9761B 100%); box-shadow: 0 5px 0 #8a4a10, 0 9px 16px #0007; }
+.bbtn-orange:active:not(:disabled) { box-shadow: 0 1px 0 #8a4a10; }
+.pack-actions .bbtn-big { font-size: 17px; }
+/* a piece's detail opened from the shelf here must sit above the pack screen */
+.shop-detail-backdrop { z-index: 95; }
+
+body.landscape .pack-overlay {
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto; column-gap: 16px; align-items: center; align-content: start; grid-template-rows: max-content max-content max-content;
+  padding: 10px 16px max(8px, env(safe-area-inset-bottom));
+}
+body.landscape .pack-header { grid-column: 1; grid-row: 1; max-width: none; padding-right: 0; }
+body.landscape .pack-overlay .gear-shelf { grid-column: 2; grid-row: 1; margin: 0 56px 0 0; width: auto; max-width: none; }
+body.landscape .pack-stage { grid-column: 1 / -1; grid-row: 2; max-width: 760px; justify-self: center; margin-top: 18px; padding: 20px 8px 12px; }
+body.landscape .pack-fan { min-height: 0; }
+body.landscape .pack-info { grid-column: 1; grid-row: 3; justify-self: end; width: 100%; margin-top: 8px; min-height: 56px; padding: 5px 12px; }
+body.landscape .pack-actions { grid-column: 2; grid-row: 3; margin-top: 8px; width: 300px; margin-right: 56px; }
+body.landscape .pack-info-desc { font-size: 11px; line-height: 1.3; }
+body.landscape .pack-info-name { font-size: 15px; }
+body.landscape .pack-actions .bbtn { min-height: 40px; padding: 4px; }
+
+/* ----- opening: shake, tear, flash, deal ----- */
+.pack-opening { position: absolute; inset: 0; z-index: 4; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+.po-pack { position: relative; width: 132px; height: 132px; animation: poShake .62s ease-in-out var(--t) both; }
+.po-top, .po-bottom { position: absolute; inset: 0; }
+.po-top svg, .po-bottom svg { width: 100%; height: 100%; display: block; }
+.po-top { clip-path: inset(0 0 74% 0); animation: poTop 1.5s cubic-bezier(.3,.6,.4,1) var(--t) both; }
+.po-bottom { clip-path: inset(26% 0 0 0); animation: poBottom 1.5s cubic-bezier(.5,0,.7,.4) var(--t) both; }
+@keyframes poShake {
+  0% { transform: scale(.3) rotate(-8deg); opacity: 0; }
+  22% { transform: scale(1.08) rotate(3deg); opacity: 1; }
+  34% { transform: scale(1) rotate(-4deg); }
+  46% { transform: scale(1.02) rotate(5deg); }
+  58% { transform: scale(1) rotate(-6deg); }
+  70% { transform: scale(1.04) rotate(7deg); }
+  82% { transform: scale(1) rotate(-3deg); }
+  100% { transform: scale(1.06) rotate(0); }
+}
+@keyframes poTop {
+  0%, 40% { transform: none; opacity: 1; }
+  62% { transform: translate(30px, -70px) rotate(28deg); opacity: 1; }
+  80%, 100% { transform: translate(70px, -150px) rotate(70deg); opacity: 0; }
+}
+@keyframes poBottom {
+  0%, 44% { transform: none; opacity: 1; }
+  70% { transform: translateY(26px) scale(.92); opacity: .9; }
+  100% { transform: translateY(160px) scale(.7) rotate(-10deg); opacity: 0; }
+}
+.po-flash {
+  position: absolute; width: 260px; height: 260px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--pc, #C9A227) 70%, #fff) 25%, transparent 65%);
+  opacity: 0; animation: poFlash 1.5s ease-out var(--t) both;
+}
+@keyframes poFlash { 0%, 38% { opacity: 0; transform: scale(.3); } 46% { opacity: .95; transform: scale(1); } 100% { opacity: 0; transform: scale(1.6); } }
+.po-spark {
+  position: absolute; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg);
+  background: #FFE28A; box-shadow: 0 0 8px #FFD45E; opacity: 0;
+  animation: poSpark 1.5s ease-out var(--t) both;
+}
+@keyframes poSpark {
+  0%, 40% { opacity: 0; transform: rotate(var(--a)) translateX(0) rotate(45deg) scale(.4); }
+  48% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--d)) rotate(45deg) scale(1); }
+}
+.pack-stage.is-opening .pack-torn { animation-delay: calc(var(--t) + 900ms); }
+.pack-stage.is-opening .pack-hand { animation: poHand 1.5s ease var(--t) both; }
+@keyframes poHand { 0%, 70% { opacity: 0; transform: translateY(14px); } 100% { opacity: 1; transform: none; } }
+.pack-stage.is-opening .pack-rays { animation: packSpin 40s linear infinite, poRays 1.5s ease-out var(--t) both; }
+@keyframes poRays { 0%, 40% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .5; } }
+
+/* ----- spectral cards and the hand they work on ----- */
+.spectral-face { display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 8px 12px #000b); }
+.spectral-face svg { width: 100%; height: 100%; display: block; }
+.kind-spectral.picked .pchoice-face { box-shadow: none; filter: drop-shadow(0 0 10px #9fb8ff) drop-shadow(0 0 3px #FFD45E); }
+.pack-hand { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; margin-top: 16px; width: 100%; }
+.pack-hand-cards { display: flex; justify-content: center; padding: 4px 18px 0 0; }
+.pack-hand-card { width: var(--hw, 40px); flex: 0 0 var(--hw, 40px); height: 72px; overflow: visible; }
+.pack-hand-card .pack-card { box-shadow: -3px 3px 8px #0008; }
+.pack-info-note { font-size: 14px; color: #FFD45E; }
+.pack-toast {
+  position: fixed; left: 50%; top: 42%; z-index: 120; transform: translate(-50%, -50%); pointer-events: none;
+  font-family: 'Fraunces', Georgia, serif; font-size: 17px; font-weight: 600; color: #FFE9A8; text-align: center; max-width: 86vw;
+  padding: 10px 18px; border-radius: 12px; background: #1a1630f0; border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #8f9bff88, 0 0 30px #5a6fd888;
+  animation: packToast 2.4s ease both;
+}
+@keyframes packToast { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.9); } 12%, 80% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; transform: translate(-50%, -70%); } }
+body.landscape .pack-hand { margin-top: 8px; }
+body.landscape .pack-hand-card { height: 58px; }
+body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 
 /* ============================== CARD NOTE (double tap) ============================== */
 .card-note {
@@ -951,39 +1055,6 @@ body.landscape .bottom-bar .sub-controls-row {
 body.landscape .score-popup { top: 46%; }
 body.landscape .gear-drop-zones { top: 28vh; height: 34vh; }
 
-body.landscape .shop-overlay {
-  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto minmax(0, 1fr) auto;
-  column-gap: 16px; padding: 10px 16px max(8px, env(safe-area-inset-bottom));
-  align-items: stretch;
-}
-body.landscape .shop-header-row { grid-column: 1; grid-row: 1; max-width: none; padding-right: 0; }
-body.landscape .shop-overlay .gear-shelf { grid-column: 2; grid-row: 1; margin: 0 56px 0 0; width: auto; max-width: none; }
-body.landscape .shop-case {
-  grid-column: 1 / -1; grid-row: 2; max-width: none; margin-top: 8px;
-  display: grid; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); column-gap: 14px;
-}
-body.landscape .shop-case.has-vouchers { grid-template-columns: 118px 1fr; }
-body.landscape .shop-case .voucher-label { grid-column: 1; grid-row: 1; }
-body.landscape .shop-case .shop-vouchers {
-  grid-column: 1; grid-row: 2; flex-direction: column; align-items: center; overflow-x: hidden; overflow-y: auto; min-height: 0;
-}
-body.landscape .shop-case.has-vouchers .wares-label { grid-column: 2; grid-row: 1; }
-body.landscape .shop-case.has-vouchers .shop-wares { grid-column: 2; }
-body.landscape .shop-case .shop-wares {
-  grid-row: 2; overflow-y: auto; min-height: 0; align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); padding-top: 4px;
-}
-body.landscape .shop-case { overflow: hidden; min-height: 0; height: auto; align-self: stretch; }
-body.landscape .shop-header-row, body.landscape .shop-overlay .gear-shelf { align-self: center; }
-body.landscape .ware-art { width: 56px; height: 56px; }
-body.landscape .ware-kind { display: none; }
-body.landscape .ware-name { min-height: 0; font-size: 11.5px; }
-body.landscape .shop-continue-row { grid-column: 1 / -1; grid-row: 3; margin-top: 8px; }
-
-.ware-sold {
-  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
-  color: #A23B3B; border: 2px solid #A23B3B; border-radius: 4px; padding: 0 6px; transform: rotate(-8deg); margin-top: 8px; opacity: .8;
-}
 </style>
 </head>
 <body>
@@ -2503,14 +2574,31 @@ const LEGENDARY_DEFS = [
 ];
 
 // Booster packs: bought in the shop, opened on the spot, pick one.
-const PACK_DEFS = [
-  { id: "artifactPack", name: "Artifact Pack", desc: "Choose 1 of 3 artifacts", price: 6, color: "#C9A227", type: "pack", choices: 3 },
-  { id: "itemPack", name: "Item Pack", desc: "Choose 1 of 3 items", price: 4, color: "#7FBA9A", type: "pack", choices: 3 },
-  { id: "cardPack", name: "Card Pack", desc: "Choose 1 of 4 playing cards to add to your deck", price: 4, color: "#D9CFB5", type: "pack", choices: 4 },
-  { id: "ornatePack", name: "Ornate Pack", desc: "Choose 1 of 3 playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", type: "pack", choices: 3 },
-  { id: "celestialPack", name: "Celestial Pack", desc: "Choose 1 of 3 Star Charts", price: 4, color: "#4a6fb3", type: "pack", choices: 3 },
-  { id: "legendPack", name: "Legend Pack", desc: "Choose 1 of 2 legendary artifacts", price: 12, color: "#E8743B", type: "pack", choices: 2, rare: true },
+/* Pack sizes: every pack but the Legend Pack also comes as a Major
+   (choose 1 of 5) and a Mega (choose 2 of 5). */
+const PACK_SIZES = {
+  major: { label: "Major", extra: 2, picks: 1, price: 2 },
+  mega: { label: "Mega", extra: 2, picks: 2, price: 4 },
+};
+const PACK_BASES = [
+  { id: "artifactPack", name: "Artifact Pack", what: "artifacts", price: 6, color: "#C9A227", choices: 3 },
+  { id: "itemPack", name: "Item Pack", what: "items", price: 4, color: "#7FBA9A", choices: 3 },
+  { id: "cardPack", name: "Card Pack", what: "playing cards for your deck", price: 4, color: "#D9CFB5", choices: 4 },
+  { id: "ornatePack", name: "Ornate Pack", what: "playing cards, each with a sleeve and a stamp", price: 6, color: "#B05FA0", choices: 3 },
+  { id: "celestialPack", name: "Celestial Pack", what: "Star Charts", price: 4, color: "#4a6fb3", choices: 3 },
+  { id: "spectralPack", name: "Spectral Pack", what: "Spectral cards, used on your hand right away", price: 4, color: "#5a6fd8", choices: 2, scarce: true },
+  { id: "legendPack", name: "Legend Pack", what: "legendary artifacts", price: 12, color: "#E8743B", choices: 2, rare: true },
 ];
+const PACK_DEFS = PACK_BASES.flatMap((b) => {
+  const base = { ...b, type: "pack", picks: 1, base: b.id };
+  base.desc = `Choose 1 of ${b.choices} ${b.what}`;
+  if (b.rare) return [base];
+  return [base, ...Object.entries(PACK_SIZES).map(([size, z]) => {
+    const v = { ...base, id: `${b.id}_${size}`, size, name: `${z.label} ${b.name}`, choices: b.choices + z.extra, picks: z.picks, price: b.price + z.price };
+    v.desc = `Choose ${v.picks} of ${v.choices} ${b.what}`;
+    return v;
+  })];
+});
 
 const SLEEVE_INFO = {
   sparkler: "+20 Chips every time it scores.",
@@ -3254,99 +3342,241 @@ const ITEM_DEFS = [
   }
 ];
 
-/* ============================== VOUCHERS ============================== */
+/* ============================== VOUCHERS ==============================
+   Permanent upgrades, one offered per ante. Each base voucher (tier 1) has an
+   upgrade (tier 2, "upgrades" names its base) that only turns up once the
+   base is owned. Vouchers in the shop stay until bought, and a new one is
+   stocked after every boss blind. */
+const VOUCHER_PRICE = 10;
 const VOUCHERS = [
-  {
-    id: "largerAbdomen",
-    name: "Larger Abdomen",
-    desc: "Permanently +1 hand size",
-    price: 20,
-    color: "#E8A65F",
-    type: "voucher",
-    effect: { type: "extraHandSize", value: 1 }
-  },
-  {
-    id: "liquidAssets",
-    name: "Liquid Assets",
-    desc: "Permanently gain +$5 at the start of each ante",
-    price: 20,
-    color: "#7FBA9A",
-    type: "voucher",
-    effect: { type: "startingMoneyBonus", value: 5 }
-  },
-  {
-    id: "moreOre",
-    name: "More Ore",
-    desc: "Permanently +1 consumable slot",
-    price: 20,
-    color: "#8B9B7A",
-    type: "voucher",
-    effect: { type: "extraItemSlot", value: 1 }
-  },
-  {
-    id: "overstock",
-    name: "Overstock",
-    desc: "Shop now offers +2 items per blind",
-    price: 20,
-    color: "#9B8B6A",
-    type: "voucher",
-    effect: { type: "shopSizeBonus", value: 2 }
-  },
-  {
-    id: "doubleDown",
-    name: "Double Down",
-    desc: "Permanently +1 play per round",
-    price: 20,
-    color: "#C9A227",
-    type: "voucher",
-    effect: { type: "extraPlays", value: 1 }
-  },
-  {
-    id: "bankruptcy",
-    name: "Bankruptcy",
-    desc: "Permanently +1 discard per round",
-    price: 20,
-    color: "#A89B7B",
-    type: "voucher",
-    effect: { type: "extraDiscards", value: 1 }
-  },
-  {
-    id: "compoundInterest",
-    name: "Compound Interest",
-    desc: "Interest generation increased by +$2",
-    price: 20,
-    color: "#7AB89B",
-    type: "voucher",
-    effect: { type: "interestBonus", value: 2 }
-  },
-  {
-    id: "cardSharp",
-    name: "Card Sharp",
-    desc: "Cards sell for +50% more money",
-    price: 20,
-    color: "#B8A87A",
-    type: "voucher",
-    effect: { type: "sellMultiplier", value: 1.5 }
-  },
-  {
-    id: "clearanceSale",
-    name: "Clearance Sale",
-    desc: "Shop items are 25% cheaper",
-    price: 20,
-    color: "#7A9BA8",
-    type: "voucher",
-    effect: { type: "shopDiscount", value: 0.75 }
-  },
-  {
-    id: "clairvoyance",
-    name: "Clairvoyance",
-    desc: "You can see 2 card decks ahead in the preview",
-    price: 20,
-    color: "#9B7BC8",
-    type: "voucher",
-    effect: { type: "previewCards", value: 2 }
+  // --- shop ---
+  { id: "overstock", name: "Overstock", desc: "+2 artifacts and items on the shop shelves", color: "#D9884A", effect: { type: "shopSizeBonus", value: 2 } },
+  { id: "warehouse", upgrades: "overstock", name: "Warehouse", desc: "+2 more artifacts and items on the shop shelves", color: "#C0623A", effect: { type: "shopSizeBonus", value: 2 } },
+  { id: "clearanceSale", name: "Clearance Sale", desc: "Everything in the shop is 25% off", color: "#E35D5B", effect: { type: "shopDiscount", value: 0.75 } },
+  { id: "fireSale", upgrades: "clearanceSale", name: "Fire Sale", desc: "Everything in the shop is 50% off", color: "#E8743B", effect: { type: "shopDiscount", value: 0.5 } },
+  { id: "haggler", name: "Haggler", desc: "Rerolls start $2 cheaper", color: "#5FAF7A", effect: { type: "rerollDiscount", value: 2 } },
+  { id: "silverTongue", upgrades: "haggler", name: "Silver Tongue", desc: "Rerolls start another $2 cheaper", color: "#8FB8C9", effect: { type: "rerollDiscount", value: 2 } },
+  // --- the table ---
+  { id: "doubleDown", name: "Double Down", desc: "+1 hand to play every round", color: "#4A90D9", effect: { type: "extraPlays", value: 1 } },
+  { id: "allIn", upgrades: "doubleDown", name: "All In", desc: "+1 more hand to play every round", color: "#3866B8", effect: { type: "extraPlays", value: 1 } },
+  { id: "bankruptcy", name: "Bankruptcy", desc: "+1 discard every round", color: "#D2453B", effect: { type: "extraDiscards", value: 1 } },
+  { id: "scrapHeap", upgrades: "bankruptcy", name: "Scrap Heap", desc: "+1 more discard every round", color: "#A8352D", effect: { type: "extraDiscards", value: 1 } },
+  { id: "largerAbdomen", name: "Larger Abdomen", desc: "+1 hand size", color: "#E8A65F", effect: { type: "extraHandSize", value: 1 } },
+  { id: "deepPockets", upgrades: "largerAbdomen", name: "Deep Pockets", desc: "+1 more hand size", color: "#C9853F", effect: { type: "extraHandSize", value: 1 } },
+  { id: "moreOre", name: "More Ore", desc: "+1 item slot", color: "#8B9B7A", effect: { type: "extraItemSlot", value: 1 } },
+  { id: "motherLode", upgrades: "moreOre", name: "Mother Lode", desc: "+1 more item slot", color: "#3FA9A0", effect: { type: "extraItemSlot", value: 1 } },
+  { id: "displayCase", name: "Display Case", desc: "+1 artifact slot", color: "#9B7BC8", effect: { type: "extraCharmSlot", value: 1 } },
+  { id: "grandGallery", upgrades: "displayCase", name: "Grand Gallery", desc: "+1 more artifact slot", color: "#7A55B0", effect: { type: "extraCharmSlot", value: 1 } },
+  // --- money ---
+  { id: "liquidAssets", name: "Liquid Assets", desc: "+$5 at the start of every blind", color: "#4FA3C7", effect: { type: "startingMoneyBonus", value: 5 } },
+  { id: "trustFund", upgrades: "liquidAssets", name: "Trust Fund", desc: "+$5 more at the start of every blind", color: "#2F7FA8", effect: { type: "startingMoneyBonus", value: 5 } },
+  { id: "piggyBank", name: "Piggy Bank", desc: "Interest caps at $10 instead of $5", color: "#E88BA6", effect: { type: "interestCap", value: 5 } },
+  { id: "goldenGoose", upgrades: "piggyBank", name: "Golden Goose", desc: "Interest caps at $20", color: "#E8C04A", effect: { type: "interestCap", value: 10 } },
+  { id: "compoundInterest", name: "Compound Interest", desc: "+$2 interest every round", color: "#7AB89B", effect: { type: "interestBonus", value: 2 } },
+  { id: "windfall", upgrades: "compoundInterest", name: "Windfall", desc: "+$3 more interest every round", color: "#4E9A6E", effect: { type: "interestBonus", value: 3 } },
+  { id: "cardSharp", name: "Card Sharp", desc: "Artifacts and items sell for 50% more", color: "#B8A87A", effect: { type: "sellMultiplier", value: 1.5 } },
+  { id: "pawnKing", upgrades: "cardSharp", name: "Pawn King", desc: "Artifacts and items sell for double", color: "#C9A227", effect: { type: "sellMultiplier", value: 2 } },
+  // --- star charts ---
+  { id: "clairvoyance", name: "Clairvoyance", desc: "Celestial Packs always hold the Star Chart for your most played hand", color: "#7E57C2", effect: { type: "chartFavourite", value: 1 } },
+  { id: "starMap", upgrades: "clairvoyance", name: "Star Map", desc: "Celestial Packs offer 2 more Star Charts to choose from", color: "#4a6fb3", effect: { type: "packExtraChoices", value: 2, pack: "celestialPack" } },
+  // --- time ---
+  { id: "timeWarp", name: "Time Warp", desc: "Go back 1 ante. −1 hand every round", color: "#5C6BC0", effect: { type: "extraPlays", value: -1, anteDown: 1 } },
+  { id: "rewind", upgrades: "timeWarp", name: "Rewind", desc: "Go back 1 more ante. −1 discard every round", color: "#3949AB", effect: { type: "extraDiscards", value: -1, anteDown: 1 } },
+].map((v) => ({ price: VOUCHER_PRICE, type: "voucher", tier: v.upgrades ? 2 : 1, ...v }));
+const VOUCHER_BY_ID = Object.fromEntries(VOUCHERS.map((v) => [v.id, v]));
+// Sum (or best) of an effect across the vouchers you own.
+function voucherSum(type) {
+  return state.vouchers.filter((v) => v.effect.type === type).reduce((s, v) => s + v.effect.value, 0);
+}
+function voucherBest(type, pick) {
+  return state.vouchers.filter((v) => v.effect.type === type).reduce((m, v) => pick(m, v.effect.value), 1);
+}
+function shopDiscountFactor() {
+  return voucherBest("shopDiscount", Math.min);
+}
+function baseRerollCost() {
+  return Math.max(1, 5 - voucherSum("rerollDiscount"));
+}
+// One voucher for this ante: a base voucher you don't own, or the upgrade of one you do.
+// The line under a voucher's description: what it upgrades from, or into.
+function voucherHint(v) {
+  if (v.upgrades) return `<div class="detail-hint">Upgrade of <b>${(VOUCHER_BY_ID[v.upgrades] || {}).name || ""}</b></div>`;
+  const up = VOUCHERS.find((u) => u.upgrades === v.id);
+  return up ? `<div class="detail-hint">Unlocks <b>${up.name}</b> in later shops</div>` : "";
+}
+function rollVoucher() {
+  const owned = new Set(state.vouchers.map((v) => v.id));
+  const pool = VOUCHERS.filter((v) => !owned.has(v.id) && (!v.upgrades || owned.has(v.upgrades)));
+  return pool.length ? { ...randomOf(pool) } : null;
+}
+
+/* ============================== SPECTRAL CARDS ==============================
+   Found only in Spectral Packs and used the moment you pick them. A Spectral
+   Pack shows a hand of your cards (your real hand mid-round, otherwise 8
+   drawn from the deck) and the spectral works on that hand. Each one has a
+   big upside paid for with something permanent. */
+const SPECTRAL_DEFS = [
+  { id: "kinfolk", name: "Kinfolk", desc: "Destroys 1 random card in your hand, adds 3 stamped face cards to your deck", color: "#8e7cc3" },
+  { id: "bonePact", name: "Bone Pact", desc: "Destroys 1 random card in your hand, adds 2 sleeved Aces to your deck", color: "#cfc6b0" },
+  { id: "chorus", name: "Chorus", desc: "Destroys 1 random card in your hand, adds 4 stamped number cards to your deck", color: "#5fa8c9" },
+  { id: "paupersPact", name: "Pauper's Pact", desc: "Gives you a random artifact (needs room), and your money drops to $0", color: "#8a96a3" },
+  { id: "seance", name: "Séance", desc: "Every card in your hand becomes the same random rank. −1 hand size for good", color: "#7E57C2" },
+  { id: "phantomLimb", name: "Phantom Limb", desc: "+1 artifact slot. −1 hand size for good", color: "#6fb3a8" },
+  { id: "pyre", name: "Pyre", desc: "Destroys 5 random cards in your hand, gain $20", color: "#E8743B" },
+  { id: "effigy", name: "Effigy", desc: "Copies a random artifact you own. Every other artifact is destroyed", color: "#b0805a" },
+  { id: "shroud", name: "Shroud", desc: "3 random cards in your hand each get a random sleeve and stamp", color: "#9fb3c6" },
+  { id: "exorcism", name: "Exorcism", desc: "Strips every sleeve and stamp in your hand, gain $4 for each one", color: "#e6eef2" },
+  { id: "revenant", name: "Revenant", desc: "The last artifact you sold comes back (needs room)", color: "#5fbf86" },
+  { id: "hollowCrown", name: "Hollow Crown", desc: "+1 item slot for good. Every item you hold is destroyed", color: "#C9A227" },
+  { id: "wispLantern", name: "Wisp Lantern", desc: "Levels up your most played hand twice. −1 discard for good", color: "#7fd0e0" },
+  { id: "soulShard", name: "Soul Shard", desc: "Gives you a random legendary artifact (needs room)", color: "#F2A65A", rare: true },
+  { id: "eventHorizon", name: "Event Horizon", desc: "Levels up every hand", color: "#24325c", rare: true },
+].map((d) => ({ type: "item", spectral: true, price: 4, ...d }));
+
+// Spectral choices: the two rare ones turn up much less often.
+function pickSpectrals(n) {
+  const out = [];
+  const pool = [...SPECTRAL_DEFS];
+  while (out.length < n && pool.length) {
+    const weights = pool.map((d) => (d.rare ? 0.12 : 1));
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let i = 0;
+    while (i < pool.length - 1 && r > weights[i]) r -= weights[i++];
+    out.push({ ...pool[i] });
+    pool.splice(i, 1);
   }
-];
+  return out;
+}
+
+// ----- cards a spectral works on -----
+function allRunCards() {
+  return [...state.deck, ...(state.usedCards || []), ...state.hand];
+}
+// The hand shown in a Spectral Pack, as card objects.
+function packHandCards() {
+  const po = state.packOpen;
+  if (!po || !po.hand) return [];
+  const all = allRunCards();
+  return po.hand.map((id) => all.find((c) => c.id === id)).filter(Boolean);
+}
+function packHandIds() {
+  if (state.overlay === "playing") return state.hand.map((c) => c.id);
+  return shuffleArray(allRunCards()).slice(0, BASE_HAND_SIZE).map((c) => c.id);
+}
+// Swap cards (by id) for new versions everywhere they live.
+function mapRunCards(ids, fn) {
+  const set = new Set(ids);
+  const m = (arr) => arr.map((c) => (set.has(c.id) ? fn(c) : c));
+  state.deck = m(state.deck);
+  state.usedCards = m(state.usedCards || []);
+  state.hand = m(state.hand);
+}
+function destroyRunCards(ids) {
+  const set = new Set(ids);
+  noteDestroyed(allRunCards().filter((c) => set.has(c.id)));
+  state.deck = state.deck.filter((c) => !set.has(c.id));
+  state.usedCards = (state.usedCards || []).filter((c) => !set.has(c.id));
+  state.hand = state.hand.filter((c) => !set.has(c.id));
+  state.selected = (state.selected || []).filter((id) => !set.has(id));
+  if (state.packOpen && state.packOpen.hand) state.packOpen.hand = state.packOpen.hand.filter((id) => !set.has(id));
+}
+function addRunCards(cards) {
+  state.deck = shuffleArray([...state.deck, ...cards]);
+  noteAdded(cards.length);
+}
+function randomCharmDef(pool) {
+  const owned = new Set(state.charms.map((c) => c.id));
+  const free = pool.filter((d) => !owned.has(d.id));
+  return free.length ? randomOf(free) : null;
+}
+
+// Runs a spectral card. Returns a short line saying what happened.
+function useSpectral(def) {
+  const hand = packHandCards();
+  const ids = hand.map((c) => c.id);
+  const pickIds = (n) => shuffleArray(ids).slice(0, n);
+  const charmRoom = state.charms.length < state.charmSlots;
+  switch (def.id) {
+    case "kinfolk":
+      destroyRunCards(pickIds(1));
+      addRunCards(Array.from({ length: 3 }, () => makeCard(randomOf(FACE_RANKS), randomOf(SUIT_KEYS), { stamp: randomOf(STAMP_KINDS) })));
+      return "3 face cards joined your deck";
+    case "bonePact":
+      destroyRunCards(pickIds(1));
+      addRunCards(Array.from({ length: 2 }, () => makeCard("A", randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS) })));
+      return "2 Aces joined your deck";
+    case "chorus":
+      destroyRunCards(pickIds(1));
+      addRunCards(Array.from({ length: 4 }, () => makeCard(randomOf(RANKS.slice(1, 10)), randomOf(SUIT_KEYS), { stamp: randomOf(STAMP_KINDS) })));
+      return "4 number cards joined your deck";
+    case "paupersPact": {
+      const d = charmRoom && randomCharmDef(CHARM_DEFS);
+      if (d) state.charms = [...state.charms, { ...d, uid: newUid() }];
+      state.money = 0;
+      return d ? `${d.name} is yours. Your purse is empty` : "No room for an artifact. Your purse is empty";
+    }
+    case "seance": {
+      const r = randomOf(RANKS);
+      mapRunCards(ids, (c) => ({ ...c, rank: r }));
+      state.permHandSize = (state.permHandSize || 0) - 1;
+      return `Every card became ${["A", "8"].includes(r) ? "an" : "a"} ${r}`;
+    }
+    case "phantomLimb":
+      state.charmSlots += 1;
+      state.permHandSize = (state.permHandSize || 0) - 1;
+      return "+1 artifact slot";
+    case "pyre":
+      destroyRunCards(pickIds(5));
+      state.money += 20;
+      return "Burned 5 cards for $20";
+    case "effigy": {
+      if (!state.charms.length) return "You had no artifacts to copy";
+      const keep = randomOf(state.charms);
+      state.charms = [keep, { ...keep, uid: newUid() }];
+      return `Two of ${keep.name} remain`;
+    }
+    case "shroud":
+      mapRunCards(pickIds(3), (c) => ({ ...c, sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+      return "3 cards were shrouded";
+    case "exorcism": {
+      let n = 0;
+      mapRunCards(ids, (c) => { n += (c.sleeve ? 1 : 0) + (c.stamp ? 1 : 0); return { ...c, sleeve: undefined, stamp: undefined }; });
+      state.money += n * 4;
+      return `Cast out ${n} for $${n * 4}`;
+    }
+    case "revenant": {
+      const c = state.lastSoldCharm;
+      if (!c || !charmRoom) return c ? "No room for it" : "You haven't sold an artifact yet";
+      state.charms = [...state.charms, { ...c, uid: newUid() }];
+      state.lastSoldCharm = null;
+      return `${c.name} came back`;
+    }
+    case "hollowCrown":
+      state.items = [];
+      state.itemSlots += 1;
+      return "+1 item slot";
+    case "wispLantern": {
+      const counts = state.handTypeCounts || {};
+      const fav = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || "High Card";
+      state.handLevels = { ...(state.handLevels || {}), [fav]: handLevel(fav) + 2 };
+      state.permDiscards = (state.permDiscards || 0) - 1;
+      return `${fav} went up 2 levels`;
+    }
+    case "soulShard": {
+      const d = charmRoom && randomCharmDef(LEGENDARY_DEFS);
+      if (d) state.charms = [...state.charms, { ...d, uid: newUid() }];
+      return d ? `${d.name} is yours` : "No room for a legend";
+    }
+    case "eventHorizon": {
+      const lv = { ...(state.handLevels || {}) };
+      Object.keys(HAND_TABLE).forEach((h) => { lv[h] = handLevel(h) + 1; });
+      state.handLevels = lv;
+      return "Every hand went up a level";
+    }
+  }
+  return "";
+}
+
 
 // Chance-based effects: Horseshoe doubles the odds, Lucky Break makes them certain.
 function chanceMultiplier() {
@@ -3397,8 +3627,7 @@ function noteDestroyed(cards) {
 // Price in the shop after Clearance Sale, or $0 while The Merchant's free buy is waiting.
 function shopPriceFor(entry) {
   if (state.freeBuy) return 0;
-  const shopDiscount = state.vouchers.filter((v) => v.effect.type === "shopDiscount").reduce((m, v) => m * v.effect.value, 1);
-  return Math.ceil(entry.price * shopDiscount);
+  return Math.ceil(entry.price * shopDiscountFactor());
 }
 
 function generateShopStock(count) {
@@ -3747,12 +3976,13 @@ function getExtraPlays(items) {
   const extra = [...items, ...state.charms].filter((i) => i.effect.type === "extraPlays").reduce((s, i) => s + i.effect.value, 0);
   const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraPlays").reduce((s, v) => s + v.effect.value, 0);
   const gamblerReduction = state.charms.filter((c) => c.effect.type === "gamblerMult").reduce((s, c) => s + c.effect.playReduction, 0);
-  return Math.max(0, extra + voucherExtra - gamblerReduction);
+  // Vouchers can take hands away too (Time Warp), but never below 1 hand.
+  return Math.max(-3, Math.max(0, extra - gamblerReduction) + voucherExtra);
 }
 function getExtraDiscards(items) {
   const extra = [...items, ...state.charms].filter((i) => i.effect.type === "extraDiscards").reduce((s, i) => s + i.effect.value, 0);
   const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraDiscards").reduce((s, v) => s + v.effect.value, 0);
-  return extra + voucherExtra;
+  return Math.max(-4, extra + voucherExtra + (state.permDiscards || 0));
 }
 function getExtraHandSize(items) {
   return [...items, ...state.charms].filter((i) => i.effect.type === "extraHandSize").reduce((s, i) => s + i.effect.value, 0);
@@ -3769,7 +3999,7 @@ function getInterestBonus(items, money) {
   // Vault charms raise that cap.
   const vaultBonus = state.charms.filter((c) => c.effect.type === "vaultInterestCap").reduce((s, c) => s + c.effect.value, 0);
   const interestVoucherBonus = state.vouchers.filter((v) => v.effect.type === "interestBonus").reduce((s, v) => s + v.effect.value, 0);
-  return Math.min(5 + vaultBonus, Math.floor(money / 5)) + interestVoucherBonus;
+  return Math.min(5 + vaultBonus + voucherSum("interestCap"), Math.floor(money / 5)) + interestVoucherBonus;
 }
 function getLeftoverHandsBonus(playsLeft, discardsLeft) {
   // Guaranteed baseline income: $1 per unused play and $1 per unused discard
@@ -3901,6 +4131,11 @@ function loadGame() {
     state.charms = (state.charms || []).map((c) => refresh(c, [CHARM_DEFS, LEGENDARY_DEFS]));
     state.items = (state.items || []).map((i) => refresh(i, [ITEM_DEFS]));
     state.shopStock = (state.shopStock || []).map((x) => (x && x.type === "charm" ? refresh(x, [CHARM_DEFS, LEGENDARY_DEFS]) : refresh(x, [ITEM_DEFS])));
+    const vref = (v) => (v && VOUCHER_BY_ID[v.id] ? { ...VOUCHER_BY_ID[v.id] } : v);
+    state.vouchers = (state.vouchers || []).map(vref).filter(Boolean);
+    state.voucherStock = (state.voucherStock || []).map(vref);
+    // Saves from when the shop offered four vouchers at once: keep one.
+    if (!state.voucherReady) { state.voucherStock = state.voucherStock.filter(Boolean).slice(0, 1); state.voucherReady = true; }
     return true;
   } catch (e) {
     console.warn("Load failed:", e);
@@ -3939,7 +4174,7 @@ function getHandSize() {
   const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraHandSize").reduce((s, v) => s + v.effect.value, 0);
   const chainsReduction = state.charms.filter((c) => c.effect.type === "chainsMoneyPerHand").reduce((s, c) => s + c.effect.handSizeReduction, 0);
   const bossDelta = (state.bossBlind && state.bossBlind.handSizeDelta) || 0;
-  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta + (state.roundHandSizeBonus || 0));
+  return Math.max(1, BASE_HAND_SIZE + extra + voucherExtra - chainsReduction + bossDelta + (state.roundHandSizeBonus || 0) + (state.permHandSize || 0));
 }
 
 function computeFanLayout() {
@@ -3999,6 +4234,11 @@ function startGame() {
   state.itemSlots = 2;
   state.vouchers = [];
   state.voucherStock = [];
+  state.voucherReady = false;
+  state.permHandSize = 0;
+  state.permDiscards = 0;
+  state.lastSoldCharm = null;
+  state.packOpen = null;
   state.shopStock = [];
   state.runMultiplier = 1;
   state.lastDestroyedItem = null;
@@ -4137,8 +4377,7 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.collectorUsedThisRound = false;
   
   // Apply starting money bonus from Liquid Assets voucher
-  const startingMoneyBonus = state.vouchers.filter((v) => v.effect.type === "startingMoneyBonus").reduce((s, v) => s + v.effect.value, 0);
-  state.money += startingMoneyBonus;
+  state.money += voucherSum("startingMoneyBonus");
   
   // Increment Specter blind counter
   state.charms.forEach((charm) => {
@@ -4965,27 +5204,37 @@ function sidebarDragEnd() {
 }
 
 function goToShop() {
-  // Calculate shop size from Overstock voucher
-  const overstockBonus = state.vouchers.filter((v) => v.effect.type === "shopSizeBonus").reduce((s, v) => s + v.effect.value, 0);
-  const shopSize = 6 + overstockBonus;
-  
+  const shopSize = 6 + voucherSum("shopSizeBonus");
   state.shopStock = generateShopStock(shopSize);
-  state.rerollCost = 5;
+  state.rerollCost = baseRerollCost();
   state.shopDetail = null;
-  
-  // Generate voucher stock (up to 6 vouchers, vouchers that are already owned won't appear)
-  const voucherPool = VOUCHERS.filter(v => !state.vouchers.some(owned => owned.id === v.id));
-  state.voucherStock = [];
-  for (let i = 0; i < Math.min(4, voucherPool.length); i++) {
-    const randomIdx = Math.floor(Math.random() * voucherPool.length);
-    state.voucherStock.push(voucherPool[randomIdx]);
-    voucherPool.splice(randomIdx, 1);
+
+  // One voucher per ante: a fresh one after each boss (and in the run's first
+  // shop). An unbought voucher waits for you in the next shop of the ante.
+  if (state.blindIdx === 2 || !state.voucherReady) {
+    const v = rollVoucher();
+    state.voucherStock = v ? [v] : [];
+    state.voucherReady = true;
   }
-  
+
   // Booster packs: two per visit (rerolling doesn't change them); a Legend
   // Pack turns up in a slot 12% of the time.
-  const commonPacks = PACK_DEFS.filter((p) => !p.rare);
-  state.packStock = [0, 1].map(() => ({ ...(Math.random() < 0.12 ? PACK_DEFS.find((p) => p.rare) : randomOf(commonPacks)) }));
+  // Spectral Packs are scarcer. Each pack is a Major 28% of the time and a
+  // Mega 12% of the time.
+  const commonBases = PACK_BASES.filter((p) => !p.rare);
+  const weights = commonBases.map((p) => (p.scarce ? 0.45 : 1));
+  const rollBase = () => {
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let i = 0;
+    while (i < weights.length - 1 && r > weights[i]) r -= weights[i++];
+    return commonBases[i].id;
+  };
+  state.packStock = [0, 1].map(() => {
+    if (Math.random() < 0.12) return { ...PACK_DEFS.find((p) => p.rare) };
+    const r = Math.random();
+    const id = rollBase() + (r < 0.12 ? "_mega" : r < 0.4 ? "_major" : "");
+    return { ...PACK_DEFS.find((p) => p.id === id) };
+  });
 
   state.overlay = "shop";
   saveGame();
@@ -5007,18 +5256,29 @@ function buyPack(index) {
 function openPack(packId) {
   const pack = PACK_DEFS.find((p) => p.id === packId);
   if (!pack) return;
+  const kind = pack.base || pack.id;
   const ringmaster = hasCharm("ringmasterDuplicates");
   const owned = new Set(state.charms.map((c) => c.id));
   const pickDefs = (pool, n) => shuffleArray(pool).slice(0, n).map((d) => ({ ...d }));
+  const n = pack.choices + state.vouchers.filter((v) => v.effect.type === "packExtraChoices" && v.effect.pack === kind).reduce((s, v) => s + v.effect.value, 0);
   let choices = [];
-  if (packId === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), pack.choices);
-  if (packId === "itemPack") choices = pickDefs(ITEM_DEFS.filter((d) => !d.secret), pack.choices);
-  // secret hands' charts only once you've played that hand
-  if (packId === "celestialPack") choices = pickDefs(ITEM_DEFS.filter((d) => d.chart && (!d.secret || (state.handTypeCounts || {})[d.effect.hand])), pack.choices);
-  if (packId === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), pack.choices);
-  if (packId === "cardPack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
-  if (packId === "ornatePack") choices = Array.from({ length: pack.choices }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
-  state.packOpen = { id: packId, name: pack.name, choices };
+  if (kind === "artifactPack") choices = pickDefs(CHARM_DEFS.filter((c) => ringmaster || !owned.has(c.id)), n);
+  if (kind === "itemPack") choices = pickDefs(ITEM_DEFS.filter((d) => !d.secret), n);
+  if (kind === "celestialPack") {
+    // secret hands' charts only once you've played that hand
+    choices = pickDefs(ITEM_DEFS.filter((d) => d.chart && (!d.secret || (state.handTypeCounts || {})[d.effect.hand])), n);
+    // Clairvoyance: the chart for your most played hand is always in the pack.
+    const counts = state.handTypeCounts || {};
+    const fav = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+    const favChart = fav && voucherSum("chartFavourite") && ITEM_DEFS.find((d) => d.chart && d.effect.hand === fav);
+    if (favChart && !choices.some((c) => c.id === favChart.id)) choices[0] = { ...favChart };
+  }
+  if (kind === "spectralPack") choices = pickSpectrals(n);
+  if (kind === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), n);
+  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
+  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: Date.now(), hand: kind === "spectralPack" ? packHandIds() : null, note: null };
+  state.packPick = null;
   state.shopDetail = null;
   saveGame();
   render();
@@ -5029,7 +5289,10 @@ function takePackChoice(index) {
   if (!po) return;
   const choice = po.choices[index];
   if (!choice) return;
-  if (choice.type === "charm") {
+  let note = null;
+  if (choice.spectral) {
+    note = useSpectral(choice);
+  } else if (choice.type === "charm") {
     if (state.charms.length >= state.charmSlots) return;
     state.charms = [...state.charms, { ...choice, uid: newUid() }];
   } else if (choice.type === "item" && choice.chart) {
@@ -5042,7 +5305,16 @@ function takePackChoice(index) {
     state.deck = shuffleArray([...state.deck, { ...choice }]);
     noteAdded(1);
   }
-  state.packOpen = null;
+  state.packPick = null;
+  if ((po.picks || 1) > 1) {
+    // Mega pack: take another
+    po.choices = po.choices.filter((_, i) => i !== index);
+    po.picks -= 1;
+    po.note = note;
+  } else {
+    state.packOpen = null;
+    if (note) state.packToast = { text: note, at: Date.now() };
+  }
   saveGame();
   render();
 }
@@ -5053,55 +5325,179 @@ function skipPack() {
   render();
 }
 
+// Opened pack: the same top bar as the shop (money, deck and your shelf, so
+// you can sell to make room), then the choices dealt in a fan on a panel.
+// Tap a card to look at it; Take adds it, Skip leaves the rest.
+function packChoiceFull(choice) {
+  if (choice.type === "charm") return state.charms.length >= state.charmSlots;
+  if (choice.type === "item" && !choice.chart) return state.items.length >= getEffectiveItemSlots();
+  return false;
+}
+function pickPackChoice(i) {
+  state.packPick = state.packPick === i ? null : i;
+  render();
+}
 function PackOverlay() {
   const po = state.packOpen;
+  const def = PACK_DEFS.find((p) => p.id === po.id) || {};
   const wrap = document.createElement("div");
   wrap.className = "pack-overlay";
-  const def = PACK_DEFS.find((p) => p.id === po.id) || {};
-  wrap.innerHTML = `
-    <div class="pack-head">
-      <div class="pack-art">${AnteArt.icon(def)}</div>
-      <div>
-        <div class="pack-title serif">${po.name}</div>
-        <div class="pack-sub">Choose one</div>
-      </div>
+  wrap.style.setProperty("--pc", def.color || "#C9A227");
+
+  // ===== TOP BAR: as in the shop =====
+  const header = document.createElement("div");
+  header.className = "shop-header-row pack-header";
+  header.innerHTML = `
+    <div class="shop-header-left">
+      <div class="shop-title serif">${po.name}</div>
+      <div class="shop-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"} · drag yours to sell</div>
     </div>`;
-  const grid = document.createElement("div");
-  grid.className = "pack-choices";
+  const right = document.createElement("div");
+  right.className = "shop-header-right";
+  const deckCorner = document.createElement("div");
+  deckCorner.className = "shop-deck-corner";
+  deckCorner.appendChild(renderDeckWidget());
+  right.appendChild(deckCorner);
+  right.insertAdjacentHTML("beforeend", `<div class="shop-money serif">$${state.money}</div>`);
+  header.appendChild(right);
+  wrap.appendChild(header);
+  wrap.appendChild(GearShelf());
+  const spacer = () => { const d = document.createElement("div"); d.className = "pack-spacer"; return d; };
+  wrap.appendChild(spacer());
+
+  // ===== THE STAGE: torn pack, cards fanned out =====
+  const stage = document.createElement("div");
+  stage.className = "pack-stage";
+  // Opening: the pack shakes, tears open with a flash, and the cards are
+  // dealt out of it. Timed from when it was opened, so a re-render mid-way
+  // carries on where it was instead of starting again.
+  const elapsed = Date.now() - (po.openedAt || 0);
+  const opening = elapsed < 1500;
+  const dealAt = opening ? 950 - elapsed : 0;
+  stage.style.setProperty("--t", -Math.min(elapsed, 1500) + "ms");
+  stage.innerHTML = `<div class="pack-rays"></div><div class="bshop-sign pack-sign serif"><span>${(po.picks || 1) > 1 ? `Pick ${po.picks}` : "Pick One"}</span></div><div class="pack-torn">${AnteArt.icon(def)}</div>` +
+    (opening ? `<div class="pack-opening"><div class="po-flash"></div>` +
+      Array.from({ length: 12 }, (_, i) => `<i class="po-spark" style="--a:${i * 30 + (i % 3) * 7}deg;--d:${70 + (i % 4) * 22}px"></i>`).join("") +
+      `<div class="po-pack"><div class="po-top">${AnteArt.icon(def)}</div><div class="po-bottom">${AnteArt.icon(def)}</div></div></div>` : "");
+  stage.classList.toggle("is-opening", opening);
+  const fan = document.createElement("div");
+  fan.className = "pack-fan";
+  // Card width: as big as fits the row, up to 96px (78px sideways).
+  const room = Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 24;
+  const cw = Math.floor(Math.min(isLandscape() ? (po.hand ? 60 : 78) : 112, (room - (po.choices.length - 1) * 8) / po.choices.length));
+  fan.style.setProperty("--cw", cw + "px");
+  const pick = state.packPick != null && po.choices[state.packPick] ? state.packPick : null;
+  const mid = (po.choices.length - 1) / 2;
   po.choices.forEach((choice, i) => {
-    const tile = document.createElement("button");
-    tile.className = "pack-choice";
+    const el = document.createElement("button");
     const isCard = !choice.type;
-    let full = false;
-    if (choice.type === "charm") full = state.charms.length >= state.charmSlots;
-    if (choice.type === "item" && !choice.chart) full = state.items.length >= getEffectiveItemSlots();
+    const legendary = choice.rarity === "legendary";
+    el.className = "pchoice" + (i === pick ? " picked" : "") + (packChoiceFull(choice) ? " full" : "") + (legendary ? " legendary" : "");
+    el.style.setProperty("--rot", ((i - mid) * 5).toFixed(1) + "deg");
+    el.style.setProperty("--drop", (Math.abs(i - mid) * 5).toFixed(1) + "px");
+    el.style.setProperty("--delay", dealAt + i * 80 + "ms");
     if (isCard) {
-      const cardEl = renderCard(choice, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => takePackChoice(i) });
+      const cardEl = renderCard(choice, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => {} });
       cardEl.classList.add("pack-card");
       cardEl.style.transform = "none";
       cardEl.dataset.finalTransform = "none";
-      tile.appendChild(cardEl);
-      const lines = [];
-      if (choice.sleeve) lines.push(`<b>${AnteArt.sleeveLabel(choice.sleeve)}</b> ${SLEEVE_INFO[choice.sleeve]}`);
-      if (choice.stamp) lines.push(`<b>${STAMP_LABELS[choice.stamp]} stamp</b> ${STAMP_INFO[choice.stamp]}`);
-      tile.insertAdjacentHTML("beforeend", `<div class="pack-choice-desc">${lines.join("<br>") || "Plain card"}</div>`);
+      cardEl.style.zoom = (cw / 62).toFixed(3);
+      const face = document.createElement("div");
+      face.className = "pchoice-face is-playing";
+      face.appendChild(cardEl);
+      el.appendChild(face);
+    } else if (choice.spectral) {
+      el.innerHTML = `<div class="pchoice-face spectral-face">${AnteArt.icon(choice)}</div>`;
+      el.classList.add("kind-spectral");
     } else {
-      tile.innerHTML = `
-        <div class="pack-choice-art${choice.rarity === "legendary" ? " legendary" : ""}">${AnteArt.icon(choice)}</div>
-        <div class="pack-choice-name serif">${choice.name}</div>
-        <div class="pack-choice-desc">${choice.desc}</div>
-        ${full ? `<div class="pack-choice-full">Slots full</div>` : ""}`;
+      const kind = choice.type === "charm" ? "kind-charm" : "kind-item";
+      el.innerHTML = `<div class="pchoice-face bcard-face ${kind}"><div class="bcard-art">${AnteArt.icon(choice)}</div></div>`;
+      el.classList.add(kind);
     }
-    tile.disabled = full;
-    tile.onclick = () => takePackChoice(i);
-    grid.appendChild(tile);
+    el.onclick = () => pickPackChoice(i);
+    fan.appendChild(el);
   });
-  wrap.appendChild(grid);
+  stage.appendChild(fan);
+  if (po.hand) {
+    const handCards = packHandCards();
+    const row = document.createElement("div");
+    row.className = "pack-hand";
+    row.innerHTML = `<div class="bwell-label">Your hand</div>`;
+    const cards = document.createElement("div");
+    cards.className = "pack-hand-cards";
+    const hw = Math.min(44, Math.floor((Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 40) / Math.max(1, handCards.length)) + 10);
+    cards.style.setProperty("--hw", hw + "px");
+    handCards.forEach((c) => {
+      const cardEl = renderCard(c, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => {} });
+      cardEl.classList.add("pack-card");
+      cardEl.style.transform = "none";
+      cardEl.dataset.finalTransform = "none";
+      cardEl.style.zoom = "0.82";
+      const slot = document.createElement("div");
+      slot.className = "pack-hand-card";
+      slot.appendChild(cardEl);
+      cards.appendChild(slot);
+    });
+    if (!handCards.length) cards.innerHTML = `<div class="pack-info-hint">No cards</div>`;
+    row.appendChild(cards);
+    stage.appendChild(row);
+  }
+  wrap.appendChild(stage);
+
+  // ===== WHAT YOU'RE LOOKING AT, and the buttons =====
+  const info = document.createElement("div");
+  info.className = "pack-info";
+  if (pick == null) {
+    info.innerHTML = (po.note ? `<div class="pack-info-note serif">${po.note}</div>` : "") + `<div class="pack-info-hint">Tap a card to look at it</div>`;
+  } else {
+    const c = po.choices[pick];
+    const full = packChoiceFull(c);
+    let kind, name, desc;
+    if (!c.type) {
+      kind = "Playing card";
+      name = `${c.rank} of ${c.suit[0].toUpperCase() + c.suit.slice(1)}`;
+      const lines = [];
+      if (c.sleeve) lines.push(`<b>${AnteArt.sleeveLabel(c.sleeve)} sleeve</b> ${SLEEVE_INFO[c.sleeve]}`);
+      if (c.stamp) lines.push(`<b>${STAMP_LABELS[c.stamp]} stamp</b> ${STAMP_INFO[c.stamp]}`);
+      desc = (lines.join("<br>") || "A plain card") + "<br>Goes into your deck.";
+    } else if (c.spectral) {
+      kind = "Spectral";
+      name = c.name;
+      desc = c.desc + (po.hand ? "<br>Works on the hand shown below the cards." : "");
+    } else if (c.chart) {
+      kind = "Star Chart";
+      name = c.name;
+      const lv = handLevel(c.effect.hand);
+      desc = `${c.desc}<br><b>${c.effect.hand}</b>: Lv ${lv} → <b>Lv ${lv + 1}</b>`;
+    } else {
+      kind = c.rarity === "legendary" ? "Legendary artifact" : c.type === "charm" ? "Artifact" : "Item";
+      name = c.name;
+      desc = c.desc;
+    }
+    info.innerHTML = `
+      <div class="pack-info-kind">${kind}</div>
+      <div class="pack-info-name serif">${name}</div>
+      <div class="pack-info-desc">${desc}</div>
+      ${full ? `<div class="pack-choice-full">${c.type === "charm" ? "Artifact" : "Item"} slots full — sell one to make room</div>` : ""}`;
+  }
+  wrap.appendChild(info);
+
+  const actions = document.createElement("div");
+  actions.className = "pack-actions";
   const skip = document.createElement("button");
-  skip.className = "pack-skip";
-  skip.textContent = "Skip";
+  skip.className = "bbtn bbtn-grey";
+  skip.innerHTML = `<span class="bbtn-big">Skip</span>`;
   skip.onclick = skipPack;
-  wrap.appendChild(skip);
+  actions.appendChild(skip);
+  const take = document.createElement("button");
+  take.className = "bbtn bbtn-orange";
+  const pc = pick != null ? po.choices[pick] : null;
+  take.disabled = pc == null || packChoiceFull(pc);
+  take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && pc.spectral ? "Use" : "Take"}</span>`;
+  take.onclick = () => { if (pick != null) takePackChoice(pick); };
+  actions.appendChild(take);
+  wrap.appendChild(actions);
+  wrap.appendChild(spacer());
   return wrap;
 }
 
@@ -5110,11 +5506,8 @@ function PackOverlay() {
 // next time the player enters a shop.
 function rerollShop() {
   if (state.money < state.rerollCost) return;
-  const overstockBonus = state.vouchers.filter((v) => v.effect.type === "shopSizeBonus").reduce((s, v) => s + v.effect.value, 0);
-  const shopSize = 6 + overstockBonus;
-
   state.money -= state.rerollCost;
-  state.shopStock = generateShopStock(shopSize);
+  state.shopStock = generateShopStock(6 + voucherSum("shopSizeBonus"));
   state.rerollCost = state.rerollCost * 2;
   state.shopDetail = null;
   saveGame();
@@ -5141,8 +5534,6 @@ function buyItem(shopIndex) {
   const item = state.shopStock[shopIndex];
   if (!item) return;
   
-  // Calculate shop discount from Clearance Sale voucher
-  const shopDiscount = state.vouchers.filter((v) => v.effect.type === "shopDiscount").reduce((m, v) => m * v.effect.value, 1);
   const discountedPrice = shopPriceFor(item);
   
   if (state.money < discountedPrice) return;
@@ -5171,6 +5562,12 @@ function buyVoucher(voucherIndex) {
   state.money -= voucher.price;
   state.vouchers = [...state.vouchers, { ...voucher }];
   state.voucherStock = state.voucherStock.map((v, i) => (i === voucherIndex ? null : v));
+  const eff = voucher.effect;
+  if (eff.type === "extraCharmSlot") state.charmSlots += eff.value;
+  if (eff.type === "shopSizeBonus") state.shopStock = [...state.shopStock, ...generateShopStock(eff.value)];
+  if (eff.type === "rerollDiscount") state.rerollCost = Math.max(1, state.rerollCost - eff.value);
+  if (eff.anteDown) state.ante = Math.max(1, state.ante - eff.anteDown);
+  state.redeemedAt = Date.now();
   saveGame();
   render();
 }
@@ -5180,6 +5577,7 @@ function sellCharm(uid) {
   if (idx === -1) return;
   const charm = state.charms[idx];
   
+  state.lastSoldCharm = { ...charm };
   // Check if this charm is Specter and if it has played 3+ blinds
   if (charm.effect.type === "specterDuplicate" && (charm.effect.blindCounter || 0) >= 3) {
     // Duplicate a random charm from current inventory (excluding the one being sold)
@@ -6523,6 +6921,13 @@ function render() {
 
   // ===== BOOSTER PACK (pick one) =====
   if (state.packOpen) app.appendChild(PackOverlay());
+  if (state.packToast && Date.now() - state.packToast.at < 2400) {
+    const t = document.createElement("div");
+    t.className = "pack-toast";
+    t.style.animationDelay = -(Date.now() - state.packToast.at) + "ms";
+    t.textContent = state.packToast.text;
+    app.appendChild(t);
+  }
 
   // ===== CARD NOTE (double-tap a card with a sleeve/stamp) =====
   if (state.cardNote) {
@@ -6698,7 +7103,7 @@ function ItemSidebar() {
 const SHELF_PIECE = 46;
 
 function sellValue(def) {
-  return Math.max(1, Math.floor(def.price / 2)) + (def.sellBonus || 0);
+  return Math.max(1, Math.floor((def.price / 2) * voucherBest("sellMultiplier", Math.max))) + (def.sellBonus || 0);
 }
 
 function sellItem(uid) {
@@ -6747,7 +7152,7 @@ function ShelfGroup(kind, list, slots, width, title) {
   if (kind === "item" && state.vouchers.length > 0) {
     const v = document.createElement("button");
     v.className = "shelf-vouchers";
-    v.textContent = `${state.vouchers.length} upgrade${state.vouchers.length > 1 ? "s" : ""}`;
+    v.textContent = `${state.vouchers.length} voucher${state.vouchers.length > 1 ? "s" : ""}`;
     v.onclick = () => { state.gearDetail = { kind: "vouchers", at: Date.now() }; render(); };
     label.appendChild(v);
   }
@@ -6929,7 +7334,7 @@ function GearDetail() {
         return `<div class="hl-row${lv > 1 ? " up" : ""}"><span class="hl-lv">Lv ${lv}</span><span class="hl-name">${h}</span><span class="hl-played${played ? " has" : ""}">${played}×</span><span class="hl-val"><b class="c">${b.chips}</b> × <b class="m">${b.mult}</b></span></div>`;
       }).join("") + `</div><div class="detail-hint">Star Charts level a hand up. "Played" counts this run. Tap a hand's name above your cards to see this.</div>`;
   } else if (d.kind === "vouchers") {
-    card.innerHTML = `<div class="shop-detail-type">PERMANENT UPGRADES</div>` +
+    card.innerHTML = `<div class="shop-detail-type">VOUCHERS REDEEMED</div>` +
       state.vouchers.map((v) => `<div class="voucher-line"><div class="voucher-line-art">${AnteArt.icon(v)}</div><div><div class="voucher-line-name serif">${v.name}</div><div class="voucher-line-desc">${v.desc}</div></div></div>`).join("");
   } else {
     const list = d.kind === "charm" ? state.charms : state.items;
@@ -6965,7 +7370,7 @@ function ShopOverlay() {
   overlay.className = "shop-overlay";
 
   const hasStock = state.shopStock.some((item) => item);
-  const shopDiscount = state.vouchers.filter((v) => v.effect.type === "shopDiscount").reduce((m, v) => m * v.effect.value, 1);
+  const shopDiscount = shopDiscountFactor();
 
   // ===== HEADER: title/subtitle left, deck peek + money right ===== 
   const header = document.createElement("div");
@@ -6979,9 +7384,7 @@ function ShopOverlay() {
   headerLeft.appendChild(title);
   const sub = document.createElement("div");
   sub.className = "shop-sub";
-  sub.textContent = hasStock
-    ? "Tap anything for details · drag yours to sell"
-    : "No items in stock";
+  sub.textContent = "Tap anything for details · drag yours to sell";
   headerLeft.appendChild(sub);
   header.appendChild(headerLeft);
 
@@ -6999,120 +7402,117 @@ function ShopOverlay() {
 
   overlay.appendChild(header);
 
-  if (!hasStock) {
-    const empty = document.createElement("div");
-    empty.className = "shop-empty";
-    empty.textContent = "No items in stock";
-    overlay.appendChild(empty);
-    const row = document.createElement("div");
-    row.className = "shop-continue-row";
-    const rerollBtn = document.createElement("button");
-    rerollBtn.className = "reroll-btn";
-    rerollBtn.disabled = state.money < state.rerollCost;
-    rerollBtn.innerHTML = `<span class="reroll-btn-icon">⟲</span> Reroll <span class="reroll-btn-cost">$${state.rerollCost}</span>`;
-    rerollBtn.onclick = rerollShop;
-    row.appendChild(rerollBtn);
-    row.appendChild(BigButton("Continue to Next Blind", leaveShop));
-    overlay.appendChild(row);
-    return overlay;
-  }
-
   // ===== YOUR SHELF: what you own, drag to sell/rearrange right here =====
   overlay.appendChild(GearShelf());
 
-  // ===== THE SHOP: a wooden case — upgrade tickets pinned up top, wares on shelves =====
-  const counter = document.createElement("div");
-  counter.className = "shop-counter shop-case" + (state.voucherStock.some((v) => v) ? " has-vouchers" : "");
+  // ===== THE SHOP: one big panel. Top: Next Round / Reroll beside the wares.
+  // Bottom: this ante's voucher on its stand, and the booster packs. =====
+  const shop = document.createElement("div");
+  shop.className = "bshop";
+  shop.innerHTML = `<div class="bshop-sign serif"><span>Shop</span></div>`;
 
-  const liveVouchers = state.voucherStock.map((v, i) => [v, i]).filter(([v]) => v);
-  if (liveVouchers.length > 0) {
-    const voucherLabel = document.createElement("div");
-    voucherLabel.className = "counter-section-label voucher-label";
-    voucherLabel.textContent = "Permanent Upgrades";
-    counter.appendChild(voucherLabel);
-    const voucherRow = document.createElement("div");
-    voucherRow.className = "shop-vouchers";
-    liveVouchers.forEach(([voucher, i]) => {
-      const t = document.createElement("button");
-      t.className = "shop-voucher" + (state.money < voucher.price ? " poor" : "");
-      t.innerHTML = `<span class="shop-voucher-pin"></span><span class="shop-voucher-art">${AnteArt.icon(voucher)}</span><span class="shop-voucher-name">${voucher.name}</span><span class="ware-tag">$${voucher.price}</span>`;
-      t.onclick = () => openShopDetail("voucher", i);
-      voucherRow.appendChild(t);
-    });
-    counter.appendChild(voucherRow);
-  }
+  const top = document.createElement("div");
+  top.className = "bshop-top";
+  const actions = document.createElement("div");
+  actions.className = "bshop-actions";
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "bbtn bbtn-red";
+  nextBtn.innerHTML = `<span class="bbtn-big">Next</span><span class="bbtn-big">Round</span>`;
+  nextBtn.onclick = leaveShop;
+  const rerollBtn = document.createElement("button");
+  rerollBtn.className = "bbtn bbtn-green";
+  rerollBtn.disabled = state.money < state.rerollCost;
+  rerollBtn.innerHTML = `<span class="bbtn-small">Reroll</span><span class="bbtn-big">$${state.rerollCost}</span>`;
+  rerollBtn.onclick = rerollShop;
+  actions.append(nextBtn, rerollBtn);
+  top.appendChild(actions);
 
-  const waresLabel = document.createElement("div");
-  waresLabel.className = "counter-section-label wares-label";
-  waresLabel.textContent = "Artifacts & Items";
-  counter.appendChild(waresLabel);
   const wares = document.createElement("div");
-  wares.className = "shop-wares";
+  wares.className = "bshop-wares bwell";
+  if (!hasStock) wares.innerHTML = `<div class="bshop-soldout serif">Sold out</div>`;
+  else state.shopStock.forEach((item, i) => {
+    const card = document.createElement("div");
+    if (!item) {
+      card.className = "bcard sold";
+      card.innerHTML = `<div class="bcard-face"></div>`;
+      wares.appendChild(card);
+      return;
+    }
+    const price = shopPriceFor(item);
+    const slotsFull = item.type === "charm" ? state.charms.length >= state.charmSlots : state.items.length >= getEffectiveItemSlots();
+    const legendary = item.rarity === "legendary";
+    card.className = `bcard kind-${item.type}${legendary ? " legendary" : ""}${state.money < price ? " poor" : ""}`;
+    card.style.setProperty("--glow", item.color || "#C9A227");
+    card.innerHTML = `
+      <span class="bprice">${price < item.price ? `<s>$${item.price}</s>` : ""}$${price}</span>
+      <div class="bcard-face"><div class="bcard-art">${AnteArt.icon(item)}</div><span class="bcard-kind">${legendary ? "Legendary" : item.type === "charm" ? "Artifact" : "Item"}</span></div>
+      <div class="bcard-name">${item.name}</div>
+      <button class="bbuy" ${state.money < price || slotsFull ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>`;
+    card.querySelector(".bbuy").onclick = (e) => { e.stopPropagation(); buyItem(i); };
+    card.addEventListener("click", (e) => { if (!e.target.closest(".bbuy")) openShopDetail("stock", i); });
+    wares.appendChild(card);
+  });
+  top.appendChild(wares);
+  shop.appendChild(top);
+
+  const bottom = document.createElement("div");
+  bottom.className = "bshop-bottom";
+
+  // This ante's voucher, standing on its plinth.
+  const vslot = document.createElement("div");
+  vslot.className = "bshop-voucher bwell";
+  const nextAnte = state.blindIdx === 2 ? state.ante + 1 : state.ante;
+  vslot.innerHTML = `<div class="bwell-label">Ante ${nextAnte} Voucher</div>`;
+  const voucherIdx = state.voucherStock.findIndex((v) => v);
+  const voucher = state.voucherStock[voucherIdx];
+  if (voucher) {
+    const v = document.createElement("div");
+    v.className = "bvoucher" + (state.money < voucher.price ? " poor" : "");
+    v.innerHTML = `
+      <span class="bprice">$${voucher.price}</span>
+      <div class="bvoucher-art">${AnteArt.voucher(voucher)}</div>
+      <div class="bvoucher-plinth"></div>
+      <div class="bcard-name">${voucher.name}</div>
+      <button class="bbuy bbuy-redeem" ${state.money < voucher.price ? "disabled" : ""}>Redeem</button>`;
+    v.querySelector(".bbuy").onclick = (e) => { e.stopPropagation(); buyVoucher(voucherIdx); };
+    v.addEventListener("click", (e) => { if (!e.target.closest(".bbuy")) openShopDetail("voucher", voucherIdx); });
+    vslot.appendChild(v);
+  } else {
+    const redeemed = state.voucherStock.length > 0;
+    const fresh = redeemed && state.redeemedAt && Date.now() - state.redeemedAt < 1500;
+    vslot.insertAdjacentHTML("beforeend", `<div class="bvoucher empty"><div class="bvoucher-ghost">${redeemed ? `<span class="bredeemed serif${fresh ? " fresh" : ""}">Redeemed</span>` : `<span class="bvoucher-none">A new voucher comes after the boss</span>`}</div><div class="bvoucher-plinth"></div></div>`);
+  }
+  bottom.appendChild(vslot);
+
+  // Booster packs.
+  const packs = document.createElement("div");
+  packs.className = "bshop-packs bwell";
+  packs.innerHTML = `<div class="bwell-label">Booster Packs</div>`;
+  const packRow = document.createElement("div");
+  packRow.className = "bpack-row";
   (state.packStock || []).forEach((pack, i) => {
-    const ware = document.createElement("div");
-    ware.className = "ware is-pack" + (!pack ? " sold" : "");
+    const el = document.createElement("div");
     if (!pack) {
-      ware.innerHTML = `<div class="ware-art"></div><div class="ware-plank"></div><div class="ware-sold">Opened</div>`;
-      wares.appendChild(ware);
+      el.className = "bcard is-pack sold";
+      el.innerHTML = `<div class="bcard-face"></div>`;
+      packRow.appendChild(el);
       return;
     }
     const price = shopPriceFor(pack);
-    ware.innerHTML = `
-      <div class="ware-art">${AnteArt.icon(pack)}</div>
-      <div class="ware-plank"></div>
-      <span class="ware-tag">${price < pack.price ? `<s>$${pack.price}</s> ` : ""}$${price}</span>
-      <div class="ware-kind">${pack.rare ? "Rare pack" : "Booster pack"}</div>
-      <div class="ware-name serif">${pack.name}</div>
-      <button class="ware-buy" ${state.money < price ? "disabled" : ""}>Open</button>
-    `;
-    ware.querySelector(".ware-buy").onclick = (e) => { e.stopPropagation(); buyPack(i); };
-    ware.addEventListener("click", (e) => {
-      if (e.target.closest(".ware-buy")) return;
-      openShopDetail("pack", i);
-    });
-    wares.appendChild(ware);
+    el.className = "bcard is-pack" + (pack.rare ? " legendary" : "") + (state.money < price ? " poor" : "");
+    el.innerHTML = `
+      <span class="bprice">${price < pack.price ? `<s>$${pack.price}</s>` : ""}$${price}</span>
+      <div class="bcard-face"><div class="bcard-art">${AnteArt.icon(pack)}</div></div>
+      <div class="bcard-name">${pack.name}</div>
+      <button class="bbuy" ${state.money < price ? "disabled" : ""}>Open</button>`;
+    el.querySelector(".bbuy").onclick = (e) => { e.stopPropagation(); buyPack(i); };
+    el.addEventListener("click", (e) => { if (!e.target.closest(".bbuy")) openShopDetail("pack", i); });
+    packRow.appendChild(el);
   });
-  state.shopStock.forEach((item, i) => {
-    const ware = document.createElement("div");
-    ware.className = "ware" + (!item ? " sold" : "");
-    if (!item) {
-      ware.innerHTML = `<div class="ware-art"></div><div class="ware-plank"></div><div class="ware-sold">Sold</div>`;
-      wares.appendChild(ware);
-      return;
-    }
-    const discountedPrice = shopPriceFor(item);
-    const slotsFull = item.type === "charm"
-      ? state.charms.length >= state.charmSlots
-      : state.items.length >= getEffectiveItemSlots();
-    const disabled = state.money < discountedPrice || slotsFull;
-    ware.innerHTML = `
-      <div class="ware-art${item.type === "charm" ? " is-relic" : ""}">${AnteArt.icon(item)}</div>
-      <div class="ware-plank"></div>
-      <span class="ware-tag">${discountedPrice < item.price ? `<s>$${item.price}</s> ` : ""}$${discountedPrice}</span>
-      <div class="ware-kind">${item.type === "charm" ? "Artifact" : "Item"}</div>
-      <div class="ware-name serif">${item.name}</div>
-      <button class="ware-buy" ${disabled ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>
-    `;
-    ware.querySelector(".ware-buy").onclick = (e) => { e.stopPropagation(); buyItem(i); };
-    ware.addEventListener("click", (e) => {
-      if (e.target.closest(".ware-buy")) return;
-      openShopDetail("stock", i);
-    });
-    wares.appendChild(ware);
-  });
-  counter.appendChild(wares);
-  overlay.appendChild(counter);
-
-  const continueRow = document.createElement("div");
-  continueRow.className = "shop-continue-row";
-  const rerollBtn = document.createElement("button");
-  rerollBtn.className = "reroll-btn";
-  rerollBtn.disabled = state.money < state.rerollCost;
-  rerollBtn.innerHTML = `<span class="reroll-btn-icon">⟲</span> Reroll <span class="reroll-btn-cost">$${state.rerollCost}</span>`;
-  rerollBtn.onclick = rerollShop;
-  continueRow.appendChild(rerollBtn);
-  continueRow.appendChild(BigButton("Continue to Next Blind", leaveShop));
-  overlay.appendChild(continueRow);
+  packs.appendChild(packRow);
+  bottom.appendChild(packs);
+  shop.appendChild(bottom);
+  overlay.appendChild(shop);
 
   // ===== DETAIL POPUP: full name/description for whichever slot was tapped =====
   if (state.shopDetail) {
@@ -7135,7 +7535,7 @@ function ShopOverlay() {
             ? state.charms.length >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
       const isPack = kind === "pack";
-      const typeLabel = isVoucher ? "PERMANENT UPGRADE" : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
+      const typeLabel = isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
       const slotsFull = !isVoucher && !isPack && entry.type === "charm"
         ? state.charms.length >= state.charmSlots
         : (!isVoucher && !isPack && state.items.length >= getEffectiveItemSlots());
@@ -7145,12 +7545,13 @@ function ShopOverlay() {
       // card being re-serialized and re-parsed, which would silently strip any
       // JS-assigned onclick handler already attached to a live child element.
       card.innerHTML = `
-        <div class="detail-art">${AnteArt.icon(entry)}</div>
+        <div class="detail-art${isVoucher ? " is-voucher" : ""}">${AnteArt.icon(entry)}</div>
         <div class="shop-detail-type">${typeLabel}</div>
         <div class="shop-detail-name serif">${entry.name}</div>
         <div class="shop-detail-desc">${entry.desc}</div>
+        ${isVoucher ? voucherHint(entry) : ""}
         <div class="shop-detail-price">${!isVoucher && shopDiscount < 1 ? `<s>$${entry.price}</s> $${discountedPrice}` : `$${discountedPrice}`}</div>
-        <button class="shop-detail-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : disabled ? "Can't Afford" : "Buy"}</button>
+        <button class="shop-detail-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : disabled ? "Can't Afford" : isVoucher ? "Redeem" : isPack ? "Open" : "Buy"}</button>
       `;
       card.querySelector(".shop-detail-buy-btn").onclick = () => {
         if (isVoucher) buyVoucher(index); else if (isPack) { closeShopDetail(); buyPack(index); return; } else buyItem(index);
