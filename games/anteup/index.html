@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <script src="../pp-hub.js"></script>
+<script src="art.js"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Ante Up</title>
@@ -657,6 +658,207 @@ html, body {
   max-width: 200px; font-size: 13px; line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0,0,0,.8);
 }
+
+/* ============================== DRAWN ART ============================== */
+.aart { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* Sleeves: a drawn plastic sleeve laid over the card. */
+.card-sleeve { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.card-sleeve svg { width: 100%; height: 100%; display: block; }
+/* Stamps: a wax seal in the top-right corner. */
+.card-stamp { position: absolute; pointer-events: none; z-index: 5; transform: rotate(-12deg); filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.45)); }
+.card-stamp svg { width: 100%; height: 100%; display: block; }
+
+/* ============================== GEAR SHELF ============================== */
+.gear-shelf {
+  width: 100%; max-width: 640px; display: flex; justify-content: center;
+  margin: 12px 0 2px; flex-shrink: 0; position: relative; z-index: 2;
+}
+.shelf-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.shelf-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 9px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #C9A227;
+}
+.shelf-item .shelf-label { color: #9fc6a8; }
+.shelf-count { color: #9A917A; font-weight: 700; letter-spacing: .5px; }
+.shelf-vouchers {
+  margin-left: auto; font: inherit; font-size: 8.5px; letter-spacing: .6px; text-transform: uppercase;
+  color: #E9C568; background: #C9A22718; border: 1px solid #C9A22755; border-radius: 10px; padding: 1px 7px; cursor: pointer;
+}
+.shelf-row { position: relative; width: 100%; }
+.shelf-row::after {
+  /* the ledge the pieces stand on */
+  content: ""; position: absolute; left: -4px; right: -4px; bottom: 0; height: 5px; border-radius: 3px;
+  background: linear-gradient(180deg, #6a4c2e 0%, #3d2b1c 100%);
+  box-shadow: 0 3px 8px rgba(0,0,0,.45), inset 0 1px 0 #E9C56844;
+}
+.shelf-piece {
+  position: absolute; bottom: 4px; cursor: grab; touch-action: none; user-select: none;
+  transition: left .25s cubic-bezier(.22,1,.36,1), transform .15s ease, opacity .15s ease;
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,.5));
+}
+.shelf-piece:hover { transform: translateY(-3px); z-index: 50 !important; }
+.shelf-piece.lifted { opacity: .25; }
+.shelf-piece.overflow { filter: drop-shadow(0 0 4px #A23B3B) drop-shadow(0 3px 4px rgba(0,0,0,.5)); }
+.shelf-piece.firing { animation: shelfFire .6s ease-in-out 2; z-index: 60 !important; }
+@keyframes shelfFire {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.18); filter: drop-shadow(0 0 10px #E9C568); }
+}
+.shelf-ghost {
+  position: absolute; bottom: 4px; border-radius: 10px;
+  border: 1.5px dashed #ffffff1f; background: #00000018;
+}
+
+/* Dragging: the lifted piece follows the finger over glowing drop zones. */
+.gear-drag-layer { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+.gear-drag-ghost {
+  position: fixed; left: 0; top: 0; pointer-events: none;
+  filter: drop-shadow(0 10px 16px rgba(0,0,0,.6));
+}
+.gear-drop-zones {
+  position: fixed; left: 16px; right: 16px; top: 34vh; height: 24vh;
+  display: flex; gap: 12px; justify-content: center; animation: zonesIn .18s ease-out;
+}
+@keyframes zonesIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.gear-drop-zone {
+  flex: 1; max-width: 300px; border-radius: 18px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 2px dashed currentColor; background: color-mix(in srgb, currentColor 10%, #0a100ccc);
+  transition: transform .12s ease, background .12s ease, box-shadow .12s ease;
+}
+.zone-use { color: #7FD08A; }
+.zone-sell { color: #E9C568; }
+.gear-drop-zone.hot {
+  transform: scale(1.04); border-style: solid;
+  background: color-mix(in srgb, currentColor 26%, #0a100ccc);
+  box-shadow: 0 0 28px -4px currentColor;
+}
+.zone-label { font-size: 22px; font-weight: 600; }
+.zone-sub { font-size: 11px; color: #C9BFA4; }
+.shelf-insert-marker {
+  position: fixed; width: 3px; border-radius: 2px; display: none;
+  background: #E9C568; box-shadow: 0 0 10px #E9C568;
+}
+
+/* Detail popups show the drawing instead of an orb. */
+.detail-art { width: 84px; height: 84px; margin-bottom: 2px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+.detail-hint { font-size: 11px; color: #9A917A; line-height: 1.4; }
+.detail-hint b { color: #E9C568; }
+.voucher-line { display: flex; gap: 10px; align-items: center; text-align: left; width: 100%; }
+.voucher-line-art { width: 42px; height: 42px; flex-shrink: 0; }
+.voucher-line-name { font-size: 14px; color: #EAD9AE; }
+.voucher-line-desc { font-size: 11.5px; color: #C9BFA4; line-height: 1.35; }
+
+.charm-activation-orb { background: none !important; box-shadow: none; width: 72px; height: 72px; filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)); }
+
+/* ============================== SHOP: WOODEN CASE ============================== */
+.shop-overlay .gear-shelf { margin: 6px 0 4px; }
+.shop-case { overflow-y: auto; overscroll-behavior: contain; }
+.shop-vouchers { flex-shrink: 0; display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; margin-bottom: 4px; }
+.shop-voucher {
+  position: relative; flex: 0 0 auto; width: 92px; padding: 10px 6px 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font: inherit; color: #F3ECD9; background: #f3e6c71a; border: 1px solid #E9C56830; border-radius: 6px;
+  box-shadow: 0 6px 12px -4px #0008; transform: rotate(-1.5deg);
+}
+.shop-voucher:nth-child(even) { transform: rotate(1.5deg); }
+.shop-voucher.poor { opacity: .6; }
+.shop-voucher-pin {
+  position: absolute; top: -4px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff8f7f, #A23B3B); box-shadow: 0 1px 2px #000a;
+}
+.shop-voucher-art { width: 54px; height: 54px; }
+.shop-voucher-name { font-size: 10px; font-weight: 700; text-align: center; line-height: 1.2; }
+.shop-wares { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 8px; padding-bottom: 6px; }
+.ware {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  cursor: pointer; padding-top: 4px;
+}
+.ware-art { width: 66px; height: 66px; position: relative; z-index: 1; filter: drop-shadow(0 6px 6px rgba(0,0,0,.55)); transition: transform .15s ease; }
+.ware:hover .ware-art { transform: translateY(-3px); }
+.ware-plank {
+  width: 100%; height: 8px; margin-top: -6px; border-radius: 3px;
+  background: linear-gradient(180deg, #7a5836 0%, #4a3320 100%);
+  box-shadow: 0 4px 8px rgba(0,0,0,.45), inset 0 1px 0 #E9C56855;
+}
+.ware-tag {
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 12px; color: #2a1d12;
+  background: #EAD9AE; padding: 1px 8px 1px 12px; border-radius: 2px 4px 4px 2px; position: relative;
+  clip-path: polygon(7px 0, 100% 0, 100% 100%, 7px 100%, 0 50%); box-shadow: 0 2px 4px #0006; margin-top: 4px;
+}
+.ware-tag s { opacity: .55; font-weight: 500; }
+.ware-kind { font-size: 8px; letter-spacing: 1.2px; text-transform: uppercase; color: #9A917A; font-weight: 800; margin-top: 2px; }
+.ware-name { font-size: 12px; text-align: center; line-height: 1.15; color: #F3ECD9; min-height: 2.3em; }
+.ware-buy {
+  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 10px; letter-spacing: .6px; text-transform: uppercase;
+  border: none; border-radius: 12px; padding: 5px 14px; cursor: pointer; color: #16230E;
+  background: linear-gradient(180deg, #DFC066 0%, #C9A227 100%); box-shadow: 0 3px 10px -3px #C9A22788;
+}
+.ware-buy:disabled { background: #2E24186e; color: #6E6350; box-shadow: none; cursor: not-allowed; }
+.ware.sold { cursor: default; }
+.ware.sold .ware-art { border: 1.5px dashed #ffffff18; border-radius: 12px; width: 56px; height: 56px; margin: 5px; filter: none; }
+/* ============================== LANDSCAPE ============================== */
+body.landscape #app { padding: 10px 16px 10px; align-items: stretch; }
+body.landscape .header {
+  width: 44%; max-width: none; margin: 0; align-items: center; flex-wrap: nowrap; gap: 14px;
+}
+body.landscape .header .score-line { font-size: 26px; }
+body.landscape .stats-row { gap: 12px; }
+body.landscape .stat-value { font-size: 17px; }
+body.landscape #app > .gear-shelf {
+  position: absolute; top: 8px; right: 64px; width: auto; max-width: none; margin: 0; justify-content: flex-end;
+}
+body.landscape .preview-bar { min-height: 40px; margin: 6px 0 0; justify-content: center; }
+body.landscape .bottom-bar {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: end;
+  padding: 0 14px max(8px, env(safe-area-inset-bottom));
+}
+body.landscape .bottom-bar .hand-fan { grid-column: 2; grid-row: 1; }
+body.landscape .bottom-bar .actions-row {
+  grid-column: 3; grid-row: 1; justify-self: start; align-self: center;
+  flex-direction: column; align-items: stretch; gap: 10px; margin: 0;
+}
+body.landscape .bottom-bar .sub-controls-row {
+  grid-column: 1; grid-row: 1; justify-self: end; align-self: center;
+  flex-direction: column; align-items: center; gap: 10px; margin: 0;
+}
+body.landscape .score-popup { top: 46%; }
+body.landscape .gear-drop-zones { top: 28vh; height: 34vh; }
+
+body.landscape .shop-overlay {
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto minmax(0, 1fr) auto;
+  column-gap: 16px; padding: 10px 16px max(8px, env(safe-area-inset-bottom));
+  align-items: stretch;
+}
+body.landscape .shop-header-row { grid-column: 1; grid-row: 1; max-width: none; padding-right: 0; }
+body.landscape .shop-overlay .gear-shelf { grid-column: 2; grid-row: 1; margin: 0 56px 0 0; width: auto; max-width: none; }
+body.landscape .shop-case {
+  grid-column: 1 / -1; grid-row: 2; max-width: none; margin-top: 8px;
+  display: grid; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); column-gap: 14px;
+}
+body.landscape .shop-case.has-vouchers { grid-template-columns: 118px 1fr; }
+body.landscape .shop-case .voucher-label { grid-column: 1; grid-row: 1; }
+body.landscape .shop-case .shop-vouchers {
+  grid-column: 1; grid-row: 2; flex-direction: column; align-items: center; overflow-x: hidden; overflow-y: auto; min-height: 0;
+}
+body.landscape .shop-case.has-vouchers .wares-label { grid-column: 2; grid-row: 1; }
+body.landscape .shop-case.has-vouchers .shop-wares { grid-column: 2; }
+body.landscape .shop-case .shop-wares {
+  grid-row: 2; overflow-y: auto; min-height: 0; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); padding-top: 4px;
+}
+body.landscape .shop-case { overflow: hidden; min-height: 0; height: auto; align-self: stretch; }
+body.landscape .shop-header-row, body.landscape .shop-overlay .gear-shelf { align-self: center; }
+body.landscape .ware-art { width: 56px; height: 56px; }
+body.landscape .ware-kind { display: none; }
+body.landscape .ware-name { min-height: 0; font-size: 11.5px; }
+body.landscape .shop-continue-row { grid-column: 1 / -1; grid-row: 3; margin-top: 8px; }
+
+.ware-sold {
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+  color: #A23B3B; border: 2px solid #A23B3B; border-radius: 4px; padding: 0 6px; transform: rotate(-8deg); margin-top: 8px; opacity: .8;
+}
 </style>
 </head>
 <body>
@@ -786,15 +988,16 @@ function attachCardDrag(el, cardId) {
     }
     if (dragging) {
       el.style.transform = `${el.dataset.finalTransform} translate(${dx}px, ${dy}px) scale(1.08)`;
-      updateDragHover(el, e.clientX);
+      if (state.sortMode === "manual") updateDragHover(el, e.clientX);
     }
   });
 
   const endDrag = (e) => {
     if (pointerId !== e.pointerId) return;
     if (dragging) {
-      const targetIndex = computeDropIndex(el, e.clientX);
-      moveCardToPosition(cardId, targetIndex);
+      // Only Move mode reorders the hand; under Rank or Suit the card just
+      // settles back into its sorted spot and the sort stays as chosen.
+      if (state.sortMode === "manual") moveCardToPosition(cardId, computeDropIndex(el, e.clientX));
       el.classList.remove("card-dragging");
       render();
     }
@@ -880,7 +1083,7 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
   el.style.height = px(87) + "px";
   el.style.borderRadius = px(7) + "px";
   el.style.border = `${Math.max(1, px(1.5))}px solid ${selected ? "#C9A227" : "#00000022"}`;
-  const sleeveGlow = sleeveGlowShadow(card.sleeve, px);
+  const sleeveGlow = "";
   
   el.style.boxShadow = (scoring
     ? `0 0 0 ${px(2)}px #C9A22799, 0 ${px(6)}px ${px(16)}px -4px #C9A22788, 0 ${px(3)}px ${px(7)}px rgba(0,0,0,.35)`
@@ -994,17 +1197,22 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
     el.appendChild(star);
   }
 
-  if (card.stamp && STAMP_COLORS[card.stamp]) {
+  // Sleeves are drawn as a tinted plastic sleeve over the whole card, and
+  // stamps as a wax seal pressed into the top-right corner (art.js).
+  if (card.sleeve && window.AnteArt) {
+    const sleeveEl = document.createElement("div");
+    sleeveEl.className = "card-sleeve";
+    sleeveEl.innerHTML = AnteArt.sleeve(card.sleeve);
+    el.appendChild(sleeveEl);
+  }
+  if (card.stamp && STAMP_COLORS[card.stamp] && window.AnteArt) {
     const badge = document.createElement("div");
-    badge.style.position = "absolute";
-    badge.style.top = px(4) + "px";
-    badge.style.right = px(4) + "px";
-    badge.style.width = px(9) + "px";
-    badge.style.height = px(9) + "px";
-    badge.style.borderRadius = "50%";
-    badge.style.background = STAMP_COLORS[card.stamp];
-    badge.style.boxShadow = `0 0 ${px(4)}px ${px(1)}px ${STAMP_COLORS[card.stamp]}99, 0 1px 2px rgba(0,0,0,.4)`;
-    badge.style.border = "1px solid rgba(0,0,0,.25)";
+    badge.className = "card-stamp";
+    badge.style.top = px(9) + "px";
+    badge.style.right = px(2) + "px";
+    badge.style.width = px(17) + "px";
+    badge.style.height = px(17) + "px";
+    badge.innerHTML = AnteArt.stamp(card.stamp);
     badge.title = STAMP_LABELS[card.stamp] + " Stamp";
     el.appendChild(badge);
   }
@@ -1109,13 +1317,18 @@ function evaluateSelection(cards) {
     scoringCards = groups[0];
   } else {
     name = "High Card";
-    const best = [...cards].sort((a, b) => rankChipValue(b.rank) - rankChipValue(a.rank))[0];
-    scoringCards = [best];
+    // A Tithe card can't score, so the high card is the best card without one.
+    const canScore = cards.filter((c) => c.sleeve !== "tithe");
+    const best = [...canScore].sort((a, b) => rankChipValue(b.rank) - rankChipValue(a.rank))[0];
+    scoringCards = best ? [best] : [];
   }
 
+  // Tithe-sleeved cards never score. They are dropped from scoringCards itself
+  // (not just from this chip sum) so the per-card pings, retriggers and charm
+  // effects that all read scoringCards skip them too.
+  scoringCards = scoringCards.filter((c) => c.sleeve !== "tithe");
   const base = HAND_TABLE[name];
-  // Filter out Tithe sleeved cards from scoring
-  const scoreableCards = scoringCards.filter(c => c.sleeve !== "tithe");
+  const scoreableCards = scoringCards;
   const chipSum = scoreableCards.reduce((s, c) => {
     if (isCardDebuffed(c)) return s; // Boss Blind debuff: card scores 0 chips
     const perPing = rankChipValue(c.rank) + (c.sleeve === "sparkler" ? 20 : 0);
@@ -3133,7 +3346,8 @@ function getHandSize() {
 
 function computeFanLayout() {
   const viewportW = window.innerWidth;
-  const sidePadding = 16;
+  // In landscape the deck/sort column and the button column flank the hand.
+  const sidePadding = isLandscape() ? 16 + 2 * 170 : 16;
   const available = viewportW - sidePadding;
   const handSize = getHandSize();
   const target = Math.min(available, MAX_FAN_WIDTH);
@@ -3145,7 +3359,8 @@ function computeFanLayout() {
 }
 
 function dealInitialHand(freshDeckArg) {
-  const d = [...freshDeckArg];
+  // Anchor sleeve: anchored cards are always drawn first each round.
+  const d = [...freshDeckArg.filter((c) => c.sleeve === "anchor"), ...freshDeckArg.filter((c) => c.sleeve !== "anchor")];
   const h = d.splice(0, getHandSize());
   tagBossDebuffedCards(h);
   state.deck = d;
@@ -3241,53 +3456,46 @@ function shuffleArray(arr) {
 }
 
 function startNextBlind(nextAnte, nextBlindIdx) {
-  // ===== LARVA SLEEVE: Check if any held Larva cards duplicate =====
-  Object.keys(state.larvaTracking).forEach(cardId => {
-    const foundInHand = state.hand.some(c => c.id === cardId);
-    if (foundInHand) {
-      // Card was held, so duplicate it into the deck
-      const card = state.hand.find(c => c.id === cardId);
-      if (card) {
-        const clone = { ...card, id: card.id + "_larva_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined };
-        state.deck.push(clone);
-      }
-    }
+  // The round that just ended: state.hand is what was held at the end of it.
+  // (Larva/Azure used to rely on a list taken at round start, before the new
+  // hand was dealt, so a card sleeved or stamped mid-round never copied.)
+
+  // ===== LARVA SLEEVE: every Larva card still held copies itself into the deck =====
+  state.hand.filter((c) => c.sleeve === "larva").forEach((card) => {
+    const clone = { ...card, id: card.id + "_larva_" + Date.now() + "_" + Math.random().toString(36).slice(2), sleeve: undefined };
+    state.deck.push(clone);
   });
   state.larvaTracking = {};
 
-  // ===== AZURE STAMP: Check if any held Azure-stamped cards duplicate =====
-  Object.keys(state.azureTracking).forEach(cardId => {
-    const foundInHand = state.hand.some(c => c.id === cardId);
-    if (foundInHand) {
-      // Card was held, so duplicate it into the deck. Only the stamp is
-      // stripped from the clone; any sleeve on the card carries over.
-      const card = state.hand.find(c => c.id === cardId);
-      if (card) {
-        const clone = { ...card, id: card.id + "_azure_" + Date.now() + "_" + Math.random().toString(36).slice(2), stamp: undefined };
-        state.deck.push(clone);
-      }
-    }
+  // ===== AZURE STAMP: every Azure-stamped card still held copies itself into the deck =====
+  // Only the stamp is stripped from the clone; any sleeve on the card carries over.
+  state.hand.filter((c) => c.stamp === "azure").forEach((card) => {
+    const clone = { ...card, id: card.id + "_azure_" + Date.now() + "_" + Math.random().toString(36).slice(2), stamp: undefined };
+    state.deck.push(clone);
   });
   state.azureTracking = {};
-  
-  // ===== MOLT SLEEVE: Jump to random card and leave +1 mult mark =====
-  Object.keys(state.moltTargets).forEach(moltCardId => {
-    const allCards = [...state.hand, ...state.deck];
-    const moltCard = allCards.find(c => c.id === moltCardId);
-    if (moltCard) {
-      // Molt card jumps off - mark it with +1 mult buff permanently
+
+  // ===== MOLT SLEEVE: hop to another card and leave a +1 Mult mark behind =====
+  // Looks in hand, deck AND the cards played/discarded this round (a played
+  // Molt card sits in usedCards, which is why it used to vanish), and finds
+  // Molt cards by their sleeve, so copies made by The Death etc. hop too.
+  {
+    const allCards = [...state.hand, ...state.deck, ...state.usedCards];
+    const moltCards = allCards.filter((c) => c.sleeve === "molt");
+    const nextTargets = {};
+    moltCards.forEach((moltCard) => {
       moltCard.moltBuff = (moltCard.moltBuff || 0) + 1;
-      moltCard.sleeve = undefined; // Remove Molt from current card
-      
-      // Pick a random card to receive Molt
-      if (allCards.length > 0) {
-        const randomTarget = allCards[Math.floor(Math.random() * allCards.length)];
-        randomTarget.sleeve = "molt";
-        state.moltTargets[randomTarget.id] = true;
-        delete state.moltTargets[moltCardId];
-      }
-    }
-  });
+      moltCard.sleeve = undefined;
+      // Prefer a card with no sleeve so Molt doesn't overwrite another sleeve.
+      const others = allCards.filter((c) => !moltCards.includes(c) && c.sleeve !== "molt");
+      const bare = others.filter((c) => !c.sleeve);
+      const candidates = bare.length ? bare : others;
+      const target = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : moltCard;
+      target.sleeve = "molt";
+      nextTargets[target.id] = true;
+    });
+    state.moltTargets = nextTargets;
+  }
   
   state.ante = nextAnte;
   state.blindIdx = nextBlindIdx;
@@ -3312,22 +3520,6 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.charms.forEach((charm) => {
     if (charm.effect.type === "specterDuplicate") {
       charm.effect.blindCounter = (charm.effect.blindCounter || 0) + 1;
-    }
-  });
-  
-  // Track Larva sleeved cards at the start of this round
-  state.larvaTracking = {};
-  state.hand.forEach(card => {
-    if (card.sleeve === "larva") {
-      state.larvaTracking[card.id] = true;
-    }
-  });
-
-  // Track Azure stamped cards at the start of this round
-  state.azureTracking = {};
-  state.hand.forEach(card => {
-    if (card.stamp === "azure") {
-      state.azureTracking[card.id] = true;
     }
   });
   
@@ -3372,19 +3564,11 @@ function refillHand(currentDeck, currentHand, removeIds) {
     state.usedCards = state.usedCards.filter((c) => !playedOrDiscarded.some((p) => p.id === c.id));
   }
   
-  // Anchor sleeve logic: pull Anchor sleeved cards to the front of drawn cards
-  const anchorCards = [];
-  const otherCards = [];
-  for (let i = 0; i < d.length && anchorCards.length + otherCards.length < need; i++) {
-    if (d[i].sleeve === "anchor") {
-      anchorCards.push(d[i]);
-    } else {
-      otherCards.push(d[i]);
-    }
-  }
-  // Remove drawn cards from deck
-  d = d.filter(card => ![...anchorCards, ...otherCards].includes(card));
-  const drawn = [...anchorCards, ...otherCards].slice(0, need);
+  // Anchor sleeve logic: Anchor-sleeved cards anywhere in the deck are drawn
+  // before any other card, then the rest of the draw comes off the top.
+  d = [...d.filter((c) => c.sleeve === "anchor"), ...d.filter((c) => c.sleeve !== "anchor")];
+  const drawn = d.slice(0, Math.max(0, need));
+  d = d.slice(drawn.length);
   tagBossDebuffedCards(drawn);
 
   return { newDeck: d, newHand: [...remaining, ...drawn] };
@@ -4512,7 +4696,6 @@ function moveCardToPosition(cardId, targetIndex) {
   const clampedIndex = Math.max(0, Math.min(targetIndex, currentVisual.length));
   currentVisual.splice(clampedIndex, 0, cardId);
   state.handOrder = currentVisual;
-  state.sortMode = "manual";
 }
 
 /* ============================== SMALL UI HELPERS ============================== */
@@ -4841,7 +5024,15 @@ function applyCardFlip(oldRects, isFullDeal) {
 }
 
 /* ============================== MAIN RENDER ============================== */
+// Phones held sideways: a short, wide screen gets its own layout (see the
+// "LANDSCAPE" CSS block): score and shelf share the top band, and the deck,
+// hand and buttons share the bottom one.
+function isLandscape() {
+  return window.innerWidth > window.innerHeight && window.innerHeight < 600;
+}
+
 function render() {
+  document.body.classList.toggle("landscape", isLandscape());
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
   const app = document.getElementById("app");
@@ -4936,6 +5127,9 @@ function render() {
   header.appendChild(statsRow);
 
   app.appendChild(header);
+
+  // ===== GEAR SHELF: artifacts (charms) then items, drawn, across the top =====
+  app.appendChild(GearShelf());
 
   // ===== PREVIEW BAR =====
   const previewBar = document.createElement("div");
@@ -5170,8 +5364,7 @@ function render() {
     
     const orb = document.createElement("div");
     orb.className = "charm-activation-orb";
-    orb.style.background = state.activeCharm.color;
-    orb.innerHTML = activationIcon(state.activeCharm.name);
+    orb.innerHTML = window.AnteArt ? AnteArt.icon(state.activeCharm) : activationIcon(state.activeCharm.name);
     activation.appendChild(orb);
     
     const text = document.createElement("div");
@@ -5183,9 +5376,10 @@ function render() {
     app.appendChild(activation);
   }
 
-  // ===== ITEM SIDEBAR (available while playing or shopping) =====
-  if (state.overlay === "playing" || state.overlay === "shop") {
-    app.appendChild(ItemSidebar());
+  // ===== GEAR DETAIL (tap an artifact/item on the shelf) =====
+  if (state.gearDetail) {
+    const detail = GearDetail();
+    if (detail) app.appendChild(detail);
   }
 
   // ===== DECK PEEK MODAL =====
@@ -5342,6 +5536,258 @@ function ItemSidebar() {
   return wrap;
 }
 
+/* ============================== GEAR SHELF ==============================
+   Artifacts (charms) and items sit on a shelf across the top of the table,
+   drawn as what they are. Tap one to read it. Drag one and drop zones light
+   up: Sell (and Use, for items); dropping it back on its own shelf moves it
+   to that spot. When a shelf holds more than fits, the pieces overlap. */
+const SHELF_PIECE = 46;
+
+function sellValue(def) {
+  return Math.max(1, Math.floor(def.price / 2));
+}
+
+function sellItem(uid) {
+  const item = state.items.find((i) => i.uid === uid);
+  if (!item) return;
+  state.money += sellValue(item);
+  state.items = state.items.filter((i) => i.uid !== uid);
+  saveGame();
+  render();
+}
+
+function shelfWidths() {
+  const total = isLandscape()
+    ? Math.min(Math.round(window.innerWidth * 0.52) - 76, 640)
+    : Math.min(window.innerWidth - 32, 640);
+  const gap = 12;
+  const charmsW = Math.round((total - gap) * 0.6);
+  return { total, gap, charmsW, itemsW: total - gap - charmsW };
+}
+
+// Horizontal step between pieces: their natural spacing, shrinking (so the
+// pieces overlap) once the row would otherwise overflow its width.
+function shelfStep(count, width) {
+  if (count <= 1) return SHELF_PIECE + 6;
+  return Math.max(6, Math.min(SHELF_PIECE + 6, (width - SHELF_PIECE) / (count - 1)));
+}
+
+function GearShelf() {
+  const { gap, charmsW, itemsW } = shelfWidths();
+  const shelf = document.createElement("div");
+  shelf.className = "gear-shelf";
+  shelf.style.gap = gap + "px";
+  shelf.appendChild(ShelfGroup("charm", state.charms, state.charmSlots, charmsW, "Artifacts"));
+  shelf.appendChild(ShelfGroup("item", state.items, getEffectiveItemSlots(), itemsW, "Items"));
+  return shelf;
+}
+
+function ShelfGroup(kind, list, slots, width, title) {
+  const group = document.createElement("div");
+  group.className = "shelf-group shelf-" + kind;
+  group.style.width = width + "px";
+
+  const label = document.createElement("div");
+  label.className = "shelf-label";
+  label.innerHTML = `<span>${title}</span><span class="shelf-count">${list.length}/${slots}</span>`;
+  if (kind === "item" && state.vouchers.length > 0) {
+    const v = document.createElement("button");
+    v.className = "shelf-vouchers";
+    v.textContent = `${state.vouchers.length} upgrade${state.vouchers.length > 1 ? "s" : ""}`;
+    v.onclick = () => { state.gearDetail = { kind: "vouchers" }; render(); };
+    label.appendChild(v);
+  }
+  group.appendChild(label);
+
+  const row = document.createElement("div");
+  row.className = "shelf-row";
+  row.dataset.kind = kind;
+  row.style.height = SHELF_PIECE + 6 + "px";
+  const total = Math.max(slots, list.length);
+  const step = shelfStep(total, width);
+  for (let i = list.length; i < slots; i++) {
+    const ghost = document.createElement("div");
+    ghost.className = "shelf-ghost";
+    ghost.style.left = i * step + "px";
+    ghost.style.width = ghost.style.height = SHELF_PIECE + "px";
+    row.appendChild(ghost);
+  }
+  list.forEach((def, i) => {
+    const piece = document.createElement("div");
+    const firing = state.activeCharm && state.activeCharm.uid === def.uid;
+    const overflow = kind === "item" && i >= slots;
+    piece.className = "shelf-piece" + (firing ? " firing" : "") + (overflow ? " overflow" : "");
+    piece.dataset.uid = def.uid;
+    piece.style.left = i * step + "px";
+    piece.style.width = piece.style.height = SHELF_PIECE + "px";
+    piece.style.zIndex = i + 1;
+    piece.innerHTML = AnteArt.icon(def);
+    attachShelfDrag(piece, kind, def);
+    row.appendChild(piece);
+  });
+  group.appendChild(row);
+  return group;
+}
+
+// Tap = details. Drag = lift the piece; Sell/Use zones appear, and its own
+// shelf accepts it at a new position. Listeners live on window and the drag
+// layer on <body>, so a render() mid-drag (timers, activations) can't break it.
+function attachShelfDrag(piece, kind, def) {
+  piece.addEventListener("pointerdown", (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const rect = piece.getBoundingClientRect();
+    let drag = null;
+
+    const zonesFor = () => {
+      const zones = [];
+      if (kind === "item") zones.push({ action: "use", label: "Use", sub: def.name });
+      zones.push({ action: "sell", label: `Sell $${sellValue(def)}`, sub: def.name });
+      return zones;
+    };
+
+    const begin = () => {
+      const layer = document.createElement("div");
+      layer.className = "gear-drag-layer";
+      const zoneWrap = document.createElement("div");
+      zoneWrap.className = "gear-drop-zones";
+      const zones = zonesFor().map((z) => {
+        const el = document.createElement("div");
+        el.className = "gear-drop-zone zone-" + z.action;
+        el.innerHTML = `<div class="zone-label serif">${z.label}</div><div class="zone-sub">${z.sub}</div>`;
+        zoneWrap.appendChild(el);
+        return { ...z, el };
+      });
+      layer.appendChild(zoneWrap);
+      const ghost = document.createElement("div");
+      ghost.className = "gear-drag-ghost";
+      ghost.style.width = ghost.style.height = rect.width + "px";
+      ghost.innerHTML = AnteArt.icon(def);
+      layer.appendChild(ghost);
+      const marker = document.createElement("div");
+      marker.className = "shelf-insert-marker";
+      layer.appendChild(marker);
+      document.body.appendChild(layer);
+      piece.classList.add("lifted");
+      drag = { layer, ghost, zones, marker, target: null };
+    };
+
+    const findRow = () => document.querySelector(`.shelf-row[data-kind="${kind}"]`);
+
+    const insertIndex = (row, x) => {
+      const pieces = Array.from(row.querySelectorAll(".shelf-piece")).filter((p) => p.dataset.uid !== def.uid);
+      let idx = pieces.length;
+      for (let i = 0; i < pieces.length; i++) {
+        const r = pieces[i].getBoundingClientRect();
+        if (x < r.left + r.width / 2) { idx = i; break; }
+      }
+      return { idx, pieces };
+    };
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!drag) {
+        if (Math.hypot(dx, dy) < 6) return;
+        begin();
+      }
+      ev.preventDefault();
+      drag.ghost.style.transform = `translate(${ev.clientX - rect.width / 2}px, ${ev.clientY - rect.height / 2}px) scale(1.15)`;
+      drag.target = null;
+      drag.zones.forEach((z) => {
+        const r = z.el.getBoundingClientRect();
+        const hot = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        z.el.classList.toggle("hot", hot);
+        if (hot) drag.target = { type: "zone", action: z.action };
+      });
+      const row = findRow();
+      drag.marker.style.display = "none";
+      if (!drag.target && row) {
+        const r = row.getBoundingClientRect();
+        if (ev.clientX >= r.left - 12 && ev.clientX <= r.right + 12 && ev.clientY >= r.top - 18 && ev.clientY <= r.bottom + 18) {
+          const { idx, pieces } = insertIndex(row, ev.clientX);
+          const ref = pieces[idx] ? pieces[idx].getBoundingClientRect() : null;
+          const last = pieces[pieces.length - 1] ? pieces[pieces.length - 1].getBoundingClientRect() : null;
+          const x = ref ? ref.left - 3 : last ? last.right + 3 : r.left;
+          drag.marker.style.display = "block";
+          drag.marker.style.left = x + "px";
+          drag.marker.style.top = r.top + "px";
+          drag.marker.style.height = r.height + "px";
+          drag.target = { type: "reorder", idx };
+        }
+      }
+    };
+
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (!drag) {
+        state.gearDetail = { kind, uid: def.uid };
+        render();
+        return;
+      }
+      drag.layer.remove();
+      const t = drag.target;
+      if (t && t.type === "zone" && t.action === "sell") {
+        if (kind === "charm") sellCharm(def.uid); else sellItem(def.uid);
+      } else if (t && t.type === "zone" && t.action === "use") {
+        render();
+        useItem(def.uid);
+      } else if (t && t.type === "reorder") {
+        const key = kind === "charm" ? "charms" : "items";
+        const rest = state[key].filter((d) => d.uid !== def.uid);
+        rest.splice(Math.min(t.idx, rest.length), 0, state[key].find((d) => d.uid === def.uid));
+        state[key] = rest;
+        saveGame();
+        render();
+      } else {
+        render();
+      }
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  });
+}
+
+function GearDetail() {
+  const d = state.gearDetail;
+  const close = () => { state.gearDetail = null; render(); };
+  const backdrop = document.createElement("div");
+  backdrop.className = "shop-detail-backdrop";
+  backdrop.onclick = (e) => { if (e.target === backdrop) close(); };
+  const card = document.createElement("div");
+  card.className = "shop-detail-card";
+
+  if (d.kind === "vouchers") {
+    card.innerHTML = `<div class="shop-detail-type">PERMANENT UPGRADES</div>` +
+      state.vouchers.map((v) => `<div class="voucher-line"><div class="voucher-line-art">${AnteArt.icon(v)}</div><div><div class="voucher-line-name serif">${v.name}</div><div class="voucher-line-desc">${v.desc}</div></div></div>`).join("");
+  } else {
+    const list = d.kind === "charm" ? state.charms : state.items;
+    const def = list.find((x) => x.uid === d.uid);
+    if (!def) { state.gearDetail = null; return null; }
+    card.style.setProperty("--glow", def.color);
+    let extra = "";
+    if (def.effect.type === "ratchetBossMult") extra = ` (currently +${def.ratchetBonus || 0})`;
+    if (def.effect.type === "oracleCompoundMult") extra = ` (currently X${(def.oracleMultBonus || 1).toFixed(2)})`;
+    card.innerHTML = `
+      <div class="detail-art">${AnteArt.icon(def)}</div>
+      <div class="shop-detail-type">${d.kind === "charm" ? "ARTIFACT" : "ITEM"}</div>
+      <div class="shop-detail-name serif">${def.name}</div>
+      <div class="shop-detail-desc">${def.desc}${extra}</div>
+      <div class="detail-hint">Drag it ${d.kind === "item" ? "to <b>Use</b> or <b>Sell</b>" : "to <b>Sell</b>"}, or along the shelf to move it.</div>
+    `;
+  }
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "shop-detail-close";
+  closeBtn.textContent = "✕";
+  closeBtn.onclick = close;
+  card.appendChild(closeBtn);
+  backdrop.appendChild(card);
+  return backdrop;
+}
+
 /* ============================== SHOP UI ============================== */
 function ShopOverlay() {
   const overlay = document.createElement("div");
@@ -5363,7 +5809,7 @@ function ShopOverlay() {
   const sub = document.createElement("div");
   sub.className = "shop-sub";
   sub.textContent = hasStock
-    ? `${state.charmSlots} charm slots · ${getEffectiveItemSlots()} consumable slots`
+    ? "Tap anything for details · drag yours to sell"
     : "No items in stock";
   headerLeft.appendChild(sub);
   header.appendChild(headerLeft);
@@ -5400,81 +5846,66 @@ function ShopOverlay() {
     return overlay;
   }
 
-  // ===== THE COUNTER: vouchers laid on top, charms/items in recessed openings =====
-  const counter = document.createElement("div");
-  counter.className = "shop-counter";
+  // ===== YOUR SHELF: what you own, drag to sell/rearrange right here =====
+  overlay.appendChild(GearShelf());
 
-  if (state.voucherStock.length > 0) {
+  // ===== THE SHOP: a wooden case — upgrade tickets pinned up top, wares on shelves =====
+  const counter = document.createElement("div");
+  counter.className = "shop-counter shop-case" + (state.voucherStock.some((v) => v) ? " has-vouchers" : "");
+
+  const liveVouchers = state.voucherStock.map((v, i) => [v, i]).filter(([v]) => v);
+  if (liveVouchers.length > 0) {
     const voucherLabel = document.createElement("div");
-    voucherLabel.className = "counter-section-label";
+    voucherLabel.className = "counter-section-label voucher-label";
     voucherLabel.textContent = "Permanent Upgrades";
     counter.appendChild(voucherLabel);
-
     const voucherRow = document.createElement("div");
-    voucherRow.className = "counter-vouchers";
-    state.voucherStock.forEach((voucher, i) => {
-      if (!voucher) return;
-      const chit = document.createElement("div");
-      chit.className = "voucher-chit";
-      chit.style.setProperty("--glow", voucher.color);
-      const disabled = state.money < voucher.price;
-      chit.innerHTML = `
-        <div class="voucher-chit-orb"></div>
-        <div class="voucher-chit-name">${voucher.name}</div>
-        <div class="voucher-chit-price">$${voucher.price}</div>
-        <button class="voucher-chit-btn" ${disabled ? "disabled" : ""}>${disabled ? "Can't Afford" : "Buy"}</button>
-      `;
-      chit.querySelector(".voucher-chit-btn").onclick = (e) => { e.stopPropagation(); buyVoucher(i); };
-      chit.addEventListener("click", (e) => {
-        if (e.target.closest(".voucher-chit-btn")) return;
-        openShopDetail("voucher", i);
-      });
-      voucherRow.appendChild(chit);
+    voucherRow.className = "shop-vouchers";
+    liveVouchers.forEach(([voucher, i]) => {
+      const t = document.createElement("button");
+      t.className = "shop-voucher" + (state.money < voucher.price ? " poor" : "");
+      t.innerHTML = `<span class="shop-voucher-pin"></span><span class="shop-voucher-art">${AnteArt.icon(voucher)}</span><span class="shop-voucher-name">${voucher.name}</span><span class="ware-tag">$${voucher.price}</span>`;
+      t.onclick = () => openShopDetail("voucher", i);
+      voucherRow.appendChild(t);
     });
     counter.appendChild(voucherRow);
   }
 
-  const openingsLabel = document.createElement("div");
-  openingsLabel.className = "counter-section-label";
-  openingsLabel.textContent = "Charms & Consumables";
-  counter.appendChild(openingsLabel);
-
-  const openings = document.createElement("div");
-  openings.className = "counter-openings";
+  const waresLabel = document.createElement("div");
+  waresLabel.className = "counter-section-label wares-label";
+  waresLabel.textContent = "Artifacts & Items";
+  counter.appendChild(waresLabel);
+  const wares = document.createElement("div");
+  wares.className = "shop-wares";
   state.shopStock.forEach((item, i) => {
-    const slot = document.createElement("div");
-    slot.className = "opening-slot" + (!item ? " sold" : "");
+    const ware = document.createElement("div");
+    ware.className = "ware" + (!item ? " sold" : "");
     if (!item) {
-      slot.innerHTML = `<div class="shop-item-orb"></div><div class="opening-name" style="color:#6E6350">Sold</div>`;
-      openings.appendChild(slot);
+      ware.innerHTML = `<div class="ware-art"></div><div class="ware-plank"></div><div class="ware-sold">Sold</div>`;
+      wares.appendChild(ware);
       return;
     }
-    slot.style.setProperty("--glow", item.color);
     const discountedPrice = Math.ceil(item.price * shopDiscount);
-    const canAfford = state.money >= discountedPrice;
     const slotsFull = item.type === "charm"
       ? state.charms.length >= state.charmSlots
       : state.items.length >= getEffectiveItemSlots();
-    const disabled = !canAfford || slotsFull;
-    const typeLabel = item.type === "charm" ? "CHARM" : "CONSUMABLE";
-    slot.innerHTML = `
-      <div class="shop-item-orb"></div>
-      <div class="opening-type-label">${typeLabel}</div>
-      <div class="opening-name serif">${item.name}</div>
-      <div class="opening-footer">
-        <span class="opening-price">${shopDiscount < 1 ? `<s>$${item.price}</s> $${discountedPrice}` : `$${discountedPrice}`}</span>
-        <button class="opening-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : "Buy"}</button>
-      </div>
+    const disabled = state.money < discountedPrice || slotsFull;
+    ware.innerHTML = `
+      <div class="ware-art${item.type === "charm" ? " is-relic" : ""}">${AnteArt.icon(item)}</div>
+      <div class="ware-plank"></div>
+      <span class="ware-tag">${shopDiscount < 1 ? `<s>$${item.price}</s> ` : ""}$${discountedPrice}</span>
+      <div class="ware-kind">${item.type === "charm" ? "Artifact" : "Item"}</div>
+      <div class="ware-name serif">${item.name}</div>
+      <button class="ware-buy" ${disabled ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>
     `;
-    slot.querySelector(".opening-buy-btn").onclick = (e) => { e.stopPropagation(); buyItem(i); };
-    slot.addEventListener("click", (e) => {
-      if (e.target.closest(".opening-buy-btn")) return;
+    ware.querySelector(".ware-buy").onclick = (e) => { e.stopPropagation(); buyItem(i); };
+    ware.addEventListener("click", (e) => {
+      if (e.target.closest(".ware-buy")) return;
       openShopDetail("stock", i);
     });
-    openings.appendChild(slot);
+    wares.appendChild(ware);
   });
-  counter.appendChild(openings);
-
+  counter.appendChild(wares);
   overlay.appendChild(counter);
 
   const continueRow = document.createElement("div");
@@ -5508,7 +5939,7 @@ function ShopOverlay() {
         : (state.money < discountedPrice) || (entry.type === "charm"
             ? state.charms.length >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
-      const typeLabel = isVoucher ? "VOUCHER" : (entry.type === "charm" ? "CHARM" : "CONSUMABLE");
+      const typeLabel = isVoucher ? "PERMANENT UPGRADE" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
       const slotsFull = !isVoucher && entry.type === "charm"
         ? state.charms.length >= state.charmSlots
         : (!isVoucher && state.items.length >= getEffectiveItemSlots());
@@ -5518,7 +5949,7 @@ function ShopOverlay() {
       // card being re-serialized and re-parsed, which would silently strip any
       // JS-assigned onclick handler already attached to a live child element.
       card.innerHTML = `
-        <div class="shop-detail-orb"></div>
+        <div class="detail-art">${AnteArt.icon(entry)}</div>
         <div class="shop-detail-type">${typeLabel}</div>
         <div class="shop-detail-name serif">${entry.name}</div>
         <div class="shop-detail-desc">${entry.desc}</div>
