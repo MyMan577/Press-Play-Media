@@ -1055,6 +1055,8 @@ body.face-jade .card.card-negative { background: linear-gradient(160deg, #150a13
 .shelf-piece.csl-gilded svg { filter: drop-shadow(0 0 5px #F2C94C); }
 .shelf-piece.csl-prismatic svg { animation: cslPrism 3s linear infinite; }
 @keyframes cslPrism { 0% { filter: drop-shadow(0 0 4px #ff6b6b); } 33% { filter: drop-shadow(0 0 4px #7FD08A); } 66% { filter: drop-shadow(0 0 4px #6bb8ff); } 100% { filter: drop-shadow(0 0 4px #ff6b6b); } }
+.shelf-piece.nancy-off { filter: grayscale(1) brightness(.55); }
+.shelf-piece.nancy-off::after { content: "OFF"; position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); font-size: 8px; font-weight: 800; color: #fff; background: #7a55b0; border: 1px solid #0a0f0c; border-radius: 5px; padding: 0 4px; }
 .shelf-piece.csl-negative svg { filter: drop-shadow(0 0 4px #b9a0ff); }
 .sleeve-line { font-size: 12px; color: #C9BFA4; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); }
 .sleeve-line b { color: var(--sc); }
@@ -3507,6 +3509,7 @@ const LEGENDARY_DEFS = [
   { id: "ossuarySaint", name: "Ossuary Saint", desc: "Gains X1 Mult each time a face card is destroyed (starts at X1)", price: 20, color: "#D9CFB5", type: "charm", rarity: "legendary", effect: { type: "saintFaceDestroyedX", value: 1 } },
   { id: "twinThrones", name: "Twin Thrones", desc: "Each King or Queen that scores gives X2 Mult", price: 20, color: "#8B1E1E", type: "charm", rarity: "legendary", effect: { type: "thronesKingQueenX", value: 2 } },
   { id: "tallyLantern", name: "Tally Lantern", desc: "Gains X1 Mult for every 23 cards you discard after getting it (starts at X1)", price: 20, color: "#E8C04A", type: "charm", rarity: "legendary", effect: { type: "lanternDiscardX", value: 1, per: 23 } },
+  { id: "negativeNancy", name: "Negative Nancy", desc: "Disables the artifacts on either side of her. At the start of every blind, 1 in 5 chance to make a random artifact or item Negative for good", price: 20, color: "#7a55b0", type: "charm", rarity: "legendary", effect: { type: "nancyNegative", chance: 0.2 } },
   { id: "ironCrown", name: "Iron Crown", desc: "Boss Blinds have no special effects", price: 20, color: "#6c757d", type: "charm", rarity: "legendary", effect: { type: "crownDisableBoss" } },
   { id: "echoVault", name: "Echo Vault", desc: "When you leave the shop, adds a copy of a random item you hold (even past your slots)", price: 20, color: "#7E57C2", type: "charm", rarity: "legendary", effect: { type: "vaultCopyItem" } },
 ];
@@ -4944,8 +4947,18 @@ function artifactPool() {
 }
 // The shelf as scoring sees it: Carbon Copy takes on the artifact to its
 // right, Echo Chamber your leftmost one (copies of copies follow the chain).
+// Negative Nancy switches off the artifacts right next to her on the shelf.
+function nancyDisabled() {
+  const off = new Set();
+  state.charms.forEach((c, i) => {
+    if (c.effect.type !== "nancyNegative") return;
+    [i - 1, i + 1].forEach((j) => { const n = state.charms[j]; if (n && n.effect.type !== "nancyNegative") off.add(n.uid); });
+  });
+  return off;
+}
 function effectiveCharms() {
-  const list = state.charms;
+  const off = nancyDisabled();
+  const list = state.charms.filter((c) => !off.has(c.uid));
   const resolve = (i, depth) => {
     const c = list[i];
     if (!c || depth > list.length) return null;
@@ -5967,7 +5980,7 @@ function getEffectiveItemSlots() {
     (sum, v) => sum + (v.effect?.type === "extraItemSlot" ? (v.effect.value || 1) : 0),
     0
   );
-  return state.itemSlots + foolBonus + voucherBonus;
+  return state.itemSlots + foolBonus + voucherBonus + (state.items || []).filter((i) => i.sleeve === "negative").length;
 }
 const BASE_HAND_SIZE = 8;
 const MAX_FAN_WIDTH = 640;
@@ -6226,6 +6239,15 @@ function beginBlind(nextAnte, nextBlindIdx) {
   state.playsLeft = 4 + getExtraPlays(state.items);
   state.discardsLeft = 4 + getExtraDiscards(state.items);
   while (useTag("encore")) state.playsLeft += 1;
+  state.charms.filter((c) => c.effect.type === "nancyNegative").forEach(() => {
+    if (Math.random() >= 0.2) return;
+    const pool = [...state.charms.filter((c) => c.sleeve !== "negative").map((c) => ["charm", c]), ...state.items.filter((i) => i.sleeve !== "negative").map((i) => ["item", i])];
+    if (!pool.length) return;
+    const [kind, t] = randomOf(pool);
+    if (kind === "charm") state.charms = state.charms.map((c) => (c.uid === t.uid ? withCharmSleeve(c, "negative") : c));
+    else state.items = state.items.map((i) => (i.uid === t.uid ? { ...i, sleeve: "negative" } : i));
+    state.tagToast = { text: `Negative Nancy: ${t.name} turned Negative`, at: Date.now() };
+  });
   while (useTag("spare")) state.discardsLeft += 2;
   if (state.bossBlind) {
     if (state.bossBlind.forcedPlays != null) state.playsLeft = state.bossBlind.forcedPlays;
@@ -9444,11 +9466,12 @@ function ShelfGroup(kind, list, slots, width, title) {
     ghost.style.width = ghost.style.height = SHELF_PIECE + "px";
     row.appendChild(ghost);
   }
+  const nancyOff = nancyDisabled();
   list.forEach((def, i) => {
     const piece = document.createElement("div");
     const firing = state.activeCharm && state.activeCharm.uid === def.uid;
     const overflow = kind === "item" && i >= slots;
-    piece.className = "shelf-piece" + (firing ? " firing" : "") + (overflow ? " overflow" : "") + (def.sleeve && kind === "charm" ? " csl-" + def.sleeve : "");
+    piece.className = "shelf-piece" + (kind === "charm" && nancyOff.has(def.uid) ? " nancy-off" : "") + (firing ? " firing" : "") + (overflow ? " overflow" : "") + (def.sleeve && kind === "charm" ? " csl-" + def.sleeve : "");
     piece.dataset.uid = def.uid;
     piece.style.left = i * step + "px";
     piece.style.width = piece.style.height = SHELF_PIECE + "px";
