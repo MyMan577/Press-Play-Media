@@ -1409,15 +1409,62 @@ body.landscape .bbuy { padding: 3px 9px; font-size: 9px; }
 body.landscape .bshop-wares { gap: 12px 4px; padding: 12px 4px 4px; }
 
 /* ============ SIDEBAR LAYOUT (sideways) ============ */
-.sidebar { display: none; }
-body.landscape .sidebar {
-  display: block; position: fixed; left: 8px; top: 6px; bottom: max(6px, env(safe-area-inset-bottom)); width: 196px; z-index: 20;
-  padding: 6px; border-radius: 14px; overflow: hidden;
+.sidebar {
+  display: block; padding: 6px; border-radius: 14px; overflow: hidden;
   background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
   border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #C9A22755, 0 14px 30px -12px #000c;
 }
 .sb-inner { display: flex; flex-direction: column; gap: 5px; flex: 1 0 auto; }
-body.landscape .sidebar { display: flex; flex-direction: column; }
+body.landscape .sidebar { display: flex; flex-direction: column; position: fixed; left: 8px; top: 6px; bottom: max(6px, env(safe-area-inset-bottom)); width: 196px; z-index: 20; }
+
+/* Portrait: the same panel across the top. Blind and round score side by
+   side, the hand box across, then the counters beside Hands and Options. */
+body:not(.landscape) .sidebar { width: 100%; max-width: 640px; margin-bottom: 10px; flex-shrink: 0; }
+
+/* Panel: Full (the default). Portrait: a band across the top of the screen,
+   edge to edge. Sideways: a column the full height of its side. */
+body.panel-full:not(.landscape) .sidebar {
+  width: calc(100% + 32px); max-width: none; margin: -24px -16px 10px;
+  padding: max(8px, env(safe-area-inset-top)) max(10px, calc((100% - 640px) / 2)) 8px;
+  border-radius: 0 0 18px 18px; border-width: 0 0 2px 0;
+  box-shadow: 0 2px 0 #C9A22755, 0 14px 30px -12px #000c;
+}
+body.panel-full:not(.landscape) .sb-inner { max-width: 640px; margin: 0 auto; }
+body.panel-full.landscape .sidebar {
+  left: 0; top: 0; bottom: 0; width: 206px; border-radius: 0 18px 18px 0; border-width: 0 2px 0 0;
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  box-shadow: 2px 0 0 #C9A22755, 14px 0 30px -12px #000c;
+}
+body.panel-full.sb-right.landscape .sidebar {
+  left: auto; right: 0; border-radius: 18px 0 0 18px; border-width: 0 0 0 2px;
+  padding-left: 8px; padding-right: max(8px, env(safe-area-inset-right));
+  box-shadow: -2px 0 0 #C9A22755, -14px 0 30px -12px #000c;
+}
+body:not(.landscape) .sb-inner {
+  display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 6px;
+  grid-template-areas: "top score" "hand hand" "stats btns";
+}
+body:not(.landscape) .sb-top { grid-area: top; text-align: left; display: flex; flex-direction: column; justify-content: center; }
+body:not(.landscape) .sb-score, body:not(.landscape) .sb-deck { grid-area: score; }
+body:not(.landscape) .sb-score { display: flex; flex-direction: column; justify-content: center; align-items: stretch; text-align: right; }
+body:not(.landscape) .sb-score .sb-score-val { font-size: 26px; }
+body:not(.landscape) .sb-hand { grid-area: hand; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; padding: 6px 8px; }
+body:not(.landscape) .sb-hand-name { font-size: 16px; text-align: left; }
+body:not(.landscape) .sb-hand-body { margin: 0; }
+body:not(.landscape) .sb-box { font-size: 19px; padding: 5px 4px; }
+body:not(.landscape) .sb-total { font-size: 24px; }
+body:not(.landscape) .sb-btns { grid-area: btns; }
+body:not(.landscape) .sb-grid { grid-area: stats; margin: 0; }
+body:not(.landscape) .sb-title { font-size: 19px; }
+body:not(.landscape) .sb-kicker { font-size: 8.5px; }
+body:not(.landscape) .sb-sub { font-size: 10px; }
+body:not(.landscape) .sb-target { font-size: 10px; }
+body:not(.landscape) .sb-val { font-size: 19px; }
+body:not(.landscape) .sb-btn-hands, body:not(.landscape) .sb-btns .opt-btn { padding: 4px; }
+body:not(.landscape) .sb-btns .opt-btn .opt-txt { font-size: 9px; }
+/* the old header and preview line are replaced by the panel */
+#app > .header, #app > .preview-bar { display: none; }
+.bottom-bar .hands-wrap { display: none; }
 .sb-inner .sb-grid { margin-top: auto; }
 .sb-card { background: #131d18; border-radius: 10px; border: 1px solid #00000080; box-shadow: inset 0 2px 8px #000000a0; padding: 5px 8px; text-align: center; }
 .sb-top { padding: 5px 8px 6px; background: linear-gradient(180deg, #3a2a1a, #1e150d); box-shadow: inset 0 0 0 1px #C9A22755; }
@@ -4027,7 +4074,7 @@ function rollVoucher() {
    Skins / Quit. Settings and Skins are panels that open over either.
    Preferences live in their own localStorage key, apart from the run. */
 const SETTINGS_KEY = "anteup_settings_v1";
-const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, sidebar: "left", btnPos: "below", haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
+const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, sidebar: "left", btnPos: "below", panel: "full", haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
 const SETTINGS = { ...SETTINGS_DEFAULTS };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch (e) {}
 function saveSettings() {
@@ -4073,6 +4120,7 @@ function applySkins() {
   document.body.classList.toggle("lefty", !!SETTINGS.lefty);
   document.body.classList.toggle("sb-right", SETTINGS.sidebar === "right");
   document.body.classList.toggle("btn-below", SETTINGS.btnPos !== "beside");
+  document.body.classList.toggle("panel-full", SETTINGS.panel !== "box");
   document.body.classList.toggle("no-badges", !SETTINGS.badges);
   const felt = (FELT_SKINS[SETTINGS.felt] || FELT_SKINS.emerald).c;
   ["--f1", "--f2", "--f3", "--f1s", "--f2s"].forEach((v, i) => document.documentElement.style.setProperty(v, felt[i]));
@@ -4396,6 +4444,7 @@ function MenuPanel() {
     list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Display</div>`);
     list.appendChild(row("Left-handed", seg([[false, "Off"], [true, "On"]], !!SETTINGS.lefty, (v) => set("lefty", v)), "Puts Play Hand and Discard on the left (sideways: buttons left of the hand)"));
     list.appendChild(row("Sidebar", seg([["left", "Left"], ["right", "Right"]], SETTINGS.sidebar || "left", (v) => set("sidebar", v)), "Which side the info column sits on when the phone is sideways"));
+    list.appendChild(row("Info panel", seg([["full", "Full"], ["box", "Box"]], SETTINGS.panel === "box" ? "box" : "full", (v) => set("panel", v)), "Full: the panel runs edge to edge. Box: a floating panel"));
     list.appendChild(row("Buttons", seg([["below", "Below"], ["beside", "Beside"]], SETTINGS.btnPos === "beside" ? "beside" : "below", (v) => set("btnPos", v)), "Sideways: Play Hand and Discard below the cards, or beside them"));
     list.appendChild(row("Progress badges", seg([[true, "Show"], [false, "Hide"]], !!SETTINGS.badges, (v) => set("badges", v)), "Values and bars on artifacts"));
     list.appendChild(row("Reduce motion", seg([[false, "Off"], [true, "On"]], !!SETTINGS.reduceMotion, (v) => set("reduceMotion", v)), "Stops floating cards and spinning rays"));
@@ -8385,7 +8434,8 @@ function render() {
     previewBar.appendChild(placeholder);
   }
   app.appendChild(previewBar);
-  if (isLandscape()) app.appendChild(Sidebar(preview, selectedCards));
+  // The info panel: a sidebar when sideways, a panel at the top in portrait.
+  app.insertBefore(Sidebar(preview, selectedCards), app.firstChild);
 
   const spacer = document.createElement("div");
   spacer.className = "spacer";
@@ -8486,41 +8536,7 @@ function render() {
   spacerBottom.style.height = Math.round(170 * cardScale) + 70 + "px";
   app.appendChild(spacerBottom);
 
-  // ===== SCORE POPUP ===== (sideways it plays in the sidebar instead)
-  if (state.popup && !isLandscape()) {
-    const popup = document.createElement("div");
-    popup.className = "score-popup";
-    const p = state.popup;
-    const bumpChips = p.phase === "counting" && (p.bump === "chips");
-    const bumpMult = p.phase === "counting" && (p.bump === "mult" || p.bump === "xmult");
-    const totalLine = p.phase === "total" ? `<div class="score-popup-total serif">${Number(p.score).toLocaleString()}</div>` : "";
-    popup.innerHTML = `
-      <div class="score-popup-name serif">${p.name}<span class="lv-tag">Lv ${handLevel(p.name)}</span></div>
-      <div class="sp-boxes">
-        <div class="sp-box sp-chips${bumpChips ? " bump" : ""}">${Math.round(p.chips).toLocaleString()}</div>
-        <div class="sp-x">×</div>
-        <div class="sp-box sp-mult${bumpMult ? " bump" : ""}">${fmtNum(p.mult)}</div>
-      </div>
-      ${totalLine}
-    `;
-    popup.classList.toggle("is-total", p.phase === "total");
-    // The whole #app tree gets rebuilt on every render() call (e.g. when a
-    // charm activation shows/hides while this popup is still on screen),
-    // which would otherwise restart the popIn/popNameSlide/popTotalPunch
-    // entrance animations from scratch each time, making the hand name
-    // banner appear to flash repeatedly. Use the same negative
-    // animation-delay technique used for charm activation so unrelated
-    // renders resume the animation in place instead of replaying it.
-    const popupElapsed = state.popupStartedAt ? Date.now() - state.popupStartedAt : 0;
-    if (popupElapsed > 0) {
-      const delay = `-${popupElapsed}ms`;
-      popup.style.animationDelay = delay;
-      popup.querySelector(".score-popup-name").style.animationDelay = delay;
-      const totalEl = popup.querySelector(".score-popup-total");
-      if (totalEl) totalEl.style.animationDelay = delay;
-    }
-    app.appendChild(popup);
-  }
+  // (Scoring plays out in the info panel's hand box, in both orientations.)
 
   // ===== OVERLAYS =====
   if (state.overlay === "cleared") {
