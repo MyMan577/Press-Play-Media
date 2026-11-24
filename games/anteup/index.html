@@ -1258,7 +1258,7 @@ body.back-sunset .deck-card-back, .back-prev-sunset .bp-card { background: radia
 /* ----- no flashes: no tap highlight, and a screen that is already open
    doesn't replay its entry animations when it re-renders ----- */
 * { -webkit-tap-highlight-color: transparent; }
-.pack-overlay.stay, .pause-back.stay { animation: none; }
+.pack-overlay.stay, .pause-back.stay, .blind-select.stay, .gear-drop-zones.stay { animation: none; }
 .pack-overlay.stay .pack-stage:not(.is-opening) .pchoice, .pack-overlay.stay .pack-stage:not(.is-opening) .pack-torn { animation: none; }
 
 /* ----- shop: shrinks its wares to fit a short screen ----- */
@@ -2114,7 +2114,7 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
     debuffBadge.className = "card-debuffed-badge";
     debuffBadge.style.fontSize = px(11) + "px";
     debuffBadge.textContent = "✕";
-    debuffBadge.title = "Debuffed by the Boss Blind";
+    debuffBadge.title = state.deckSuitOff && card.suit === state.deckSuitOff && deckIs("royal") ? "This suit is disabled this blind" : "Debuffed by the Boss Blind";
     el.appendChild(debuffBadge);
   }
 
@@ -2299,7 +2299,6 @@ function applyShopTags() {
    Their effects use the same types as vouchers, so they add into the same
    sums (see boonList); the few that don't fit are checked with deckIs(). */
 const DECKS = [
-  { id: "standard", name: "Standard Deck", desc: "The usual 52 cards. No twists.", color: "#2f6b4a", glyph: "♠", effects: [] },
   { id: "ember", name: "Ember Deck", desc: "+1 discard every round", color: "#b8402f", glyph: "✹", effects: [{ type: "extraDiscards", value: 1 }] },
   { id: "tide", name: "Tide Deck", desc: "+1 hand every round", color: "#2f6fb8", glyph: "≈", effects: [{ type: "extraPlays", value: 1 }] },
   { id: "gilt", name: "Gilt Deck", desc: "Start with $10 more", color: "#c99a22", glyph: "$", effects: [] },
@@ -2313,8 +2312,17 @@ const DECKS = [
   { id: "balance", name: "Balance Deck", desc: "Chips and Mult are averaged on every hand. Blinds need twice the score", color: "#5a6fd8", glyph: "⚖", effects: [] },
   { id: "chaos", name: "Chaos Deck", desc: "Every card's rank and suit is random", color: "#8e3fa8", glyph: "✺", effects: [] },
   { id: "twin", name: "Twin Deck", desc: "After you beat each Boss Blind, gain a Double Tag", color: "#b03a6a", glyph: "◑", effects: [] },
+  { id: "spectral", name: "Spectral Deck", desc: "Spectral cards can turn up in the shop. Start with a Prism Hex", color: "#4b5a9e", glyph: "☾\uFE0E", effects: [] },
+  { id: "zodiac", name: "Zodiac Deck", desc: "Start with the Overstock, Peddler and Star Vendor vouchers", color: "#6a3f8f", glyph: "♈\uFE0E", effects: [] },
+  // Our own
+  { id: "royal", name: "Royal Deck", desc: "Nothing but face cards: 24 of them, two of each per suit. Every blind disables a random suit from your deck, and blinds need twice the score", color: "#9a2f4a", glyph: "♛\uFE0E", effects: [] },
+  { id: "negative", name: "Negative Deck", desc: "Negative artifacts and cards turn up far more often, and every Legend Pack holds Negative Nancy. Start holding a Pauper's Pact. −1 hand, −1 discard and −1 hand size", color: "#3a2a55", glyph: "◐\uFE0E", effects: [{ type: "extraPlays", value: -1 }, { type: "extraDiscards", value: -1 }, { type: "extraHandSize", value: -1 }] },
+  { id: "tycoon", name: "Tycoon Deck", desc: "Interest caps at $10 instead of $5 and you start with $5 more, but −1 discard every round", color: "#2f7a5a", glyph: "¤", effects: [{ type: "interestCap", value: 5 }, { type: "extraDiscards", value: -1 }] },
+  { id: "ornate", name: "Ornate Deck", desc: "8 random cards start with a sleeve and 8 others with a stamp", color: "#b5833a", glyph: "❖\uFE0E", effects: [] },
 ];
-function currentDeck() { return DECKS.find((d) => d.id === state.deckId) || DECKS[0]; }
+// The Standard Deck was retired; runs saved with it carry on as plain 52 cards.
+const RETIRED_DECK = { id: "standard", name: "Standard Deck", desc: "The usual 52 cards", color: "#2f6b4a", glyph: "♠", effects: [] };
+function currentDeck() { return DECKS.find((d) => d.id === state.deckId) || RETIRED_DECK; }
 function deckIs(id) { return (state.deckId || "standard") === id; }
 // Vouchers plus the deck's own effects, for everything that sums them.
 function boonList() { return [...state.vouchers, ...currentDeck().effects.map((effect) => ({ effect }))]; }
@@ -2327,7 +2335,7 @@ function freshDeck(deckId = state.deckId) {
     for (let i = 0; i < 52; i++) { const rank = randomOf(RANKS), suit = randomOf(SUIT_KEYS); deck.push({ rank, suit, id: `${rank}-${suit}-${id()}` }); }
   } else {
     const suits = deckId === "checkered" ? ["spades", "spades", "hearts", "hearts"] : SUIT_KEYS;
-    const ranks = deckId === "hollow" ? RANKS.filter((r) => !["J", "Q", "K"].includes(r)) : RANKS;
+    const ranks = deckId === "hollow" ? RANKS.filter((r) => !["J", "Q", "K"].includes(r)) : deckId === "royal" ? ["J", "Q", "K", "J", "Q", "K"] : RANKS;
     for (const suit of suits) for (const rank of ranks) deck.push({ rank, suit, id: `${rank}-${suit}-${id()}` });
   }
   for (let i = deck.length - 1; i > 0; i--) {
@@ -2504,7 +2512,7 @@ function targetForAnte(ante, blindIdx) {
       mult *= state.bossBlind.scoreMult;
     }
   }
-  return Math.round(100 * anteBaseMultiplier(ante) * mult * (deckIs("balance") ? 2 : 1));
+  return Math.round(100 * anteBaseMultiplier(ante) * mult * (deckIs("balance") || deckIs("royal") ? 2 : 1));
 }
 
 // Balatro doesn't scale its blind requirement linearly with ante — each ante
@@ -2666,6 +2674,7 @@ function pickFinalBoss() {
 
 // Returns true if a card should contribute 0 chips due to the active Boss Blind.
 function isCardDebuffed(card) {
+  if (state.deckSuitOff && card.suit === state.deckSuitOff && deckIs("royal")) return true;   // Royal Deck: this blind's disabled suit
   const boss = state.bossBlind;
   if (!boss) return false;
   if (card.bossDebuffed) return true;
@@ -4701,6 +4710,7 @@ function MenuButton(label, color, onClick, sub) {
 function MainMenu() {
   const wrap = document.createElement("div");
   wrap.className = "main-menu";
+  wrap.dataset.face = SETTINGS.face;
   // drifting cards behind the title
   const fan = document.createElement("div");
   fan.className = "mm-cards";
@@ -4879,8 +4889,9 @@ function rollCharmSleeve(def) {
   const rate = voucherBest("charmSleeveRate", Math.max);
   let r = Math.random();
   for (const [k, sl] of Object.entries(CHARM_SLEEVES)) {
-    if (r < sl.chance * rate) return withCharmSleeve(def, k);
-    r -= sl.chance * rate;
+    const c = sl.chance * rate * (k === "negative" && deckIs("negative") ? 10 : 1);   // Negative Deck
+    if (r < c) return withCharmSleeve(def, k);
+    r -= c;
   }
   return def;
 }
@@ -5202,6 +5213,9 @@ const SPECTRAL_DEFS = [
   { id: "eventHorizon", name: "Event Horizon", desc: "Levels up every hand", color: "#24325c", rare: true },
 ].map((d) => ({ type: "item", spectral: true, price: 4, ...d }));
 
+// A Spectral card held in an item slot (Spectral Deck): bought in the shop, used later.
+function heldSpectral(def) { return { ...def, effect: { type: "spectral" } }; }
+
 // Spectral choices: the two rare ones turn up much less often.
 function pickSpectrals(n) {
   const out = [];
@@ -5260,7 +5274,9 @@ function randomCharmDef(pool) {
 
 // Runs a spectral card. Returns a short line saying what happened.
 function useSpectral(def) {
-  const hand = packHandCards();
+  // From a pack: the pack's hand. Held in an item slot: your hand mid-round,
+  // otherwise 8 cards drawn from the deck.
+  const hand = state.packOpen && state.packOpen.hand ? packHandCards() : (() => { const ids = new Set(packHandIds()); return allRunCards().filter((c) => ids.has(c.id)); })();
   const ids = hand.map((c) => c.id);
   const pickIds = (n) => shuffleArray(ids).slice(0, n);
   const charmRoom = charmsUsed() < state.charmSlots;
@@ -5436,6 +5452,8 @@ function generateShopStock(count) {
   const ownedItemIds = hasRingmaster ? new Set() : new Set(state.items.map((i) => i.id));
   const availableCharms = artifactPool().filter((c) => !ownedCharmIds.has(c.id));
   const availableItems = ITEM_DEFS.filter((i) => !ownedItemIds.has(i.id) && !i.secret);
+  // Spectral Deck: Spectral cards share the item shelves (not the two rare ones).
+  if (deckIs("spectral")) availableItems.push(...SPECTRAL_DEFS.filter((d) => !d.rare && !ownedItemIds.has(d.id)).map(heldSpectral));
 
   // Sleight of Hand: some slots hold playing cards instead.
   const cardSlots = voucherSum("shopPlayingCards") ? Array.from({ length: count }, () => Math.random() < 0.25).filter(Boolean).length : 0;
@@ -5449,7 +5467,7 @@ function generateShopStock(count) {
   const chartW = voucherBest("chartRate", Math.max);
   const weighted = (arr, wf) => arr.map((d) => [Math.pow(Math.random(), 1 / wf(d)), d]).sort((x, y) => y[0] - x[0]).map((x) => x[1]);
   const charmPool = rarityShuffle(availableCharms);
-  const itemPool = weighted(availableItems, (d) => (d.chart ? chartW : 1));
+  const itemPool = weighted(availableItems, (d) => (d.chart ? chartW : d.spectral ? 0.5 : 1));
 
   let selected = [
     ...charmPool.slice(0, charmCount).map(rollCharmSleeve),
@@ -5479,7 +5497,7 @@ function generateShopStock(count) {
 function shopPlayingCard() {
   const fancy = voucherSum("shopPlayingCards") >= 2;
   const extra = {};
-  if (fancy && Math.random() < 0.5) extra.sleeve = Math.random() < 0.06 ? "negative" : randomOf(SLEEVE_KINDS);
+  if (fancy && Math.random() < 0.5) extra.sleeve = Math.random() < (deckIs("negative") ? 0.3 : 0.06) ? "negative" : randomOf(SLEEVE_KINDS);
   if (fancy && Math.random() < 0.4) extra.stamp = randomOf(STAMP_KINDS);
   const card = makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), extra);
   const suit = card.suit[0].toUpperCase() + card.suit.slice(1);
@@ -6028,7 +6046,7 @@ function dealInitialHand(freshDeckArg) {
 }
 
 function startGame(deckId) {
-  state.deckId = DECKS.some((x) => x.id === deckId) ? deckId : state.deckId || "standard";
+  state.deckId = DECKS.some((x) => x.id === deckId) ? deckId : DECKS[0].id;
   const d = freshDeck(state.deckId);
   state.handsThisRound = 0;
   state.luckyRound = false;
@@ -6060,6 +6078,7 @@ function startGame(deckId) {
   state.itemSlots = 2;
   state.vouchers = [];
   if (deckIs("star")) { const v = VOUCHERS.find((x) => x.id === "clairvoyance"); if (v) state.vouchers = [{ ...v }]; }
+  if (deckIs("zodiac")) state.vouchers = ["overstock", "peddler", "starVendor"].map((x) => VOUCHER_BY_ID[x]).filter(Boolean).map((v) => ({ ...v }));
   state.voucherStock = [];
   state.voucherReady = false;
   state.permHandSize = 0;
@@ -6115,6 +6134,9 @@ function startGame(deckId) {
       color: "#6ee7d0", type: "charm", effect: { type: "pppEncore", add: 0, x: 1.5 }, uid: Math.random().toString(36).slice(2, 9) });
   }
   if (deckIs("gilt")) state.money += 10;
+  if (deckIs("tycoon")) state.money += 5;
+  if (deckIs("negative")) { const pact = SPECTRAL_DEFS.find((x) => x.id === "paupersPact"); if (pact) state.items = [{ ...heldSpectral(pact), uid: newUid() }]; }
+  if (deckIs("spectral")) { const hex = SPECTRAL_DEFS.find((x) => x.id === "prismHex"); if (hex) state.items = [{ ...heldSpectral(hex), uid: newUid() }]; }
   if (deckIs("mystic")) state.items = shuffleArray(ITEM_DEFS.filter((x) => !x.chart && !x.secret)).slice(0, 2).map((x) => ({ ...x, uid: newUid() }));
   state.usedCards = [];
   state.tags = [];
@@ -6123,6 +6145,11 @@ function startGame(deckId) {
   state.anteRoll = null;
   state.pendingPacks = [];
   state.freeReroll = false;
+  if (deckIs("ornate")) {
+    const picks = shuffleArray(d.map((_, i) => i)).slice(0, 16);
+    picks.slice(0, 8).forEach((i) => { d[i] = { ...d[i], sleeve: randomOf(SLEEVE_KINDS) }; });
+    picks.slice(8).forEach((i) => { d[i] = { ...d[i], stamp: randomOf(STAMP_KINDS) }; });
+  }
   state.deck = d;
   state.hand = [];
   state.selected = [];
@@ -6236,6 +6263,9 @@ function beginBlind(nextAnte, nextBlindIdx) {
   state.handTypesPlayedThisRound = [];
   state.firstHandTypeThisRound = null;
   state.bossBlindMessage = null;
+  // Royal Deck: one suit that's in your deck right now sits out this blind.
+  state.deckSuitOff = deckIs("royal") ? randomOf([...new Set(allRunCards().map((c) => c.suit))]) || null : null;
+  if (state.deckSuitOff) setTimeout(() => flashMessage(`${state.deckSuitOff[0].toUpperCase() + state.deckSuitOff.slice(1)} are disabled this blind`, 2400) || render(), 300);
   state.playsLeft = 4 + getExtraPlays(state.items);
   state.discardsLeft = 4 + getExtraDiscards(state.items);
   while (useTag("encore")) state.playsLeft += 1;
@@ -7297,9 +7327,14 @@ function openPack(packId) {
     if (favChart && !choices.some((c) => c.id === favChart.id)) choices[0] = { ...favChart };
   }
   if (kind === "spectralPack") choices = pickSpectrals(n);
-  if (kind === "legendPack") choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), n);
-  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}));
-  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: Math.random() < 0.05 ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  if (kind === "legendPack") {
+    choices = pickDefs(LEGENDARY_DEFS.filter((c) => !owned.has(c.id)), n);
+    // Negative Deck: Negative Nancy is always one of the choices (unless you already have her).
+    const nancy = LEGENDARY_DEFS.find((c) => c.id === "negativeNancy");
+    if (deckIs("negative") && nancy && !owned.has(nancy.id) && !choices.some((c) => c.id === nancy.id)) choices[0] = { ...nancy };
+  }
+  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { ...(Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}), ...(deckIs("negative") && Math.random() < 0.1 ? { sleeve: "negative" } : {}) }));
+  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: Math.random() < (deckIs("negative") ? 0.25 : 0.05) ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
   state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: SETTINGS.packAnim ? Date.now() : 0, hand: kind === "spectralPack" || kind === "itemPack" ? packHandIds() : null, note: null };
   state.packPick = null;
   state.packSel = [];
@@ -7949,6 +7984,18 @@ function useItem(itemUid) {
   if (idx === -1) return;
   const item = state.items[idx];
   const eff = item.effect;
+
+  if (item.spectral) {
+    activateCharmSlide(item, () => {
+      const note = useSpectral(item);
+      tryConsumeItem(item, itemUid);
+      state.bossBlindMessage = `${item.name}: ${note}`;
+      setTimeout(() => { state.bossBlindMessage = null; render(); }, 2200);
+      saveGame();
+      render();
+    });
+    return;
+  }
 
   if (eff.type === "eraserRemoveCard") {
     if (state.overlay !== "playing" || state.selected.length === 0) return;
@@ -8827,16 +8874,86 @@ function isLandscape() {
   return window.innerWidth > window.innerHeight && window.innerHeight < 600;
 }
 
+/* ----- redraws without flashes -----
+   render() rebuilds the screen from scratch, which would restart every
+   animation on it. So anything that was already showing carries on: looping
+   animations (floating cards, spinning rays, glows) keep their place, and a
+   screen that's already open doesn't play its fade-in again. Elements are
+   matched by where they sit on the page. */
+const KEEP_RUNNING = new Set(["bfloat", "bvfloat", "packSpin", "mmCard", "mmUp", "progReady", "cslPrism", "cardScoringGlow", "packCharge"]);
+const OPENS_ONCE = ".blind-select, .gear-drop-zones, .pack-overlay, .pause-back";
+function domKey(el, root) {
+  const segs = [];
+  for (let n = el; n && n !== root; n = n.parentElement) {
+    const fc = n.classList[0] || n.tagName;
+    let i = 0;
+    for (let sib = n.previousElementSibling; sib; sib = sib.previousElementSibling) if ((sib.classList[0] || sib.tagName) === fc) i++;
+    segs.push(fc + ":" + i);
+  }
+  return segs.join("<");
+}
 function render() {
   if (ITEM_INSTANT || PACK_BUSY) return;
+  const app = document.getElementById("app");
+  const running = new Map();
+  if (app.getAnimations) {
+    for (const a of app.getAnimations({ subtree: true })) {
+      const t = a.effect && a.effect.target;
+      if (a.animationName && KEEP_RUNNING.has(a.animationName) && t && a.currentTime != null) running.set(domKey(t, app) + "|" + a.animationName, a.currentTime);
+    }
+  }
+  const opened = new Set([...app.querySelectorAll(OPENS_ONCE)].map((el) => domKey(el, app)));
+  renderScreen();
+  app.querySelectorAll(OPENS_ONCE).forEach((el) => { if (opened.has(domKey(el, app))) el.classList.add("stay"); });
+  if (running.size && app.getAnimations) {
+    for (const a of app.getAnimations({ subtree: true })) {
+      const t = a.effect && a.effect.target;
+      if (!a.animationName || !KEEP_RUNNING.has(a.animationName) || !t) continue;
+      const at = running.get(domKey(t, app) + "|" + a.animationName);
+      if (at != null) a.currentTime = at;
+    }
+  }
+}
+function renderScreen() {
   document.body.classList.toggle("landscape", isLandscape());
   SHELF_PIECE = isLandscape() ? 38 : 46;
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
   const app = document.getElementById("app");
   const hadPack = !!app.querySelector(".pack-overlay"), hadPause = !!app.querySelector(".pause-back");
+  // An open Settings / Skins panel keeps its scroll position through a redraw.
+  const oldScroll = app.querySelector(".pause-back .mpanel-scroll");
+  const panelScroll = oldScroll && oldScroll.dataset.panel === String(MENU.panel) ? oldScroll.scrollTop : 0;
+  const keepPanelScroll = () => {
+    const el = app.querySelector(".pause-back .mpanel-scroll");
+    if (!el) return;
+    el.dataset.panel = String(MENU.panel);
+    if (panelScroll) el.scrollTop = panelScroll;
+  };
+  if (MENU.screen === "main") {
+    // Title screen: keep the title, its drifting cards and the swirl as they
+    // are, and swap only the buttons and the open panel, so a tap doesn't
+    // flash the whole screen or restart its animations.
+    const next = MainMenu();
+    if (hadPause) next.querySelectorAll(":scope > .pause-back").forEach((el) => el.classList.add("stay"));
+    const old = app.querySelector(":scope > .main-menu");
+    if (old && app.children.length === 1) {
+      // A new card-face skin recolours the suits, so the title cards are redrawn.
+      if (old.dataset.face !== next.dataset.face) {
+        const oc = old.querySelector(".mm-cards"), nc = next.querySelector(".mm-cards");
+        if (oc && nc) oc.replaceWith(nc);
+        old.dataset.face = next.dataset.face;
+      }
+      old.querySelectorAll(":scope > .mm-bar, :scope > .pause-back").forEach((el) => el.remove());
+      next.querySelectorAll(":scope > .mm-bar, :scope > .pause-back").forEach((el) => old.appendChild(el));
+    } else {
+      app.innerHTML = "";
+      app.appendChild(next);
+    }
+    keepPanelScroll();
+    return;
+  }
   app.innerHTML = "";
-  if (MENU.screen === "main") { app.appendChild(MainMenu()); return; }
 
   const fanLayout = computeFanLayout();
   const cardScale = fanLayout.scale;
@@ -9172,6 +9289,7 @@ function render() {
   // A screen that was already up stays still instead of fading/dealing in again.
   if (hadPack) { const po = app.querySelector(".pack-overlay"); if (po) po.classList.add("stay"); }
   if (hadPause) app.querySelectorAll(".pause-back").forEach((el) => el.classList.add("stay"));
+  keepPanelScroll();
   syncLoopingAnimations();
   placeBlindSelect();
   fitShop();
@@ -9745,7 +9863,7 @@ function ShopOverlay() {
     card.style.setProperty("--glow", item.color || "#C9A227");
     card.innerHTML = `
       <span class="bprice">${price < item.price ? `<s>$${item.price}</s>` : ""}$${price}</span>
-      <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}</div></div>
+      <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : item.spectral ? AnteArt.icon(item) : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}</div></div>
       <div class="bcard-name">${item.name}</div>
       <button class="bbuy" ${state.money < price || slotsFull ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>`;
     if (item.type === "playing") card.querySelector(".bcard-art").appendChild(playingCardEl(item.card, 1.25));
@@ -9836,7 +9954,7 @@ function ShopOverlay() {
             ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
       const isPack = kind === "pack";
-      const typeLabel = entry.type === "playing" ? "PLAYING CARD" : isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.type === "charm" ? `<span class="rarity-tag" style="--rc:${rarityOf(entry).color}">${rarityOf(entry).name}</span> ARTIFACT` : "ITEM";
+      const typeLabel = entry.type === "playing" ? "PLAYING CARD" : isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.type === "charm" ? `<span class="rarity-tag" style="--rc:${rarityOf(entry).color}">${rarityOf(entry).name}</span> ARTIFACT` : entry.spectral ? "SPECTRAL" : "ITEM";
       const slotsFull = !isVoucher && !isPack && entry.type === "charm"
         ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
         : (!isVoucher && !isPack && state.items.length >= getEffectiveItemSlots());
@@ -9846,7 +9964,7 @@ function ShopOverlay() {
       // card being re-serialized and re-parsed, which would silently strip any
       // JS-assigned onclick handler already attached to a live child element.
       card.innerHTML = `
-        <div class="detail-art${isVoucher || entry.type === "charm" || entry.type === "item" ? " is-voucher" : ""}">${entry.type === "charm" || entry.type === "item" ? AnteArt.card(entry) : entry.type === "playing" ? "" : AnteArt.icon(entry)}</div>
+        <div class="detail-art${isVoucher || entry.type === "charm" || entry.type === "item" ? " is-voucher" : ""}">${entry.spectral ? AnteArt.icon(entry) : entry.type === "charm" || entry.type === "item" ? AnteArt.card(entry) : entry.type === "playing" ? "" : AnteArt.icon(entry)}</div>
         <div class="shop-detail-type">${typeLabel}</div>
         <div class="shop-detail-name serif">${entry.name}</div>
         <div class="shop-detail-desc">${entry.desc}</div>
