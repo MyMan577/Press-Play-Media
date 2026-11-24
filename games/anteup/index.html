@@ -833,7 +833,7 @@ body.landscape .bcard-name { font-size: 10.5px; }
 
 /* ============================== BOOSTER PACK SCREEN ============================== */
 .pack-overlay {
-  position: fixed; inset: 0; z-index: 90; overflow-y: auto; overscroll-behavior: contain;
+  position: fixed; inset: 0; z-index: 90; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
   background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--pc, #C9A227) 22%, var(--f2s, #16241A)) 0%, var(--f2s, #16241A) 45%, var(--f3, #0A100C) 100%);
   display: flex; flex-direction: column; align-items: center; gap: 0;
   padding: 16px 14px max(12px, env(safe-area-inset-bottom));
@@ -976,7 +976,7 @@ body.landscape .pack-actions .bbtn { min-height: 40px; padding: 4px; }
 .spectral-face svg { width: 100%; height: 100%; display: block; }
 .kind-spectral.picked .pchoice-face { box-shadow: none; filter: drop-shadow(0 0 10px #9fb8ff) drop-shadow(0 0 3px #FFD45E); }
 .pack-hand { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; margin-top: 16px; width: 100%; }
-.pack-hand-cards { display: flex; justify-content: center; padding: 4px 18px 0 0; }
+.pack-hand-cards { display: flex; justify-content: center; padding: 4px 0 0; max-width: 100%; }
 .pack-hand-card { width: var(--hw, 40px); flex: 0 0 var(--hw, 40px); height: 72px; overflow: visible; }
 .pack-hand-card .pack-card { box-shadow: -3px 3px 8px #0008; }
 .pack-info-note { font-size: 14px; color: #FFD45E; }
@@ -1195,6 +1195,45 @@ body.back-plaid .deck-card-back, .back-prev-plaid .bp-card { background: repeati
 body.back-stars .deck-card-back, .back-prev-stars .bp-card { background: radial-gradient(circle at 20% 30%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 70% 20%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 40% 70%, #fff 0 1px, transparent 1.5px), radial-gradient(circle at 80% 80%, #ffe28a 0 1.2px, transparent 1.7px), radial-gradient(circle at 55% 45%, #9fb8ff55 0 30%, transparent 60%), #141a3a; }
 body.back-checker .deck-card-back, .back-prev-checker .bp-card { background: repeating-conic-gradient(#b0302a 0 25%, #1a1a1a 0 50%) 0 0 / 8px 8px; }
 body.back-sunset .deck-card-back, .back-prev-sunset .bp-card { background: radial-gradient(circle at 50% 70%, #ffd36b 0 14%, transparent 15%), linear-gradient(180deg, #4a2a6a 0%, #c2416b 55%, #f29a2e 100%); }
+
+/* ----- no flashes: no tap highlight, and a screen that is already open
+   doesn't replay its entry animations when it re-renders ----- */
+* { -webkit-tap-highlight-color: transparent; }
+.pack-overlay.stay, .pause-back.stay { animation: none; }
+.pack-overlay.stay .pack-stage:not(.is-opening) .pchoice, .pack-overlay.stay .pack-stage:not(.is-opening) .pack-torn { animation: none; }
+
+/* ----- shop: shrinks its wares to fit a short screen ----- */
+.bshop.tight .bshop-wares { row-gap: 14px; }
+.bshop.tight .bcard-face { max-width: var(--face, 84px); }
+.bshop.tight .bcard-name { min-height: 0; margin-top: 2px; }
+.bshop.tight .bvoucher-art, .bshop.tight .bvoucher-ghost { width: calc(var(--face, 84px) * .78); }
+.bshop.tight .bpack-row { margin-top: 6px; }
+.bshop.tight .bshop-voucher, .bshop.tight .bshop-packs { padding: 6px; }
+
+/* ----- using an Arcana or Spectral card on the pack's hand ----- */
+.pack-overlay.busy { pointer-events: none; }
+.pchoice.using { animation: packUse .56s cubic-bezier(.45,0,.55,1) forwards !important; z-index: 6; }
+@keyframes packUse {
+  0% { transform: translateY(-14px) scale(1.08); opacity: 1; filter: brightness(1); }
+  40% { transform: translateY(-34px) scale(1.24); opacity: 1; filter: brightness(1.5) drop-shadow(0 0 18px #FFD45E); }
+  100% { transform: translate(var(--to-x, 0px), var(--to-y, 80px)) scale(.25); opacity: 0; filter: brightness(2.4) blur(1px); }
+}
+.pack-hand-card.charging .pack-card { animation: packCharge .28s ease-in-out infinite alternate; }
+@keyframes packCharge { to { box-shadow: 0 0 0 2px #fff, 0 0 22px #FFD45E; filter: brightness(1.3); } }
+.pack-hand-card.vanish { animation: packVanish .38s ease-in forwards; }
+@keyframes packVanish { to { transform: translateY(-28px) scale(.55) rotate(-10deg); opacity: 0; filter: brightness(2.2) blur(2px); } }
+.pack-hand-card.changed .pack-card { animation: packFlip .6s cubic-bezier(.2,1.3,.4,1) var(--d, 0ms) both; }
+@keyframes packFlip {
+  0% { transform: perspective(300px) rotateY(90deg) scale(1.1); filter: brightness(2.4); }
+  55% { transform: perspective(300px) rotateY(0) translateY(-10px) scale(1.14); filter: brightness(1.5); box-shadow: 0 0 0 2px #FFD45E, 0 0 22px #FFD45E; }
+  100% { transform: none; }
+}
+/* dragging a card in the pack's hand to move it */
+.pack-hand-card { touch-action: pan-y; }
+.pack-hand-card.shift { transition: transform .16s ease; }
+.pack-hand-card.dragging { z-index: 5; transition: none; }
+.pack-hand-card.dragging .pack-card { box-shadow: 0 10px 18px #000b; }
+body.reduce-motion .pchoice.using, body.reduce-motion .pack-hand-card.changed .pack-card { animation-duration: .01s !important; }
 
 /* ============================== CARD NOTE (double tap) ============================== */
 .card-note {
@@ -4140,8 +4179,8 @@ function useArcana(def, selectedIds) {
   if (!inPlay) {
     state.hand = before;
     state.overlay = "playing";
-    state.sortMode = "rank";
-    state.handOrder = beforeIds;
+    state.sortMode = "manual";
+    state.handOrder = packHandOrdered().map((c) => c.id);
   }
   state.selected = selectedIds.slice();
   ITEM_INSTANT = true;
@@ -4221,8 +4260,7 @@ function allRunCards() {
   return [...state.deck, ...(state.usedCards || []), ...state.hand];
 }
 // The hand shown in a Spectral Pack, as card objects.
-function packHandCards() {
-  const po = state.packOpen;
+function packHandCards(po = state.packOpen) {
   if (!po || !po.hand) return [];
   const all = allRunCards();
   return po.hand.map((id) => all.find((c) => c.id === id)).filter(Boolean);
@@ -6227,7 +6265,74 @@ function takePackChoice(index) {
   render();
 }
 
+// Using an Arcana or Spectral card plays out on the pack's hand: the card
+// rises and is drawn down into the hand, the cards it works on glow, cards it
+// destroys burn away, and changed or new cards flip in. Then the screen moves on.
+let PACK_BUSY = false;
+function usePackChoiceAnimated(index) {
+  const po = state.packOpen;
+  const choice = po && po.choices[index];
+  if (!choice || PACK_BUSY) return;
+  const wrap = document.querySelector(".pack-overlay");
+  const cardEl = wrap && wrap.querySelectorAll(".pack-fan .pchoice")[index];
+  if (!po.hand || !(choice.arcana || choice.spectral) || !wrap || !cardEl) { takePackChoice(index); return; }
+  if (choice.arcana) {
+    const need = arcanaSelection(choice);
+    if (need && (state.packSel || []).length < need[0]) return;
+  }
+  const slow = !SETTINGS.reduceMotion;
+  const before = new Map(packHandCards().map((c) => [c.id, JSON.stringify(c)]));
+  const sel = new Set(state.packSel || []);
+  const handRow = wrap.querySelector(".pack-hand-cards");
+  PACK_BUSY = true;
+  wrap.classList.add("busy");
+  const finish = () => {
+    if (!PACK_BUSY) return;
+    PACK_BUSY = false;
+    if (state.packToast) state.packToast.at = Date.now();
+    render();
+  };
+  const safety = setTimeout(finish, 5000);
+  const done = () => { clearTimeout(safety); finish(); };
+  // 1. the card lifts, glows and is drawn into the hand
+  if (handRow) {
+    const hr = handRow.getBoundingClientRect(), cr = cardEl.getBoundingClientRect();
+    cardEl.style.setProperty("--to-x", Math.round(hr.left + hr.width / 2 - (cr.left + cr.width / 2)) + "px");
+    cardEl.style.setProperty("--to-y", Math.round(hr.top + hr.height / 2 - (cr.top + cr.height / 2)) + "px");
+    handRow.querySelectorAll(".pack-hand-card").forEach((s) => { if (sel.has(s.dataset.id)) s.classList.add("charging"); });
+  }
+  cardEl.classList.add("using");
+  buzz(20);
+  setTimeout(() => {
+    // 2. it takes effect (the screen holds still: PACK_BUSY stops renders)
+    try { takePackChoice(index); } catch (e) { done(); throw e; }
+    if (!handRow) { done(); return; }
+    const afterCards = packHandOrdered(po);
+    const afterIds = new Set(afterCards.map((c) => c.id));
+    let gone = 0;
+    handRow.querySelectorAll(".pack-hand-card").forEach((s) => {
+      s.classList.remove("charging");
+      if (!afterIds.has(s.dataset.id)) { s.classList.add("vanish"); gone++; }
+    });
+    setTimeout(() => {
+      // 3. the hand as it is now: changed and new cards flip in
+      handRow.innerHTML = "";
+      let changed = 0;
+      afterCards.forEach((c) => {
+        const isChanged = before.get(c.id) !== JSON.stringify(c);
+        const slot = packHandSlot(c, isChanged ? "changed" : "");
+        if (isChanged) slot.style.setProperty("--d", changed++ * 70 + "ms");
+        handRow.appendChild(slot);
+      });
+      layPackHand(handRow, afterCards);
+      if (changed) buzz(25);
+      setTimeout(done, slow ? (changed ? 750 + changed * 70 : gone ? 350 : 250) : 150);
+    }, gone && slow ? 380 : 0);
+  }, slow ? 560 : 60);
+}
+
 function skipPack() {
+  if (PACK_BUSY) return;
   state.packOpen = null;
   saveGame();
   render();
@@ -6254,20 +6359,118 @@ function playingCardEl(card, zoom) {
   el.style.zoom = String(zoom);
   return el;
 }
-function packHandOrdered() {
-  const cards = packHandCards();
+function packHandOrdered(po = state.packOpen) {
+  const cards = packHandCards(po);
   if (state.overlay === "playing") {
     const ids = new Set(cards.map((c) => c.id));
     return getSortedHand().filter((c) => ids.has(c.id));
   }
-  return [...cards].sort((a, b) => rankStraightValueHigh(a.rank) - rankStraightValueHigh(b.rank));
+  const sorted = [...cards].sort((a, b) => rankStraightValueHigh(a.rank) - rankStraightValueHigh(b.rank));
+  if (!po || !po.order) return sorted;
+  // moved by hand: that order first, any new cards after it
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  const ordered = po.order.map((id) => byId.get(id)).filter(Boolean);
+  return [...ordered, ...sorted.filter((c) => !po.order.includes(c.id))];
+}
+// Drag a card in the pack's hand to a new spot. Mid-round that is your real
+// hand, so it moves there too (and the hand switches to Move order).
+function movePackHandCard(id, to) {
+  const po = state.packOpen;
+  if (!po) return;
+  const ids = packHandOrdered().map((c) => c.id);
+  const from = ids.indexOf(id);
+  if (from < 0 || from === to) return;
+  ids.splice(from, 1);
+  ids.splice(Math.max(0, Math.min(to, ids.length)), 0, id);
+  if (state.overlay === "playing") {
+    const rest = getSortedHand().map((c) => c.id).filter((x) => !ids.includes(x));
+    state.handOrder = [...ids, ...rest];
+    state.sortMode = "manual";
+  } else {
+    po.order = ids;
+  }
+  saveGame();
+  render();
+}
+function attachPackHandDrag(slot, index, slots, step, onTap) {
+  slot.addEventListener("pointerdown", (e) => {
+    if (PACK_BUSY || (e.button !== undefined && e.button !== 0)) return;
+    const startX = e.clientX, startY = e.clientY, pid = e.pointerId;
+    let drag = false, target = index;
+    const move = (ev) => {
+      if (ev.pointerId !== pid) return;
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!drag) {
+        if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) {
+          if (Math.abs(dy) > 12) cleanup();
+          return;
+        }
+        drag = true;
+        try { slot.setPointerCapture(pid); } catch (err) {}
+        slot.classList.add("dragging");
+        slots.forEach((s) => { if (s !== slot) s.classList.add("shift"); });
+      }
+      ev.preventDefault();
+      target = Math.max(0, Math.min(slots.length - 1, index + Math.round(dx / step)));
+      slot.style.transform = `translate(${dx}px, -10px) scale(1.08)`;
+      slots.forEach((s, j) => {
+        if (s === slot) return;
+        const shift = index < target && j > index && j <= target ? -step : target < index && j >= target && j < index ? step : 0;
+        s.style.transform = shift ? `translateX(${shift}px)` : "";
+      });
+    };
+    const up = (ev) => {
+      if (ev.pointerId !== pid) return;
+      cleanup();
+      if (drag) {
+        if (target !== index) movePackHandCard(slot.dataset.id, target);
+        else { slot.classList.remove("dragging"); slot.style.transform = ""; slots.forEach((s) => { s.style.transform = ""; }); }
+      } else if (ev.type === "pointerup" && onTap) onTap();
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  });
+}
+// One card in the pack's hand.
+function packHandSlot(c, cls) {
+  const cardEl = renderCard(c, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => {} });
+  cardEl.classList.add("pack-card");
+  cardEl.style.transform = "none";
+  cardEl.dataset.finalTransform = "none";
+  cardEl.style.zoom = "0.82";
+  const slot = document.createElement("div");
+  slot.className = "pack-hand-card" + (cls ? " " + cls : "");
+  slot.dataset.id = c.id;
+  slot.appendChild(cardEl);
+  return slot;
+}
+// Width of each card's step in the pack's hand, so the row fits the panel.
+function packHandStep(n) {
+  const cardW = isLandscape() ? 41 : 51;
+  const inner = Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 28;
+  return { cardW, step: Math.max(14, Math.min(44, Math.floor((inner - cardW) / Math.max(1, n - 1)))) };
+}
+function layPackHand(cards, handCards) {
+  const { cardW, step } = packHandStep(handCards.length);
+  cards.style.setProperty("--hw", step + "px");
+  const last = cards.lastElementChild;
+  if (last && last.classList.contains("pack-hand-card")) { last.style.flexBasis = cardW + "px"; last.style.width = cardW + "px"; }
+  return step;
 }
 function togglePackSel(id, max) {
+  if (PACK_BUSY) return;
   const sel = state.packSel || [];
   state.packSel = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id].slice(-max);
   render();
 }
 function pickPackChoice(i) {
+  if (PACK_BUSY) return;
   state.packPick = state.packPick === i ? null : i;
   state.packSel = [];
   render();
@@ -6362,23 +6565,16 @@ function PackOverlay() {
     const leftmostOnly = pickedDef && pickedDef.arcana && !need && /leftmost/.test(pickedDef.desc);
     const row = document.createElement("div");
     row.className = "pack-hand";
-    row.innerHTML = `<div class="bwell-label">Your hand</div>`;
+    row.innerHTML = `<div class="bwell-label">Your hand · drag to move</div>`;
     const cards = document.createElement("div");
     cards.className = "pack-hand-cards";
-    const hw = Math.min(44, Math.floor((Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 40) / Math.max(1, handCards.length)) + 10);
-    cards.style.setProperty("--hw", hw + "px");
-    handCards.forEach((c) => {
-      const cardEl = renderCard(c, { selected: false, scoring: false, dimmed: false, scale: 1, marginLeft: 0, arcIndex: 0, arcCount: 1, onClick: () => {} });
-      cardEl.classList.add("pack-card");
-      cardEl.style.transform = "none";
-      cardEl.dataset.finalTransform = "none";
-      cardEl.style.zoom = "0.82";
-      const slot = document.createElement("div");
-      slot.className = "pack-hand-card" + (sel.includes(c.id) ? " sel" : "") + (need ? " can-pick" : "") + (leftmostOnly && c === handCards[0] ? " target" : "");
-      if (need) slot.onclick = () => togglePackSel(c.id, need[1]);
-      slot.appendChild(cardEl);
+    const slots = handCards.map((c) => {
+      const slot = packHandSlot(c, (sel.includes(c.id) ? "sel" : "") + (need ? " can-pick" : "") + (leftmostOnly && c === handCards[0] ? " target" : ""));
       cards.appendChild(slot);
+      return slot;
     });
+    const step = layPackHand(cards, handCards);
+    slots.forEach((slot, i) => attachPackHandDrag(slot, i, slots, step, need ? () => togglePackSel(handCards[i].id, need[1]) : null));
     if (!handCards.length) cards.innerHTML = `<div class="pack-info-hint">No cards</div>`;
     row.appendChild(cards);
     stage.appendChild(row);
@@ -6440,7 +6636,7 @@ function PackOverlay() {
   const pc = pick != null ? po.choices[pick] : null;
   take.disabled = pc == null || packChoiceFull(pc) || (need && (state.packSel || []).length < need[0]);
   take.innerHTML = `<span class="bbtn-big">${pc && !pc.type ? "Add to deck" : pc && pc.chart ? "Level up" : pc && (pc.spectral || pc.arcana) ? "Use" : "Take"}</span>`;
-  take.onclick = () => { if (pick != null) takePackChoice(pick); };
+  take.onclick = () => { if (pick != null) usePackChoiceAnimated(pick); };
   actions.appendChild(take);
   wrap.appendChild(actions);
   wrap.appendChild(spacer());
@@ -7532,11 +7728,12 @@ function isLandscape() {
 }
 
 function render() {
-  if (ITEM_INSTANT) return;
+  if (ITEM_INSTANT || PACK_BUSY) return;
   document.body.classList.toggle("landscape", isLandscape());
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
   const app = document.getElementById("app");
+  const hadPack = !!app.querySelector(".pack-overlay"), hadPause = !!app.querySelector(".pause-back");
   app.innerHTML = "";
   if (MENU.screen === "main") { app.appendChild(MainMenu()); return; }
 
@@ -7874,7 +8071,39 @@ function render() {
   }
 
   if (MENU.pause) app.appendChild(PauseMenu());
+  // A screen that was already up stays still instead of fading/dealing in again.
+  if (hadPack) { const po = app.querySelector(".pack-overlay"); if (po) po.classList.add("stay"); }
+  if (hadPause) app.querySelectorAll(".pause-back").forEach((el) => el.classList.add("stay"));
+  syncLoopingAnimations();
+  fitShop();
   applyCardFlip(oldCardRects, wasFullDeal);
+}
+
+// Every render rebuilds the screen, which would restart looping animations
+// (floating cards, spinning rays) and make them jump. Pinning them all to the
+// same start time keeps each one exactly where it was.
+function syncLoopingAnimations() {
+  if (!document.getAnimations) return;
+  for (const a of document.getAnimations()) {
+    try { if (a.effect && a.effect.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0; } catch (e) {}
+  }
+}
+
+// Portrait shop: shrink the wares until the whole panel fits, so it never
+// needs scrolling. (It still scrolls as a last resort on tiny screens.)
+function fitShop() {
+  const shop = document.querySelector(".shop-overlay .bshop");
+  if (!shop || isLandscape()) return;
+  const over = () => shop.scrollHeight - shop.clientHeight;
+  if (over() <= 1) return;
+  const face = shop.querySelector(".bshop-wares .bcard-face");
+  let w = Math.floor(face ? face.getBoundingClientRect().width : 84);
+  shop.classList.add("tight");
+  shop.style.setProperty("--face", w + "px");
+  for (let i = 0; i < 16 && over() > 1 && w > 40; i++) {
+    w -= 3;
+    shop.style.setProperty("--face", w + "px");
+  }
 }
 
 /* ============================== ITEM SIDEBAR UI ============================== */
