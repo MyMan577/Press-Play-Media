@@ -1411,11 +1411,14 @@ body.landscape .bshop-wares { gap: 12px 4px; padding: 12px 4px 4px; }
 /* ============ SIDEBAR LAYOUT (sideways) ============ */
 .sidebar { display: none; }
 body.landscape .sidebar {
-  display: flex; flex-direction: column; gap: 5px; position: fixed; left: 8px; top: 6px; bottom: max(6px, env(safe-area-inset-bottom)); width: 168px; z-index: 20;
+  display: block; position: fixed; left: 8px; top: 6px; bottom: max(6px, env(safe-area-inset-bottom)); width: 196px; z-index: 20;
   padding: 6px; border-radius: 14px; overflow: hidden;
   background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
   border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #C9A22755, 0 14px 30px -12px #000c;
 }
+.sb-inner { display: flex; flex-direction: column; gap: 5px; flex: 1 0 auto; }
+body.landscape .sidebar { display: flex; flex-direction: column; }
+.sb-inner .sb-grid { margin-top: auto; }
 .sb-card { background: #131d18; border-radius: 10px; border: 1px solid #00000080; box-shadow: inset 0 2px 8px #000000a0; padding: 5px 8px; text-align: center; }
 .sb-top { padding: 5px 8px 6px; background: linear-gradient(180deg, #3a2a1a, #1e150d); box-shadow: inset 0 0 0 1px #C9A22755; }
 .sb-kicker { font-size: 8px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: #E9C568; }
@@ -1470,23 +1473,22 @@ body.landscape .sidebar {
 }
 .sb-btn-hands:active { transform: translateY(2px); box-shadow: 0 1px 0 #1a3f6e; }
 .sb-btns .opt-btn { padding: 6px 4px; }
-.sb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: auto; }
+.sb-grid { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 4px; }
 .sb-cell { background: #131d18; border-radius: 9px; border: 1px solid #00000080; box-shadow: inset 0 2px 6px #000000a0; padding: 2px 4px 3px; text-align: center; }
 .sb-val { font-size: 17px; font-weight: 700; line-height: 1.1; color: #F3ECD9; }
 .sb-val small { font-size: 10px; color: #8B8368; }
 .sb-cell.plays .sb-val { color: #3FA9A0; }
 .sb-cell.discards .sb-val { color: #D8574A; }
-.sb-cell.money { grid-column: 1 / -1; padding: 3px; }
-.sb-cell.money .sb-val { font-size: 20px; color: #FFD45E; }
+.sb-cell.money .sb-val { color: #FFD45E; }
 .sb-extras { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
 .sb-extras span { font-size: 8px; font-weight: 800; color: #E9C568; background: #0a0f0c; border: 1px solid #C9A22755; border-radius: 6px; padding: 1px 5px; }
 
 /* the rest of the screen moves over for it */
-body.landscape #app { padding-left: 186px; }
+body.landscape #app { padding-left: 214px; }
 body.landscape #app > .header, body.landscape #app > .preview-bar { display: none; }
-body.landscape #app > .gear-shelf { position: absolute; top: 6px; left: 186px; right: 14px; width: auto; margin: 0; justify-content: center; }
+body.landscape #app > .gear-shelf { position: absolute; top: 6px; left: 214px; right: 14px; width: auto; margin: 0; justify-content: center; }
 body.landscape .bottom-bar {
-  left: 182px; grid-template-columns: minmax(0, 1fr) 158px; grid-template-rows: auto auto; align-items: center; column-gap: 8px;
+  left: 210px; grid-template-columns: minmax(0, 1fr) 158px; grid-template-rows: auto auto; align-items: center; column-gap: 8px;
 }
 body.landscape .bottom-bar .hand-fan { grid-column: 1; grid-row: 1 / 3; }
 body.landscape .bottom-bar .actions-row { grid-column: 2; grid-row: 1; justify-self: stretch; align-self: end; }
@@ -1498,7 +1500,8 @@ body.landscape .score-popup { display: none; }
 body.btn-below.landscape .bottom-bar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 4px; }
 body.btn-below.landscape .bottom-bar .hand-fan { grid-column: 1 / -1; grid-row: 1; }
 body.btn-below.landscape .bottom-bar .actions-row { grid-column: 2; grid-row: 2; flex-direction: row; justify-self: center; align-self: center; gap: 10px; }
-body.btn-below.landscape .bottom-bar .actions-row > * { min-width: 150px; }
+body.btn-below.landscape .bottom-bar .actions-row > * { min-width: 118px !important; padding: 5px 14px !important; font-size: 13px !important; }
+body.landscape .bottom-bar .hand-fan { align-items: flex-end; }
 /* Sort on one side of the buttons, the deck on the other */
 body.btn-below.landscape .bottom-bar .sub-controls-row { display: contents; }
 body.btn-below.landscape .bottom-bar .sub-controls-row > .sort-toggle-wrap:not(.hands-wrap) { grid-column: 1; grid-row: 2; justify-self: end; align-self: center; margin-right: 14px; }
@@ -1509,10 +1512,10 @@ body.btn-below.lefty.landscape .bottom-bar .sub-controls-row > .deck-widget { gr
 
 /* sidebar on the right instead */
 body.sb-right.landscape .sidebar { left: auto; right: 8px; }
-body.sb-right.landscape #app { padding-left: 14px; padding-right: 186px; }
-body.sb-right.landscape #app > .gear-shelf { left: 14px; right: 186px; }
-body.sb-right.landscape .bottom-bar { left: 0; right: 182px; }
-body.sb-right.landscape .shop-overlay, body.sb-right.landscape .pack-overlay { left: 0; right: 182px; padding-left: 14px; padding-right: 4px; }
+body.sb-right.landscape #app { padding-left: 14px; padding-right: 214px; }
+body.sb-right.landscape #app > .gear-shelf { left: 14px; right: 214px; }
+body.sb-right.landscape .bottom-bar { left: 0; right: 210px; }
+body.sb-right.landscape .shop-overlay, body.sb-right.landscape .pack-overlay { left: 0; right: 210px; padding-left: 14px; padding-right: 4px; }
 /* left-handed: the button column goes on the left of the hand */
 body.lefty.landscape:not(.btn-below) .bottom-bar { grid-template-columns: 158px minmax(0, 1fr); }
 body.lefty.landscape:not(.btn-below) .bottom-bar .hand-fan { grid-column: 2; grid-row: 1 / 3; }
@@ -1520,7 +1523,7 @@ body.lefty.landscape:not(.btn-below) .bottom-bar .actions-row { grid-column: 1; 
 body.lefty.landscape:not(.btn-below) .bottom-bar .sub-controls-row { grid-column: 1; grid-row: 2; justify-self: stretch; }
 
 /* shop and pack screens open beside the sidebar */
-body.landscape .shop-overlay, body.landscape .pack-overlay { left: 182px; }
+body.landscape .shop-overlay, body.landscape .pack-overlay { left: 210px; }
 body.landscape .shop-overlay { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding-left: 4px; }
 body.landscape .shop-overlay .shop-header-row, body.landscape .pack-overlay .pack-header { display: none; }
 body.landscape .shop-overlay .gear-shelf, body.landscape .pack-overlay .gear-shelf { grid-column: 1 / -1; grid-row: 1; margin: 0; justify-self: center; }
@@ -4148,8 +4151,11 @@ function DeckPicker() {
    level-ups show there), Hands and Options, and plays, discards, money,
    ante and round. */
 function Sidebar(preview, selectedCards) {
+  const outer = document.createElement("div");
+  outer.className = "sidebar";
   const sb = document.createElement("div");
-  sb.className = "sidebar";
+  sb.className = "sb-inner";
+  outer.appendChild(sb);
   const po = state.packOpen;
   const inShop = state.overlay === "shop" || !!po;
   const round = (state.ante - 1) * 3 + state.blindIdx + 1;
@@ -4161,10 +4167,10 @@ function Sidebar(preview, selectedCards) {
     top.innerHTML = `<div class="sb-kicker">Booster pack</div><div class="sb-title serif">${po.name}</div><div class="sb-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"}</div>`;
   } else if (inShop) {
     const nIdx = (state.blindIdx + 1) % 3, nAnte = state.blindIdx === 2 ? state.ante + 1 : state.ante;
-    top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${targetForAnte(nAnte, nIdx).toLocaleString()}</div>`;
+    top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${targetForAnte(nAnte, nIdx).toLocaleString()}</div>`;
   } else {
     const b = state.bossBlind;
-    top.innerHTML = `<div class="sb-kicker">${b ? "Boss blind" : "Current blind"}</div>` +
+    top.innerHTML = `<div class="sb-kicker">${b ? "Boss blind" : "Current blind"} · Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div>` +
       `<div class="sb-title serif${b ? " is-boss" : ""}">${b ? b.name : BLIND_TYPES[state.blindIdx].label}</div>` +
       (b ? `<div class="sb-sub">${b.desc}</div>` : "") +
       `<div class="sb-target">Score at least <b>${targetForAnte(state.ante, state.blindIdx).toLocaleString()}</b></div>`;
@@ -4201,11 +4207,11 @@ function Sidebar(preview, selectedCards) {
   } else if (flash) {
     name = flash.hand;
     if (!flash.all && HAND_TABLE[flash.hand]) { const b = handBase(flash.hand); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
-  } else if (preview) {
+  } else if (preview && !inShop) {
     name = preview.name;
     chips = Math.round(preview.totalChips).toLocaleString();
     mult = fmtNum(preview.totalMult);
-  } else if (selectedCards.length) {
+  } else if (selectedCards.length && !inShop) {
     const r = evaluateSelection(selectedCards);
     name = r ? r.name : "";
     if (name && HAND_TABLE[name]) { const b = handBase(name); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
@@ -4251,12 +4257,10 @@ function Sidebar(preview, selectedCards) {
   if (state.nextHandMultX !== 1) extras.push(`Next Mult x${state.nextHandMultX.toFixed(2)}`);
   if (state.nextHandRetrigger) extras.push("Retrigger");
   if (state.nextHandBalance) extras.push("Balanced");
-  grid.innerHTML = cell("Plays", state.playsLeft, "plays") + cell("Discards", state.discardsLeft, "discards") +
-    `<div class="sb-cell money"><div class="sb-val serif">$${state.money}</div></div>` +
-    cell("Ante", `${state.ante}<small>/${FINAL_ANTE}</small>`, "ante") + cell("Round", round, "round") +
+  grid.innerHTML = cell("Plays", state.playsLeft, "plays") + cell("Discards", state.discardsLeft, "discards") + cell("Money", "$" + state.money, "money") +
     (extras.length ? `<div class="sb-extras">${extras.map((t) => `<span>${t}</span>`).join("")}</div>` : "");
   sb.appendChild(grid);
-  return sb;
+  return outer;
 }
 
 // The hand levels table: every poker hand's level, times played and score.
@@ -5552,7 +5556,7 @@ function getHandSize() {
 function computeFanLayout() {
   const viewportW = window.innerWidth;
   // In landscape the deck/sort column and the button column flank the hand.
-  const sidePadding = isLandscape() ? 186 + (SETTINGS.btnPos === "beside" ? 158 : 0) + 24 : 16;
+  const sidePadding = isLandscape() ? 214 + (SETTINGS.btnPos === "beside" ? 158 : 0) + 24 : 16;
   const available = viewportW - sidePadding;
   const handSize = getHandSize();
   const target = Math.min(available, MAX_FAN_WIDTH);
@@ -8639,6 +8643,7 @@ function render() {
   if (hadPause) app.querySelectorAll(".pause-back").forEach((el) => el.classList.add("stay"));
   syncLoopingAnimations();
   fitShop();
+  fitSidebar();
   applyCardFlip(oldCardRects, wasFullDeal);
 }
 
@@ -8650,6 +8655,18 @@ function syncLoopingAnimations() {
   for (const a of document.getAnimations()) {
     try { if (a.effect && a.effect.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0; } catch (e) {}
   }
+}
+
+// The sidebar's contents are scaled down as a whole until they fit the
+// screen's height (in the Press Play app the game can be only ~320px tall).
+function fitSidebar() {
+  const sb = document.querySelector(".sidebar");
+  const inner = sb && sb.querySelector(".sb-inner");
+  if (!inner || !isLandscape()) return;
+  inner.style.zoom = "1";
+  const room = sb.clientHeight - 12;
+  const h = inner.offsetHeight;
+  inner.style.zoom = String(h > room ? Math.max(0.6, room / h) : 1);
 }
 
 // Portrait shop: shrink the wares until the whole panel fits, so it never
@@ -8853,7 +8870,7 @@ function sellItem(uid) {
 
 function shelfWidths() {
   const total = isLandscape()
-    ? Math.min(window.innerWidth - 186 - 40, 720)
+    ? Math.min(window.innerWidth - 214 - 40, 720)
     : Math.min(window.innerWidth - 32, 640);
   const gap = 12;
   const charmsW = Math.round((total - gap) * 0.6);
