@@ -679,6 +679,7 @@ body.landscape .bshop-actions .bbtn { min-height: 0; }
 }
 .kind-item .bcard-kind { background: #4a6fb3; }
 .bcard.legendary .bcard-kind { background: #C0623A; }
+.rarity-tag { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--rc); color: #fff; border: 1.5px solid #0a0f0c; margin-right: 3px; }
 .is-pack .bcard-face { aspect-ratio: 5 / 6; background: none; }
 .is-pack .bcard-art { width: 96%; }
 .bprice {
@@ -2143,7 +2144,14 @@ const TAG_DEFS = [
   { id: "artifact", name: "Artifact Tag", desc: "Opens a free Mega Artifact Pack", color: "#C9A227", glyph: "♛", now: true, pack: "artifactPack_mega" },
   { id: "ghost", name: "Ghost Tag", desc: "Opens a free Spectral Pack", color: "#8f9bff", glyph: "☾", now: true, pack: "spectralPack" },
   { id: "boss", name: "Boss Tag", desc: "Rerolls this ante's Boss Blind", color: "#C23A30", glyph: "☠", now: true },
-  { id: "topup", name: "Top-up Tag", desc: "Gives you up to 2 random artifacts (needs room)", color: "#6b9b4a", glyph: "+", now: true },
+  { id: "topup", name: "Top-up Tag", desc: "Gives you up to 2 Common artifacts (needs room)", color: "#6b9b4a", glyph: "+", now: true },
+  { id: "uncommon", name: "Uncommon Tag", desc: "The next shop has a free Uncommon artifact", color: "#4DB873", glyph: "U" },
+  { id: "rare", name: "Rare Tag", desc: "The next shop has a free Rare artifact", color: "#E5574A", glyph: "R" },
+  { id: "garbage", name: "Garbage Tag", desc: "$1 for every discard you've left unused this run", color: "#7a8a6a", glyph: "♻", now: true },
+  { id: "encore", name: "Encore Tag", desc: "+1 hand for the next round", color: "#3FA9A0", glyph: "↻" },
+  { id: "spare", name: "Spare Tag", desc: "+2 discards for the next round", color: "#D8574A", glyph: "✂" },
+  { id: "ink", name: "Ink Tag", desc: "3 random cards in your deck get a random stamp", color: "#2f6fb8", glyph: "✒", now: true },
+  { id: "tailor", name: "Tailor Tag", desc: "2 random cards in your deck get a random sleeve", color: "#b8402f", glyph: "✁", now: true },
 ];
 const TAG_BY_ID = Object.fromEntries(TAG_DEFS.map((t) => [t.id, t]));
 function rollTag() { return randomOf(TAG_DEFS).id; }
@@ -2193,10 +2201,21 @@ function payTag(id) {
       if (state.anteRoll) state.anteRoll.boss = state.anteRoll.ante === FINAL_ANTE ? pickFinalBoss() : pickBossBlind();
       return state.anteRoll ? `Boss is now ${state.anteRoll.boss.name}` : "";
     }
+    case "garbage": { const g = state.unusedDiscardsRun || 0; state.money += g; return `+$${g}`; }
+    case "ink": {
+      const picks = shuffleArray(allRunCards().filter((c) => !c.stamp)).slice(0, 3).map((c) => c.id);
+      mapRunCards(picks, (c) => ({ ...c, stamp: randomOf(STAMP_KINDS) }));
+      return `${picks.length} cards stamped`;
+    }
+    case "tailor": {
+      const picks = shuffleArray(allRunCards().filter((c) => !c.sleeve)).slice(0, 2).map((c) => c.id);
+      mapRunCards(picks, (c) => ({ ...c, sleeve: randomOf(SLEEVE_KINDS) }));
+      return `${picks.length} cards sleeved`;
+    }
     case "topup": {
       let n = 0;
       for (let i = 0; i < 2 && charmsUsed() < state.charmSlots; i++) {
-        const d = randomCharmDef(artifactPool());
+        const d = randomCharmDef(artifactsOfRarity("common"));
         if (!d) break;
         state.charms = [...state.charms, { ...d, uid: newUid() }];
         n++;
@@ -2247,6 +2266,14 @@ function applyShopTags() {
     if (v && !state.voucherStock.some((x) => x && x.id === v.id)) state.voucherStock = [...state.voucherStock, v];
   }
   if (useTag("dice")) state.freeReroll = true;
+  // Uncommon / Rare Tags: a free artifact of that rarity at the front
+  for (const r of ["uncommon", "rare"]) {
+    while (useTag(r)) {
+      const d = randomOf(artifactsOfRarity(r).filter((x) => !state.shopStock.some((it) => it && it.id === x.id)));
+      if (!d) break;
+      state.shopStock = [{ ...d, type: "charm", price: 0, tagged: true }, ...state.shopStock];
+    }
+  }
   for (const t of TAG_DEFS.filter((x) => x.sleeve)) {
     while (useTag(t.id)) {
       let i = state.shopStock.findIndex((it) => it && it.type === "charm" && !it.sleeve && !it.tagged);
@@ -4889,6 +4916,29 @@ function isFace(card) {
 }
 // Artifacts the shop and packs can offer. Ripe Plum only turns up once a
 // Wild Plum has rotted away this run.
+/* Artifact rarities. Set from price ($7 or less Common, $8 Uncommon, $9+ Rare;
+   Legendary ones come only from Legend Packs and Soul Shard). Shops and
+   Artifact Packs roll Commons 70% of the time, Uncommons 25%, Rares 5%. */
+const RARITIES = {
+  common: { name: "Common", color: "#4a90d9", weight: 70 },
+  uncommon: { name: "Uncommon", color: "#4DB873", weight: 25 },
+  rare: { name: "Rare", color: "#E5574A", weight: 5 },
+  legendary: { name: "Legendary", color: "#C0623A", weight: 0 },
+};
+CHARM_DEFS.forEach((d) => { if (!d.rarity) d.rarity = d.price <= 7 ? "common" : d.price <= 8 ? "uncommon" : "rare"; });
+function rarityOf(def) { return RARITIES[def && def.rarity] || RARITIES.common; }
+// Weighted draw without repeats: each rarity's share holds however many
+// artifacts it has.
+function rarityShuffle(pool) {
+  const counts = {};
+  pool.forEach((d) => { counts[d.rarity] = (counts[d.rarity] || 0) + 1; });
+  const w = (d) => Math.max(0.0001, rarityOf(d).weight / counts[d.rarity]);
+  return pool.map((d) => [Math.pow(Math.random(), 1 / w(d)), d]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+}
+function artifactsOfRarity(rarity) {
+  const owned = new Set(state.charms.map((c) => c.id));
+  return artifactPool().filter((d) => d.rarity === rarity && !owned.has(d.id));
+}
 function artifactPool() {
   return CHARM_DEFS.filter((c) => !c.locked || (c.locked === "plum" && state.plumGone));
 }
@@ -5385,7 +5435,7 @@ function generateShopStock(count) {
   // weighted shuffle: Star Vendor / Planetarium make charts likelier
   const chartW = voucherBest("chartRate", Math.max);
   const weighted = (arr, wf) => arr.map((d) => [Math.pow(Math.random(), 1 / wf(d)), d]).sort((x, y) => y[0] - x[0]).map((x) => x[1]);
-  const charmPool = weighted(availableCharms, () => 1);
+  const charmPool = rarityShuffle(availableCharms);
   const itemPool = weighted(availableItems, (d) => (d.chart ? chartW : 1));
 
   let selected = [
@@ -6056,6 +6106,7 @@ function startGame(deckId) {
   state.usedCards = [];
   state.tags = [];
   state.blindsSkippedRun = 0;
+  state.unusedDiscardsRun = 0;
   state.anteRoll = null;
   state.pendingPacks = [];
   state.freeReroll = false;
@@ -6174,6 +6225,8 @@ function beginBlind(nextAnte, nextBlindIdx) {
   state.bossBlindMessage = null;
   state.playsLeft = 4 + getExtraPlays(state.items);
   state.discardsLeft = 4 + getExtraDiscards(state.items);
+  while (useTag("encore")) state.playsLeft += 1;
+  while (useTag("spare")) state.discardsLeft += 2;
   if (state.bossBlind) {
     if (state.bossBlind.forcedPlays != null) state.playsLeft = state.bossBlind.forcedPlays;
     if (state.bossBlind.forcedDiscards != null) state.discardsLeft = state.bossBlind.forcedDiscards;
@@ -6981,6 +7034,7 @@ function finishPlay(finalScore, newPlaysLeft) {
             state.items = [...state.items, { ...randomOf(ITEM_DEFS), uid: newUid() }];
           }
         });
+        state.unusedDiscardsRun = (state.unusedDiscardsRun || 0) + Math.max(0, state.discardsLeft);
         const interest = getInterestBonus(state.items, state.money);
         const base = 3 + state.blindIdx;
         const leftover = getLeftoverHandsBonus(state.playsLeft, state.discardsLeft);
@@ -7205,7 +7259,7 @@ function openPack(packId) {
   const pickDefs = (pool, n) => shuffleArray(pool).slice(0, n).map((d) => ({ ...d }));
   const n = pack.choices + state.vouchers.filter((v) => v.effect.type === "packExtraChoices" && v.effect.pack === kind).reduce((s, v) => s + v.effect.value, 0);
   let choices = [];
-  if (kind === "artifactPack") choices = pickDefs(artifactPool().filter((c) => ringmaster || !owned.has(c.id)), n).map(rollCharmSleeve);
+  if (kind === "artifactPack") choices = rarityShuffle(artifactPool().filter((c) => ringmaster || !owned.has(c.id))).slice(0, n).map((d) => rollCharmSleeve({ ...d }));
   if (kind === "itemPack") {
     // Tea Leaves: one more card. Omen Globe: any card can be a Spectral one.
     const spectralChance = voucherSum("arcanaSpectral");
@@ -7632,7 +7686,7 @@ function PackOverlay() {
       const lv = handLevel(c.effect.hand);
       desc = `${c.desc}<br><b>${c.effect.hand}</b>: Lv ${lv} → <b>Lv ${lv + 1}</b>`;
     } else {
-      kind = c.rarity === "legendary" ? "Legendary artifact" : c.type === "charm" ? "Artifact" : "Item";
+      kind = c.type === "charm" ? `${rarityOf(c).name} artifact` : "Item";
       name = c.name;
       desc = c.desc + (c.sleeve && CHARM_SLEEVES[c.sleeve] ? `<br><b>${CHARM_SLEEVES[c.sleeve].name} sleeve</b> ${CHARM_SLEEVES[c.sleeve].desc}` : "");
     }
@@ -9569,7 +9623,7 @@ function GearDetail() {
     if (def.effect.type === "mirrorsAddedX") extra = ` (currently X${(1 + (state.cardsAddedRun || 0) * def.effect.value).toFixed(1)})`;
     card.innerHTML = `
       <div class="detail-art">${AnteArt.icon(def)}</div>
-      <div class="shop-detail-type">${d.kind === "charm" ? "ARTIFACT" : "ITEM"}</div>
+      <div class="shop-detail-type">${d.kind === "charm" ? `<span class="rarity-tag" style="--rc:${rarityOf(def).color}">${rarityOf(def).name}</span> ARTIFACT` : "ITEM"}</div>
       <div class="shop-detail-name serif">${def.name}</div>
       <div class="shop-detail-desc">${def.desc}${extra}</div>
       ${d.kind === "charm" ? charmSleeveLine(def) + progressBlock(def) : ""}
@@ -9759,7 +9813,7 @@ function ShopOverlay() {
             ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
             : state.items.length >= getEffectiveItemSlots());
       const isPack = kind === "pack";
-      const typeLabel = entry.type === "playing" ? "PLAYING CARD" : isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.rarity === "legendary" ? "LEGENDARY ARTIFACT" : (entry.type === "charm" ? "ARTIFACT" : "ITEM");
+      const typeLabel = entry.type === "playing" ? "PLAYING CARD" : isVoucher ? (entry.tier === 2 ? "VOUCHER · UPGRADE" : "VOUCHER") : isPack ? "BOOSTER PACK" : entry.type === "charm" ? `<span class="rarity-tag" style="--rc:${rarityOf(entry).color}">${rarityOf(entry).name}</span> ARTIFACT` : "ITEM";
       const slotsFull = !isVoucher && !isPack && entry.type === "charm"
         ? entry.sleeve !== "negative" && charmsUsed() >= state.charmSlots
         : (!isVoucher && !isPack && state.items.length >= getEffectiveItemSlots());
