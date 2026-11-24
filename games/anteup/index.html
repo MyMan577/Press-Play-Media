@@ -1032,14 +1032,23 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .pchoice.picked .pchoice-face.full-face { box-shadow: none; filter: drop-shadow(0 0 3px #FFD45E) drop-shadow(0 0 12px #FFD45E); }
 .pchoice.legendary .pchoice-face.full-face { background: none; box-shadow: none; filter: drop-shadow(0 0 10px #E8743B) drop-shadow(0 8px 12px #000b); }
 /* ----- artifact sleeves ----- */
-.full-card.is-negative { filter: invert(1) hue-rotate(180deg); }
-.card.card-negative { filter: invert(.9) hue-rotate(180deg); }
+/* Negative: a true colour negative of the card (red turns cyan, cream turns
+   navy). The sleeve and stamp on top are left as they are. */
+.card.card-negative > :not(.card-sleeve):not(.card-stamp) { filter: invert(1); }
+.card.card-negative { background: linear-gradient(160deg, #040917 0%, #0c1326 55%, #131d3a 100%) !important; }
+body.face-contrast .card.card-negative { background: linear-gradient(160deg, #000000 0%, #090b11 100%) !important; }
+body.face-midnight .card.card-negative { background: linear-gradient(160deg, #d4cdad 0%, #e3dec6 60%, #ebe7d6 100%) !important; }
+body.face-parchment .card.card-negative { background: linear-gradient(160deg, #112351 0%, #233d75 60%, #365795 100%) !important; }
+body.face-neon .card.card-negative { background: linear-gradient(160deg, #e5eacf 0%, #f1f4e3 100%) !important; }
+body.face-rose .card.card-negative { background: linear-gradient(160deg, #041613 0%, #0c2d27 60%, #16433a 100%) !important; }
+body.face-slate .card.card-negative { background: linear-gradient(160deg, #110d09 0%, #221b13 60%, #342a20 100%) !important; }
+body.face-jade .card.card-negative { background: linear-gradient(160deg, #150a13 0%, #2b1426 60%, #43233c 100%) !important; }
 .shelf-piece.csl-sparkler svg { filter: drop-shadow(0 0 4px #FFB84D); }
 .shelf-piece.csl-tithe svg { filter: drop-shadow(0 0 3px #B8956A); }
 .shelf-piece.csl-gilded svg { filter: drop-shadow(0 0 5px #F2C94C); }
 .shelf-piece.csl-prismatic svg { animation: cslPrism 3s linear infinite; }
 @keyframes cslPrism { 0% { filter: drop-shadow(0 0 4px #ff6b6b); } 33% { filter: drop-shadow(0 0 4px #7FD08A); } 66% { filter: drop-shadow(0 0 4px #6bb8ff); } 100% { filter: drop-shadow(0 0 4px #ff6b6b); } }
-.shelf-piece.csl-negative svg { filter: invert(1) hue-rotate(180deg) drop-shadow(0 0 4px #b9a0ff); }
+.shelf-piece.csl-negative svg { filter: drop-shadow(0 0 4px #b9a0ff); }
 .sleeve-line { font-size: 12px; color: #C9BFA4; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); }
 .sleeve-line b { color: var(--sc); }
 .bcard-face.is-playing-ware { display: flex; align-items: center; justify-content: center; }
@@ -1057,7 +1066,15 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .opt-txt { font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
 .opt-btn.compact .opt-txt { display: none; }
 .opt-btn.compact { padding: 8px 9px; }
-.sub-controls-row .opt-btn { align-self: center; }
+.header-right { display: flex; align-items: center; gap: 14px; }
+.header-right .opt-btn { align-self: center; }
+.hands-opt { border-radius: 0; }
+.hands-pill {
+  vertical-align: middle; margin-left: 8px; position: relative; top: -2px; cursor: pointer;
+  font-family: 'Manrope', sans-serif; font-size: 9.5px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+  color: #E9C568; background: #0a0f0c; border: 1px solid #C9A22777; border-radius: 8px; padding: 3px 8px;
+}
+.hands-pill:active { transform: translateY(1px); }
 
 .mbtn {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%;
@@ -3799,6 +3816,19 @@ function continueRun() {
 function newRun() { MENU.screen = null; MENU.choosingRun = false; MENU.pause = false; clearSave(); startGame(); }
 
 // The small button that opens the pause menu.
+// The hand levels table: every poker hand's level, times played and score.
+function openHandLevels(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  state.gearDetail = { kind: "hands", at: Date.now() };
+  render();
+}
+function HandsPill() {
+  const b = document.createElement("button");
+  b.className = "hands-pill";
+  b.textContent = "Hands";
+  b.onclick = openHandLevels;
+  return b;
+}
 function OptionsButton(extraClass = "") {
   const b = document.createElement("button");
   b.className = "opt-btn " + extraClass;
@@ -6541,7 +6571,7 @@ function PackOverlay() {
   header.className = "shop-header-row pack-header";
   header.innerHTML = `
     <div class="shop-header-left">
-      <div class="shop-title serif">${po.name}</div>
+      <div class="shop-title serif">${po.name}<button class="hands-pill" data-hands>Hands</button></div>
       <div class="shop-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"} · drag yours to sell</div>
     </div>`;
   const right = document.createElement("div");
@@ -6553,6 +6583,7 @@ function PackOverlay() {
   right.insertAdjacentHTML("beforeend", `<div class="shop-money serif">$${state.money}</div>`);
   right.appendChild(OptionsButton("compact"));
   header.appendChild(right);
+  header.querySelector("[data-hands]").onclick = openHandLevels;
   wrap.appendChild(header);
   wrap.appendChild(GearShelf());
   const spacer = () => { const d = document.createElement("div"); d.className = "pack-spacer"; return d; };
@@ -7841,7 +7872,11 @@ function render() {
   if (state.nextHandBalance) {
     statsRow.appendChild(Stat("Balanced", "Yes", "#9B8B6A"));
   }
-  header.appendChild(statsRow);
+  const headRight = document.createElement("div");
+  headRight.className = "header-right";
+  headRight.appendChild(statsRow);
+  headRight.appendChild(OptionsButton("compact"));
+  header.appendChild(headRight);
 
   app.appendChild(header);
 
@@ -7862,7 +7897,7 @@ function render() {
     const nameEl = document.createElement("div");
     nameEl.className = "preview-name serif";
     nameEl.innerHTML = `${preview.name}<span class="lv-tag">Lv ${handLevel(preview.name)}</span>`;
-    nameEl.onclick = () => { state.gearDetail = { kind: "hands", at: Date.now() }; render(); };
+    nameEl.onclick = openHandLevels;
     previewBar.appendChild(nameEl);
     previewBar.appendChild(ChipPill("chips", preview.totalChips, "#3FA9A0"));
     const x = document.createElement("span");
@@ -7964,7 +7999,21 @@ function render() {
   });
   sortWrap.appendChild(sortToggle);
   subRow.appendChild(sortWrap);
-  subRow.appendChild(OptionsButton());
+  // Hand levels and play counts, styled to match the sort toggle beside it.
+  const handsWrap = document.createElement("div");
+  handsWrap.className = "sort-toggle-wrap";
+  handsWrap.innerHTML = `<div class="sort-toggle-label" style="font-size:${Math.round(7 * cardScale)}px">Hands</div>`;
+  const handsBtn = document.createElement("button");
+  handsBtn.className = "sort-opt hands-opt";
+  handsBtn.style.fontSize = Math.round(8.5 * cardScale) + "px";
+  handsBtn.style.padding = `${Math.round(4.5 * cardScale)}px ${Math.round(9 * cardScale)}px`;
+  handsBtn.textContent = "Levels";
+  handsBtn.onclick = openHandLevels;
+  const handsBox = document.createElement("div");
+  handsBox.className = "sort-toggle";
+  handsBox.appendChild(handsBtn);
+  handsWrap.appendChild(handsBox);
+  subRow.appendChild(handsWrap);
 
   bottomBar.appendChild(subRow);
 
@@ -8595,6 +8644,7 @@ function ShopOverlay() {
   const title = document.createElement("div");
   title.className = "shop-title serif";
   title.textContent = "The Shop";
+  title.appendChild(HandsPill());
   headerLeft.appendChild(title);
   const sub = document.createElement("div");
   sub.className = "shop-sub";
