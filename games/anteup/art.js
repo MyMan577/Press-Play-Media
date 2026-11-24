@@ -194,7 +194,27 @@
   };
 
   // ---------- legendary artifacts ----------
+  // Negative Nancy: one figure, her right half a photo-negative of her left.
+  const nancyFigure = (c) =>
+    `<path d="M10 62 Q12 44 24 41 L32 46 L40 41 Q52 44 54 62Z" fill="${c.dress}" stroke="${c.line}" stroke-width="2.2" stroke-linejoin="round"/>` +
+    `<path d="M26 40 L32 47 L38 40" fill="none" stroke="${c.line}" stroke-width="1.6"/>` +
+    `<rect x="28" y="33" width="8" height="9" fill="${c.skin}" stroke="${c.line}" stroke-width="1.8"/>` +
+    `<path d="M17 30 Q14 8 32 8 Q50 8 47 30 Q47 40 42 42 L42 24 Q32 20 22 24 L22 42 Q17 40 17 30Z" fill="${c.hair}" stroke="${c.line}" stroke-width="2.2" stroke-linejoin="round"/>` +
+    `<ellipse cx="32" cy="27" rx="10" ry="12" fill="${c.skin}" stroke="${c.line}" stroke-width="2"/>` +
+    `<path d="M22 22 Q30 13 43 19 Q38 15 32 15 Q24 15 22 22Z" fill="${c.hair}" stroke="${c.line}" stroke-width="1.4"/>` +
+    `<circle cx="28" cy="27" r="1.7" fill="${c.line}"/><circle cx="36" cy="27" r="1.7" fill="${c.line}"/>` +
+    `<path d="M28.5 33 Q32 35.5 35.5 33" fill="none" stroke="${c.mouth}" stroke-width="1.6" stroke-linecap="round"/>` +
+    `<circle cx="32" cy="54" r="3.2" fill="${c.brooch}" stroke="${c.line}" stroke-width="1.4"/>`;
+  const NANCY_NORMAL = { dress: "#7a55b0", hair: "#3a2848", skin: "#f1d1b0", line: INK, mouth: "#a8302a", brooch: "#e9c568" };
+  const invertHex = (h) => "#" + (0xffffff ^ parseInt(h.slice(1), 16)).toString(16).padStart(6, "0");
+  const NANCY_NEGATIVE = Object.fromEntries(Object.entries(NANCY_NORMAL).map(([k, v]) => [k, invertHex(v === INK ? "#22170d" : v)]));
+  const nancyArt =
+    `<defs><clipPath id="nancyL"><rect x="0" y="0" width="32" height="64"/></clipPath><clipPath id="nancyR"><rect x="32" y="0" width="32" height="64"/></clipPath></defs>` +
+    `<g clip-path="url(#nancyL)">${nancyFigure(NANCY_NORMAL)}</g>` +
+    `<g clip-path="url(#nancyR)">${nancyFigure(NANCY_NEGATIVE)}</g>` +
+    `<path d="M32 4 V63" stroke="#b9a0ff" stroke-width="1.4" stroke-dasharray="2.5 2" opacity=".9"/>`;
   const LEGENDS = {
+    negativeNancy: nancyArt,
     phoenix: flame(32, 40, 18) + `<path d="M20 52 Q24 26 44 8 Q40 30 26 54Z" fill="#E8743B" ${O}/><path d="M24 50 Q30 32 42 14 M28 40 L22 36 M31 33 L25 28 M34 26 L29 21 M30 40 L37 38 M33 33 L40 30" ${N} ${T}/>`,
     hydra: heart(32, 38, 12, "#3FA97A") + [[-1, 14, 16], [0, 32, 8], [1, 50, 16]].map(([d, x, y]) => `<path d="M32 30 Q${32 + d * 10} ${y + 8} ${x} ${y}" ${N} stroke="${INK}" stroke-width="6.2" stroke-linecap="round"/><path d="M32 30 Q${32 + d * 10} ${y + 8} ${x} ${y}" ${N} stroke="#3FA97A" stroke-width="4" stroke-linecap="round"/><ellipse cx="${x}" cy="${y}" rx="4.4" ry="3.4" fill="#3FA97A" ${O}/>`).join(""),
     midnightSun: sun(32, 32, 14, "#F6C445") + `<circle cx="38" cy="28" r="12" fill="#26304f" ${O}/>` + sparkle(14, 50, 4, "#fff") + sparkle(52, 50, 3, "#fff"),
