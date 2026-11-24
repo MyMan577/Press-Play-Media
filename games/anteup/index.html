@@ -4939,6 +4939,24 @@ const RARITIES = {
   rare: { name: "Rare", color: "#E5574A", weight: 5 },
   legendary: { name: "Legendary", color: "#C0623A", weight: 0 },
 };
+// Rarity and price picked by hand where the price alone would rate an
+// artifact wrongly: [rarity, price].
+const RERATED = {
+  // over-rated: small flat bonuses, narrow conditions or slow growth
+  ratchet: ["common", 4], grimoire: ["common", 6], crown: ["common", 6], roulette: ["common", 5], midas: ["common", 6],
+  cascade: ["common", 5], almanac: ["common", 5], paladin: ["common", 5], keymaster: ["common", 4], miser: ["common", 5],
+  locksmith: ["common", 5], conductor: ["common", 5], gambler: ["common", 3], curator: ["common", 5], blueprintCharm: ["common", 5],
+  crescendo: ["common", 6], keepsake: ["common", 5], investor: ["common", 6], streak: ["common", 5], furnace: ["common", 5], scale: ["common", 6],
+  world: ["uncommon", 7], redThread: ["uncommon", 7], reliquary: ["uncommon", 7], triptych: ["uncommon", 7], camera: ["uncommon", 7],
+  amplifier: ["uncommon", 7], checkmate: ["uncommon", 7], alchemist: ["uncommon", 8], lowTide: ["uncommon", 8], encoreMask: ["uncommon", 8],
+  hallOfMirrors: ["uncommon", 8],
+  // under-rated: game-changers or strong scalers sold as commons
+  dejaVu: ["rare", 9], duke: ["rare", 9],
+  catBurglar: ["uncommon", 8], punchCard: ["uncommon", 8], fizz: ["uncommon", 8], understudy: ["uncommon", 8], maskMaker: ["uncommon", 8],
+  smudgedInk: ["uncommon", 8], gapJump: ["uncommon", 8], leech: ["uncommon", 8], bonfire: ["uncommon", 8], trailMark: ["uncommon", 8],
+  cosmonaut: ["uncommon", 8], twilight: ["uncommon", 8], jackknife: ["uncommon", 8],
+};
+CHARM_DEFS.forEach((d) => { const r = RERATED[d.id]; if (r && d.rarity !== "legendary") { d.rarity = r[0]; d.price = r[1]; } });
 CHARM_DEFS.forEach((d) => { if (!d.rarity) d.rarity = d.price <= 7 ? "common" : d.price <= 8 ? "uncommon" : "rare"; });
 function rarityOf(def) { return RARITIES[def && def.rarity] || RARITIES.common; }
 // Weighted draw without repeats: each rarity's share holds however many
