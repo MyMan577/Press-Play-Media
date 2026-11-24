@@ -1005,6 +1005,11 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
   color: #fff; background: #C23A30; border: 1.5px solid #0a0f0c; border-radius: 7px; padding: 2px 4px 3px;
 }
 .prog-stat.chips { background: #3866B8; }
+.prog-stat.money { background: #B8901E; }
+.bcard-art, .pchoice-face.full-face { position: relative; }
+.bcard-art .prog-stat { top: auto; bottom: 16%; right: -6px; font-size: 10.5px; }
+.pchoice-face.full-face .prog-stat { top: -5px; right: -5px; font-size: 11px; }
+.bcard-art .prog-bar, .pchoice-face.full-face .prog-bar { bottom: -3px; }
 .prog-bar {
   position: absolute; left: 5px; right: 5px; bottom: 2px; height: 5px; z-index: 2; pointer-events: none;
   background: #0a0f0c; border-radius: 3px; border: 1px solid #0a0f0c; overflow: hidden;
@@ -1017,6 +1022,7 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .prog-block-stat b { font-family: 'Fraunces', Georgia, serif; font-size: 15px; padding: 0 5px; border-radius: 5px; color: #fff; }
 .prog-block-stat b.m { background: #C23A30; }
 .prog-block-stat b.c { background: #3866B8; }
+.prog-block-stat b.d { background: #B8901E; }
 .prog-block-bar { width: 100%; height: 10px; border-radius: 6px; background: #0a0f0c; border: 1px solid #C9A22755; overflow: hidden; }
 .prog-block-bar i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); }
 .prog-block-bar.ready i { background: linear-gradient(90deg, #4DB873, #9CF0B4); }
@@ -5176,12 +5182,55 @@ function flashMessage(text, ms = 1800) {
   state.bossBlindMessage = text;
   setTimeout(() => { if (state.bossBlindMessage === text) { state.bossBlindMessage = null; render(); } }, ms);
 }
-function noteSold() {
-  state.charms = state.charms.map((c) => (c.effect.type === "bonfireX" ? { ...c, bonfireBonus: (c.bonfireBonus || 0) + c.effect.value } : c));
+/* ----- run tallies -----
+   Artifacts that build up over a run (Ratchet, Pass Mark, Oracle, Bonfire,
+   Stargazer...) read these. They count from the start of the run whether or
+   not you own the artifact, so one bought late arrives already built up.
+   Ones whose text is about the present (money you hold, this round, ...)
+   just read the present and aren't here. Leech, Fizz, Sundae, Popcorn, Nest
+   Egg and Specter count from when you got them: it's the artifact itself
+   doing it. */
+function tally() { return state.tally || (state.tally = {}); }
+function bumpTally(key, n = 1) { const t = tally(); t[key] = (t[key] || 0) + n; }
+// The built-up values an artifact gets from the run's tallies.
+function tallyFields(c) {
+  const e = (c && c.effect) || {}, t = state.tally || {};
+  switch (e.type) {
+    case "ratchetBossMult": return { ratchetBonus: (t.bosses || 0) * e.value };
+    case "passMarkMult": return { passBonus: (t.packsSkipped || 0) * e.value };
+    case "oracleCompoundMult": return { oracleMultBonus: Math.pow(e.value, Math.floor((state.handsPlayedRun || 0) / e.everyN)) };
+    case "lanternDiscardX": return { lanternDiscards: state.totalDiscardedRun || 0 };
+    case "bonfireX": return { bonfireBonus: (t.soldSinceBoss || 0) * e.value };
+    case "commuterMult": return { busCount: t.facelessRun || 0 };
+    case "stargazerX": return { stars: t.chartsUsed || 0 };
+    case "jackknifeX": return { jackBonus: (t.jacksRound || 0) * e.value };
+    case "deuceChips": return { deuceBonus: (t.twosScored || 0) * e.value };
+    case "saintFaceDestroyedX": return { saintX: 1 + (t.facesDestroyed || 0) * e.value };
+  }
+  return null;
 }
-function noteChartUsed() {
-  state.charms = state.charms.map((c) => (c.effect.type === "stargazerX" ? { ...c, stars: (c.stars || 0) + 1 } : c));
+// Writes the tallies onto the artifacts you own (scoring reads them there).
+function syncTallies() {
+  (state.charms || []).forEach((c) => { const f = tallyFields(c); if (f) Object.assign(c, f); });
 }
+// Saves from before the tallies: start them from what owned artifacts had built up.
+function seedTalliesFromCharms() {
+  const t = {};
+  const by = (type) => (state.charms || []).find((c) => c.effect && c.effect.type === type);
+  const per = (type, field) => { const c = by(type); return c ? Math.round((c[field] || 0) / (c.effect.value || 1)) : 0; };
+  t.bosses = per("ratchetBossMult", "ratchetBonus");
+  t.packsSkipped = per("passMarkMult", "passBonus");
+  t.soldSinceBoss = per("bonfireX", "bonfireBonus");
+  t.jacksRound = per("jackknifeX", "jackBonus");
+  t.twosScored = per("deuceChips", "deuceBonus");
+  t.facelessRun = (by("commuterMult") || {}).busCount || 0;
+  t.chartsUsed = (by("stargazerX") || {}).stars || 0;
+  const saint = by("saintFaceDestroyedX");
+  t.facesDestroyed = saint ? Math.round(((saint.saintX || 1) - 1) / (saint.effect.value || 1)) : 0;
+  return t;
+}
+function noteSold() { bumpTally("soldSinceBoss"); }
+function noteChartUsed() { bumpTally("chartsUsed"); }
 // After every played hand: Fizz and Sundae run down.
 function afterHandCharms() {
   const gone = [];
@@ -5216,6 +5265,7 @@ function roundEndCharms(wasBoss) {
     return c;
   });
   if (gone.length) state.charms = state.charms.filter((c) => !gone.some((g) => g.uid === c.uid));
+  if (wasBoss) tally().soldSinceBoss = 0;
   if (notes.length) flashMessage(notes.join(" · "), 2400);
 }
 
@@ -5224,8 +5274,47 @@ function roundEndCharms(wasBoss) {
    bar   — progress toward its next trigger (Specter, Oracle, Tally Lantern)
    stat  — its current value, for artifacts that grow over the run */
 function charmProgress(c) {
+  // Not yet yours (shop, pack): show what it would give if you had it now.
+  const tf = tallyFields(c);
+  if (tf) c = { ...c, ...tf };
   const e = c.effect || {};
   const out = {};
+  const playing = state.overlay === "playing";
+  switch (e.type) {
+    case "miserMultPerTenDollars": out.stat = `+${Math.floor(Math.max(0, state.money) / 10) * e.value}`; break;
+    case "bullionChips": out.stat = `+${Math.max(0, state.money) * e.value}`; out.chips = true; break;
+    case "grimoireMultPerCharm": out.stat = `+${(state.charms.length + (state.charms.some((x) => x.uid && x.uid === c.uid) ? 0 : 1)) * e.value}`; break;
+    case "keymasterLuckCharmMult": {
+      const luck = new Set(["calculatorReplay", "cameraPreserve", "horseshoeDoubleChance", "rouletteRandomBonus", "coinFlip", "heartstoneChance"]);
+      out.stat = `+${state.charms.filter((x) => luck.has(x.effect.type)).length * e.value}`;
+      break;
+    }
+    case "keepsakeMultPerItem": out.stat = `+${(state.items || []).length * e.value}`; break;
+    case "smugglerLowMoneyMult": out.stat = `+${state.money <= e.threshold ? e.value : 0}`; break;
+    case "scaleMultPerDiscard": out.stat = `+${Math.max(0, state.discardsLeft || 0) * e.value}`; break;
+    case "tinkererChipsPerDeckCard": out.stat = `+${(playing ? state.deck.length : allRunCards().length) * e.value}`; out.chips = true; break;
+    case "parchmentChipsPerUsedCard": out.stat = `+${(playing ? (state.usedCards || []).length : 0) * e.value}`; out.chips = true; break;
+    case "crescendoMultPerRoundHand": out.stat = `+${(playing ? (state.handTypesPlayedThisRound || []).length : 0) * e.value}`; break;
+    case "thornsMultPerCard": out.stat = `+${(playing ? state.hand.length : 0) * e.value}`; break;
+    case "monumentHandTypeMult": {
+      const n = state.consecutiveHandsWithoutMostPlayed || 0;
+      out.stat = `X${fmtNum(1 + n * e.value)}`;
+      out.note = state.mostPlayedHandType ? `${n} hand${n === 1 ? "" : "s"} in a row without ${state.mostPlayedHandType}` : "Starts with your first hand";
+      break;
+    }
+    case "stencilX": out.stat = `X${Math.max(1, state.charmSlots - charmsUsed() + state.charms.filter((x) => x.effect.type === "stencilX").length)}`; break;
+    case "firstHandX": out.stat = `X${playing && (state.handsThisRound || 0) === 0 ? e.value : 1}`; out.note = "Fires on the first hand of each round"; break;
+    case "zenithLastPlayMult": out.stat = `X${playing && state.playsLeft === 1 ? e.value : 1}`; out.note = "Fires on your last hand of the round"; break;
+    case "paladinBossMult": out.stat = `+${state.bossBlind ? e.value : 0}`; out.note = "Fires during Boss Blinds"; break;
+    case "investorMoneyPerCharm": out.stat = `$${(state.charms.length + (state.charms.some((x) => x.uid && x.uid === c.uid) ? 0 : 1)) * e.value}`; out.money = true; out.unit = "when you clear a blind"; break;
+    case "nestEgg": out.stat = `$${sellValue(c)}`; out.money = true; out.unit = "sell value"; break;
+    case "ratchetBossMult": out.note = `${(state.tally || {}).bosses || 0} Boss Blind${((state.tally || {}).bosses || 0) === 1 ? "" : "s"} cleared this run`; break;
+    case "passMarkMult": out.note = `${(state.tally || {}).packsSkipped || 0} pack${((state.tally || {}).packsSkipped || 0) === 1 ? "" : "s"} skipped this run`; break;
+    case "bonfireX": out.note = `${(state.tally || {}).soldSinceBoss || 0} sold since the last Boss Blind`; break;
+    case "stargazerX": out.note = `${(state.tally || {}).chartsUsed || 0} Star Chart${((state.tally || {}).chartsUsed || 0) === 1 ? "" : "s"} used this run`; break;
+    case "saintFaceDestroyedX": out.note = `${(state.tally || {}).facesDestroyed || 0} face card${((state.tally || {}).facesDestroyed || 0) === 1 ? "" : "s"} destroyed this run`; break;
+    case "deuceChips": out.note = `${(state.tally || {}).twosScored || 0} 2${((state.tally || {}).twosScored || 0) === 1 ? "" : "s"} scored this run`; break;
+  }
   switch (e.type) {
     case "specterDuplicate": {
       const n = Math.min(3, e.blindCounter || 0);
@@ -5277,16 +5366,17 @@ function charmProgress(c) {
 function progressOverlay(c) {
   const p = charmProgress(c);
   let html = "";
-  if (p.stat) html += `<span class="prog-stat${p.chips ? " chips" : ""}">${p.stat}</span>`;
+  if (p.stat) html += `<span class="prog-stat${p.chips ? " chips" : ""}${p.money ? " money" : ""}">${p.stat}</span>`;
   if (p.bar) html += `<span class="prog-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></span>`;
   return html;
 }
 // The bigger version for the detail popup.
 function progressBlock(c) {
   const p = charmProgress(c);
-  if (!p.bar && !p.stat) return "";
+  if (!p.bar && !p.stat && !p.note) return "";
   return `<div class="prog-block">` +
-    (p.stat ? `<div class="prog-block-stat">Now <b class="${p.chips ? "c" : "m"}">${p.stat}</b> ${p.chips ? "Chips" : "Mult"}</div>` : "") +
+    (p.stat ? `<div class="prog-block-stat">Now <b class="${p.money ? "d" : p.chips ? "c" : "m"}">${p.stat}</b> ${p.unit || (p.chips ? "Chips" : "Mult")}</div>` : "") +
+    (p.note ? `<div class="prog-block-label">${p.note}</div>` : "") +
     (p.bar ? `<div class="prog-block-bar${p.bar.ready ? " ready" : ""}"><i style="width:${Math.round((p.bar.value / p.bar.max) * 100)}%"></i></div><div class="prog-block-label">${p.bar.label}</div>` : "") +
     `</div>`;
 }
@@ -5615,9 +5705,7 @@ function noteAdded(n) {
 function noteDestroyed(cards) {
   state.cardsDestroyedRun = (state.cardsDestroyedRun || 0) + cards.length;
   const faces = cards.filter((c) => c && isFace(c)).length;
-  if (faces) {
-    state.charms = state.charms.map((c) => (c.effect.type === "saintFaceDestroyedX" ? { ...c, saintX: (c.saintX || 1) + faces * c.effect.value } : c));
-  }
+  if (faces) bumpTally("facesDestroyed", faces);
 }
 // Price in the shop after Clearance Sale, or $0 while The Merchant's free buy is waiting.
 function shopPriceFor(entry) {
@@ -5748,6 +5836,7 @@ function applyBossBlindScoringEffects(result, cards) {
 }
 
 function applyCharmEffects(result, cards, charms) {
+  syncTallies();
   let { totalChips, totalMult } = result;
   const handName = result.name;
   charms.forEach((charm) => {
@@ -5818,7 +5907,7 @@ function applyCharmEffects(result, cards, charms) {
         break;
       }
       case "monumentHandTypeMult": {
-        totalMult *= Math.pow(1.2, state.consecutiveHandsWithoutMostPlayed * eff.value);
+        totalMult *= 1 + (state.consecutiveHandsWithoutMostPlayed || 0) * eff.value;
         break;
       }
       case "batteryFlatChips":
@@ -6149,6 +6238,8 @@ function loadGame() {
       return d;
     };
     state.charms = (state.charms || []).map((c) => refresh(c, [CHARM_DEFS, LEGENDARY_DEFS]));
+    if (!state.tally) state.tally = seedTalliesFromCharms();
+    syncTallies();
     state.items = (state.items || []).map((i) => refresh(i, [ITEM_DEFS]));
     state.shopStock = (state.shopStock || []).map((x) => (x && x.type === "charm" ? refresh(x, [CHARM_DEFS, LEGENDARY_DEFS]) : refresh(x, [ITEM_DEFS])));
     const vref = (v) => (v && VOUCHER_BY_ID[v.id] ? { ...VOUCHER_BY_ID[v.id] } : v);
@@ -6245,6 +6336,7 @@ function startGame(deckId, seed) {
   state.collectorUsedThisRound = false;
   state.cardsDestroyedRun = 0;
   state.cardsAddedRun = 0;
+  state.tally = {};
   state.handLevels = {};
   state.heartstoneHits = 0;
   state.nextHandDoubleBase = false;
@@ -6484,6 +6576,7 @@ function beginBlind(nextAnte, nextBlindIdx) {
     if (c.effect.type === "burglarHands") { state.playsLeft += c.effect.value; state.discardsLeft = 0; }
     if (c.effect.type === "jackknifeX") c.jackBonus = 0;
   });
+  tally().jacksRound = 0;
   state.streakCounter = 0; // Reset Streak for new round
   state.handsThisRound = 0;
   state.luckyRound = false;
@@ -6703,7 +6796,7 @@ function previewScore(selectedCards) {
     state.streakCounter = (state.streakCounter || 0) + 1;
     state.handsPlayedRun = (state.handsPlayedRun || 0) + 1;
     state.isLastPlayThisRound = state.playsLeft - 1 === 0;
-    if (state.charms.some((c) => c.effect.type === "monumentHandTypeMult") && state.mostPlayedHandType && base.name !== state.mostPlayedHandType) {
+    if (state.mostPlayedHandType && base.name !== state.mostPlayedHandType) {
       state.consecutiveHandsWithoutMostPlayed = (state.consecutiveHandsWithoutMostPlayed || 0) + 1;
     }
     return scoreHand(selectedCards, { live: false });
@@ -6737,10 +6830,9 @@ function scoreHand(selectedCards, { live = false } = {}) {
       if (eaten) leeches.forEach((l) => { l.leechBonus = (l.leechBonus || 0) + eaten * l.effect.value; });
     }
     const anyFace = cards.some((c) => isFace(c));
-    state.charms.forEach((c) => {
-      if (c.effect.type === "commuterMult") c.busCount = anyFace ? 0 : (c.busCount || 0) + 1;
-      if (c.effect.type === "deuceChips") c.deuceBonus = (c.deuceBonus || 0) + cards.filter((x) => x.rank === "2" && !isCardDebuffed(x)).length * c.effect.value;
-    });
+    if (anyFace) tally().facelessRun = 0; else bumpTally("facelessRun");
+    bumpTally("twosScored", cards.filter((x) => x.rank === "2" && !isCardDebuffed(x)).length);
+    syncTallies();
   }
   const charms = effectiveCharms();
   const has = (type) => charms.find((c) => c.effect.type === type);
@@ -7064,9 +7156,8 @@ function playHand() {
   const newPlaysLeft = state.playsLeft - 1;
 
   // Handle Monument: track consecutive hands without most played hand type
-  const hasMonument = state.charms.some((c) => c.effect.type === "monumentHandTypeMult");
-  if (hasMonument) {
-    if (state.mostPlayedHandType === null) {
+  {
+    if (state.mostPlayedHandType == null) {
       state.mostPlayedHandType = baseResult.name;
       state.consecutiveHandsWithoutMostPlayed = 0;
     } else if (baseResult.name === state.mostPlayedHandType) {
@@ -7131,11 +7222,7 @@ function playHand() {
   // multiplier every 3rd hand played this run (accumulates on the charm
   // instance itself, same pattern as Ratchet's boss-clear bonus).
   state.handsPlayedRun = (state.handsPlayedRun || 0) + 1;
-  state.charms.forEach((charm) => {
-    if (charm.effect.type === "oracleCompoundMult" && state.handsPlayedRun % charm.effect.everyN === 0) {
-      charm.oracleMultBonus = (charm.oracleMultBonus || 1) * charm.effect.value;
-    }
-  });
+  syncTallies();   // Oracle grows every 3rd hand of the run
 
   // Zenith: flag whether this is the last play of the round before scoring resolves
   state.isLastPlayThisRound = newPlaysLeft === 0;
@@ -7301,11 +7388,8 @@ function finishPlay(finalScore, newPlaysLeft) {
         if (state.blindIdx === 2) {
           // Boss Blind cleared - Ratchet's bonus is permanent, so it accumulates
           // on the charm instance itself rather than being recomputed live.
-          state.charms.forEach((c) => {
-            if (c.effect.type === "ratchetBossMult") {
-              c.ratchetBonus = (c.ratchetBonus || 0) + c.effect.value;
-            }
-          });
+          bumpTally("bosses");
+          syncTallies();
         }
       } else if (newPlaysLeft <= 0) {
         state.overlay = "over";
@@ -7365,9 +7449,8 @@ function discard() {
     state.selected = [];
     state.discardsLeft -= 1;
     state.totalDiscardedRun = (state.totalDiscardedRun || 0) + discardedCards.length;
-    state.charms = state.charms.map((c) => (c.effect.type === "lanternDiscardX" ? { ...c, lanternDiscards: (c.lanternDiscards || 0) + discardedCards.length } : c));
-    const jacks = discardedCards.filter((c) => c.rank === "J").length;
-    if (jacks) state.charms = state.charms.map((c) => (c.effect.type === "jackknifeX" ? { ...c, jackBonus: (c.jackBonus || 0) + jacks * c.effect.value } : c));
+    bumpTally("jacksRound", discardedCards.filter((c) => c.rank === "J").length);
+    syncTallies();
     state.money += getMoneyOnDiscard(state.items) + titheBonus;
     state.streakCounter = 0; // Reset Streak when discarding
     saveGame();
@@ -7670,7 +7753,7 @@ function skipPack() {
   if (PACK_BUSY) return;
   state.packOpen = null;
   // Pass Mark grows every time a pack is skipped
-  state.charms = state.charms.map((c) => (c.effect.type === "passMarkMult" ? { ...c, passBonus: (c.passBonus || 0) + c.effect.value } : c));
+  bumpTally("packsSkipped");
   if (state.overlay === "select") openPendingPack();
   saveGame();
   render();
@@ -7892,7 +7975,7 @@ function PackOverlay() {
       el.classList.add("kind-scrap");
     } else {
       const kind = choice.type === "charm" ? "kind-charm" : "kind-item";
-      el.innerHTML = `<div class="pchoice-face full-face">${AnteArt.card(choice)}</div>`;
+      el.innerHTML = `<div class="pchoice-face full-face">${AnteArt.card(choice)}${choice.type === "charm" && SETTINGS.badges ? progressOverlay(choice) : ""}</div>`;
       el.classList.add(kind);
     }
     el.onclick = () => pickPackChoice(i);
@@ -7961,6 +8044,7 @@ function PackOverlay() {
       kind = c.type === "charm" ? `${rarityOf(c).name} artifact` : "Item";
       name = c.name;
       desc = c.desc + (c.sleeve && CHARM_SLEEVES[c.sleeve] ? `<br><b>${CHARM_SLEEVES[c.sleeve].name} sleeve</b> ${CHARM_SLEEVES[c.sleeve].desc}` : "");
+      if (c.type === "charm") { const pp = charmProgress(c); if (pp.stat) desc += `<br><b>Now ${pp.stat}</b> ${pp.unit || (pp.chips ? "Chips" : "Mult")}${pp.note ? ` · ${pp.note}` : ""}`; else if (pp.note) desc += `<br>${pp.note}`; }
     }
     info.innerHTML = `
       <div class="pack-info-kind">${kind}</div>
@@ -10086,7 +10170,7 @@ function ShopOverlay() {
     card.style.setProperty("--glow", item.color || "#C9A227");
     card.innerHTML = `
       <span class="bprice">${price < item.price ? `<s>$${item.price}</s>` : ""}$${price}</span>
-      <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : item.spectral ? AnteArt.icon(item) : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}</div></div>
+      <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : item.spectral ? AnteArt.icon(item) : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}${item.type === "charm" && SETTINGS.badges ? progressOverlay(item) : ""}</div></div>
       <div class="bcard-name">${item.name}</div>
       <button class="bbuy" ${state.money < price || slotsFull ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>`;
     if (item.type === "playing") card.querySelector(".bcard-art").appendChild(playingCardEl(item.card, 1.25));
@@ -10192,6 +10276,7 @@ function ShopOverlay() {
         <div class="shop-detail-name serif">${entry.name}</div>
         <div class="shop-detail-desc">${entry.desc}</div>
         ${isVoucher ? voucherHint(entry) : charmSleeveLine(entry)}
+        ${entry.type === "charm" ? progressBlock(entry) : ""}
         <div class="shop-detail-price">${!isVoucher && shopDiscount < 1 ? `<s>$${entry.price}</s> $${discountedPrice}` : `$${discountedPrice}`}</div>
         <button class="shop-detail-buy-btn" ${disabled ? "disabled" : ""}>${slotsFull ? "Slots Full" : disabled ? "Can't Afford" : isVoucher ? "Redeem" : isPack ? "Open" : "Buy"}</button>
       `;
