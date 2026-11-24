@@ -10,6 +10,10 @@
   // Official UVR5 model release (settings from UVR's mdx_model_data/model_data.json). GitHub sends no CORS headers,
   // so these files can only be downloaded by the Android app (Java); models marked nativeOnly are hidden in the browser.
   const UVR = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/';
+  // One MDX pass of a multi-stem set. key: where the file is stored (shared with the 2-stem model of the same file, so nothing downloads twice).
+  const KL = (set, stem, nfft, dimT) => ({ kind: 'mdx', key: 'mx_kl' + set + '_' + stem, file: UVR + 'kuielab_' + set + '_' + stem + '.onnx', stem: stem[0].toUpperCase() + stem.slice(1), nfft, dimF: 2048, dimT, comp: 1.035 });
+  const VFT = { kind: 'mdx', key: 'mdx_voc', file: 'UVR-MDX-NET-Voc_FT.onnx', stem: 'Vocals', nfft: 7680, dimF: 3072, comp: 1.021 };
+  const KIM2 = { kind: 'mdx', key: 'mdx_kim2', file: UVR + 'Kim_Vocal_2.onnx', stem: 'Vocals', nfft: 7680, dimF: 3072, comp: 1.009 };
   const MODELS = {
     spleeter2: { label: 'Fast · 2 stems (~80 MB)', kind: 'spleeter', files: { vocals: 'spleeter-vocals.onnx', accomp: 'spleeter-accompaniment.onnx' }, sources: [] },
     spleeter4: { label: 'Spleeter · 4 stems (~79 MB)', kind: 'sp4', files: { vocals: 'vocals.fp16.onnx', drums: 'drums.fp16.onnx', bass: 'bass.fp16.onnx', other: 'other.fp16.onnx' }, sources: ['vocals', 'drums', 'bass', 'other'] },
@@ -17,8 +21,24 @@
     mdx_lite:  { label: 'Balanced vocals · MDX-Net Lite (~30 MB)', kind: 'mdx', file: UVR + 'UVR_MDXNET_1_9703.onnx', nativeOnly: true, sources: [], nfft: 6144, dimF: 2048, comp: 1.03 },
     mdx_kara:  { label: 'Karaoke · lead vocal only, keeps backing vocals (~30 MB)', kind: 'mdx', file: UVR + 'UVR_MDXNET_KARA.onnx', nativeOnly: true, sources: [], nfft: 6144, dimF: 2048, comp: 1.035 },
     mdx_voc:   { label: 'Cleaner vocals · MDX-Net (~67 MB)', kind: 'mdx', file: 'UVR-MDX-NET-Voc_FT.onnx', sources: [], nfft: 7680, dimF: 3072, comp: 1.021 },
+    // More 2-stem UVR models. swap: the model outputs the instrumental, so the vocals are what is left.
+    mdx_kim2:  { label: 'Clearest vocals · Kim Vocal 2 (~64 MB, app only)', kind: 'mdx', file: UVR + 'Kim_Vocal_2.onnx', nativeOnly: true, sources: [], nfft: 7680, dimF: 3072, comp: 1.009 },
+    mdx_insthq:{ label: 'Cleanest instrumental · MDX Inst HQ 3 (~64 MB, app only)', kind: 'mdx', file: UVR + 'UVR-MDX-NET-Inst_HQ_3.onnx', nativeOnly: true, sources: [], nfft: 6144, dimF: 3072, comp: 1.022, swap: true },
     demucs4:   { label: 'Best · 4 stems (316 MB)', kind: 'demucs', file: 'htdemucs.onnx',    sources: ['drums', 'bass', 'other', 'vocals'] },
-    demucs6:   { label: '6 stems + guitar/piano (~316 MB)', kind: 'demucs', file: 'htdemucs_6s.onnx', sources: ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'] }
+    demucs6:   { label: '6 stems + guitar/piano (~316 MB)', kind: 'demucs', file: 'htdemucs_6s.onnx', sources: ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'] },
+    // ---- Multi-stem sets (Android app): several models run one after another, each gives its own stems. ----
+    // kuielab: the MDX-Net models that won the 2021 Music Demixing Challenge (one small model per stem; A has longer chunks).
+    // Hybrids: the vocals come from a dedicated vocal model, drums/bass/other(/guitar/piano) from a 4- or 6-stem model.
+    mdx4_b:    { label: 'Quick 4 stems · MDX-Net B (~110 MB, app only)', kind: 'multi', nativeOnly: true, sources: ['vocals', 'drums', 'bass', 'other'],
+                 passes: [KL('b', 'vocals', 6144, 256), KL('b', 'drums', 4096, 128), KL('b', 'bass', 16384, 256), KL('b', 'other', 8192, 256)] },
+    mdx4_a:    { label: '4 stems · MDX-Net A, longer context (~119 MB, app only)', kind: 'multi', nativeOnly: true, sources: ['vocals', 'drums', 'bass', 'other'],
+                 passes: [KL('a', 'vocals', 6144, 512), KL('a', 'drums', 4096, 512), KL('a', 'bass', 16384, 512), KL('a', 'other', 8192, 512)] },
+    hyb4_fast: { label: 'Clean vocals + quick 4 stems · Voc FT + MDX-Net B (~148 MB, app only)', kind: 'multi', nativeOnly: true, sources: ['vocals', 'drums', 'bass', 'other'],
+                 passes: [VFT, KL('b', 'drums', 4096, 128), KL('b', 'bass', 16384, 256), KL('b', 'other', 8192, 256)] },
+    hyb4:      { label: 'Best vocals + 4 stems · Kim Vocal 2 + Demucs (~380 MB, app only)', kind: 'multi', nativeOnly: true, sources: ['vocals', 'drums', 'bass', 'other'],
+                 passes: [KIM2, { kind: 'demucs', key: 'demucs4', file: 'htdemucs.onnx', sources: ['drums', 'bass', 'other', 'vocals'], stems: ['Drums', 'Bass', 'Other'] }] },
+    hyb6:      { label: 'Best vocals + 6 stems · Kim Vocal 2 + Demucs 6 (~380 MB, app only)', kind: 'multi', nativeOnly: true, sources: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
+                 passes: [KIM2, { kind: 'demucs', key: 'demucs6', file: 'htdemucs_6s.onnx', sources: ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'], stems: ['Drums', 'Bass', 'Other', 'Guitar', 'Piano'] }] }
   };
   const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
   const SR = 44100, N = 4096, HOP = 1024, T = 512, F = 1024, BINS = N / 2 + 1, PAD = N - HOP, DEMUCS_SEG = 343980, CTX = 64;
@@ -94,7 +114,9 @@
       catch (e) { last = e; }
     }
     curStatus = null;
-    throw new Error('Download failed for ' + file + ': ' + errText(last));
+    const why = errText(last);
+    if (/\b(401|403)\b/.test(why) && /huggingface\.co/.test(file)) throw new Error('Download refused for ' + file.split('/').pop() + ': Hugging Face wants a signed-in account for this model. Pick another one.');
+    throw new Error('Download failed for ' + file + ': ' + why);
   }
   // NNAPI (phone GPU/NPU) for everything except Demucs, whose transformer ops run better on CPU. The Java side falls back to CPU by itself.
   // The tiny classifier heads (a few hundred KB) lose time compiling for NNAPI and copying data over: CPU is faster for them.
@@ -143,7 +165,7 @@
   const idbPut = async (k, v) => { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('models', 'readwrite'); tx.objectStore('models').put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
   const idbDel = async k => { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('models', 'readwrite'); tx.objectStore('models').delete(k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
   // [storage key, file name] pairs a model needs
-  const parts = id => { const m = MODELS[id]; return m.kind === 'spleeter' ? Object.entries(m.files).map(([k, f]) => ['sp_' + k, f]) : m.kind === 'sp4' ? Object.entries(m.files).map(([k, f]) => ['sp4_' + k, f]) : [[id, m.file]]; };
+  const parts = id => { const m = MODELS[id]; return m.kind === 'spleeter' ? Object.entries(m.files).map(([k, f]) => ['sp_' + k, f]) : m.kind === 'sp4' ? Object.entries(m.files).map(([k, f]) => ['sp4_' + k, f]) : m.kind === 'multi' ? m.passes.map(p => [p.key, p.file]) : [[id, m.file]]; };
   const legacyKey = k => k.replace('sp_', '');                      // v1 stored spleeter files as 'vocals'/'accomp'
   const getPart = async k => { const v = (await idbGet(k)) || (k.startsWith('sp_') ? await idbGet(legacyKey(k)) : null); return v instanceof Blob ? v.arrayBuffer() : v; };
 
@@ -447,6 +469,50 @@
   // Whisper first: lyrics that were not made by Whisper (online LRC, loaded files) have unreliable timing, so Whisper listens to the song
   // (vocals only) and each lyric line takes the start/end of the Whisper line it matches. Nothing is saved over the user's lyrics.
   // Returns { cues, matched, total } in media time, or null when there is nothing to re-time (no lyrics, or Whisper already made them).
+  // ---------- Vocal vote: several AIs judge every half second "is someone singing here?" ----------
+  // Judge 1: Spleeter's vocal stem is loud there. Judges 2 and 3: two cheap transcribers (Whisper Base, and Parakeet in the app if it is
+  // downloaded, else Whisper Tiny) hear words there; what the words are does not matter. The split model itself is the 4th judge for
+  // free: where it hears no vocals its Vocals stem is already silent. A judge that fails sits the vote out.
+  // Returns { votes: Uint8Array per frame, nJ, F (frame seconds), x (Spleeter vocals, 16 kHz mono), note }.
+  async function vocalVotes(t, o, status) {
+    const x = await whAudio(t, Object.assign({ clean: true }, o), status);
+    const F = 0.5, n = Math.max(1, Math.ceil(x.length / 16000 / F)), rms = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const a = Math.floor(i * F * 16000), b = Math.min(x.length, a + F * 16000); let s = 0; for (let j = a; j < b; j++) s += x[j] * x[j]; rms[i] = Math.sqrt(s / Math.max(1, b - a)); }
+    const ref = Array.from(rms).sort((p, q) => p - q)[Math.floor(n * 0.95)] || 0, thr = Math.max(1e-3, ref * 0.12);
+    const votes = new Uint8Array(n); let nJ = 1, note = '';
+    for (let i = 0; i < n; i++) if (rms[i] >= thr) votes[i]++;
+    let pk = false; try { pk = NATIVE && (await NP.exists({ id: PK_FILES[0][0] })).ready && (await NP.exists({ id: PK_FILES[1][0] })).ready; } catch (e) {}
+    for (const [size, label] of [['base_en', 'Whisper Base'], pk ? ['parakeet', 'Parakeet'] : ['tiny_en', 'Whisper Tiny']]) {
+      let cues = null;
+      try { status('Listening for words (' + label + ')…'); cues = await transcribeRun(t, { size, lang: '', task: 'transcribe', clean: true, acc: 0, strength: o.strength, lv: o.lv, x }, status); }
+      catch (e) { console.warn(label + ' vote failed', e); note += ' ' + label + ' could not vote (' + errText(e) + ').'; }
+      finally { if (asr) { try { await asr.dispose(); } catch (e) {} asr = null; asrId = ''; } }
+      if (!cues) continue;
+      nJ++; const hit = new Uint8Array(n);
+      for (const c of cues) {
+        if (!/\p{L}/u.test(c.text || '')) continue;
+        const e = c.end > c.start ? c.end : c.start + sungSecs(c.text);
+        for (let i = Math.max(0, Math.floor((c.start - 0.25) / F)); i < Math.min(n, Math.ceil((e + 0.25) / F)); i++) hit[i] = 1;
+      }
+      for (let i = 0; i < n; i++) votes[i] += hit[i];
+    }
+    return { votes, nJ, F, x, note };
+  }
+  // Frames everyone agrees on are kept (all say singing) or cut (none do). The rest are "unsure" parts for the person to judge.
+  function voteClips(v, nJ, F) {
+    const keep = [], unsure = [];
+    for (let i = 0; i < v.length;) {
+      const k = v[i] === nJ ? 'k' : v[i] === 0 ? 'c' : 'u'; let j = i; while (j < v.length && (v[j] === nJ ? 'k' : v[j] === 0 ? 'c' : 'u') === k) j++;
+      if (k === 'k') keep.push([i * F, j * F]);
+      if (k === 'u') { let m = 0; for (let q = i; q < j; q++) m += v[q]; const l = unsure[unsure.length - 1];   // v: average vote, 1 decimal
+        if (l && i * F - l.b <= F) { l.sum += m; l.n += j - i; l.b = j * F; } else unsure.push({ a: i * F, b: j * F, sum: m, n: j - i });
+        const u = unsure[unsure.length - 1]; u.v = Math.round(u.sum / u.n * 10) / 10; }
+      i = j;
+    }
+    return { keep, unsure };
+  }
+  const mergeSpans = sp => { const o = []; for (const q of sp.slice().sort((a, b) => a[0] - b[0])) { const l = o[o.length - 1]; if (l && q[0] <= l[1] + 0.3) l[1] = Math.max(l[1], q[1]); else o.push([q[0], q[1]]); } return o; };
+
   async function alignedCues(t, o, status) {
     let e; try { e = (JSON.parse(localStorage.getItem('playerSubtitles')) || {})[t.dbId]; } catch (x) {}
     if (!e || (!Array.isArray(e) && /^whisper/i.test(e.n || ''))) return null;
@@ -701,7 +767,7 @@
   }
 
   // ---------- MDX-Net (UVR) ----------
-  // The ONNX graph takes a spectrogram [1, 4, dimF, 256] = [L re, L im, R re, R im] and returns the vocal spectrogram.
+  // The ONNX graph takes a spectrogram [1, 4, dimF, dimT] (dimT 256 unless the model says otherwise) = [L re, L im, R re, R im] and returns the vocal spectrogram.
   // n_fft (7680 = 2^9*3*5) isn't a power of two, so this has its own mixed-radix FFT (radix 2/3/5, Stockham).
   function makeFFT(n) {
     const fac = []; let t = n; for (const r of [5, 3, 2]) while (t % r === 0) { fac.push(r); t /= r; }
@@ -736,7 +802,7 @@
   // Streams sink(vocals:[L,R], instrumental:[L,R], startSample); instrumental = mix - vocals.
   async function separateMdx(pcm, session, cfg, onProgress, sink, pause = 0, ye = 0) {
     ye = ye || 16;                                                    // always give the UI a turn: this DSP is heavy even on a fast phone
-    const NF = cfg.nfft, H = 1024, DF = cfg.dimF, DT = 256, half = NF >> 1, chunk = H * (DT - 1), gen = chunk - NF;
+    const NF = cfg.nfft, H = 1024, DF = cfg.dimF, DT = cfg.dimT || 256, half = NF >> 1, chunk = H * (DT - 1), gen = chunk - NF;
     const len = pcm[0].length, nChunks = Math.max(1, Math.ceil(len / gen)), fftN = makeFFT(NF);
     const w = new Float64Array(NF); for (let i = 0; i < NF; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / NF);
     const env = new Float64Array(chunk);                              // sum of squared windows, for the inverse STFT
@@ -780,7 +846,7 @@
       const start = j * gen, n = Math.min(gen, len - start);
       const voc = acc.map(a => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = a[half + i] / Math.max(env[half + i], 1e-8) * cfg.comp; return o; });
       const ins = voc.map((v, c) => { const o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = pcm[c][start + i] - v[i]; return o; });
-      sink(voc, ins, start);
+      if (cfg.swap) sink(ins, voc, start); else sink(voc, ins, start);   // swap: the model outputs the instrumental
       onProgress && onProgress((j + 1) / nChunks);
       await tick(); if (pause) await new Promise(r => setTimeout(r, pause));
     }
@@ -869,11 +935,17 @@
     const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
     const saved = await SS.writeInput({ name: 'track-' + Date.now() + '.audio', data: b64 });
     window.__ppLastSep = '';
-    const h = await NP.addListener('progress', e => { onProgress(e.fraction); status('Separating… ' + Math.round(e.fraction * 100) + '%'); });
-    const nm = opts.nmask || null, hid = !!nm && !wanted.includes('Vocals') && (wanted.includes('Instrumental') || wanted.includes('Other'));
+    // Until the first chunk is done, a seconds counter shows the load is alive (it used to sit silent on "Loading models…").
+    let loadLbl = 'Loading models…', running = false; const lt0 = Date.now();
+    const ltick = setInterval(() => { if (!running) status(loadLbl + ' ' + Math.round((Date.now() - lt0) / 1000) + ' s'); }, 1000);
+    const h = await NP.addListener('progress', e => { if (e && e.note) { loadLbl = e.note; running = false; status(e.note); return; } running = true; onProgress(e.fraction); status('Separating… ' + Math.round(e.fraction * 100) + '%'); });
+    const nm = opts.nmask || (opts.judge ? {} : null), hid = !!nm && !wanted.includes('Vocals') && (wanted.includes('Instrumental') || wanted.includes('Other'));
     const W = hid ? wanted.concat('Vocals') : wanted;                 // vocals are needed to put the removed sound back
     const accKey = 'ppvAccel2_' + id, remembered = ls0(accKey);
-    const useNn = opts.nnapi !== false && !/^demucs/.test(id) && !cpuOnly.has(id) && remembered !== 'cpu';   // Demucs is always CPU; a model that already lost or gave NaN stays on CPU
+    // A model that already lost or gave NaN stays on CPU. Demucs and the multi-model sets keep their verdict on the Java side
+    // (per model file), so the page's old 'cpu' note does not block them: Demucs now tries the Snapdragon NPU once.
+    const ownVerdict = /^demucs/.test(id) || m.kind === 'multi';
+    const useNn = opts.nnapi !== false && !cpuOnly.has(id) && (ownVerdict || remembered !== 'cpu');
     // tune (optional checkbox): race the NPU/NNAPI against the CPU once per model per phone (verdict remembered natively). Off: the NPU is
     // used straight away, and only a crash or NaN output moves that model to the CPU (also remembered).
     // fast: no optimization level picked, so run flat out (spinning pool, big-model memory arena, less Demucs overlap, rest only at critical heat).
@@ -891,12 +963,19 @@
           out = await NP.separate(Object.assign({ kind: 'sp4', prefix: 'sp4f_' }, base));
         }
       } else if (m.kind === 'demucs') out = await NP.separate(Object.assign({ kind: 'demucs', model: id, sources: m.sources }, base));
-      else out = await NP.separate(Object.assign({ kind: 'mdx', model: id, nfft: m.nfft, dimF: m.dimF, comp: m.comp }, base));
-    } finally { h.remove(); }
-    window.__ppLastSep = ' (' + Math.round(out.seconds) + ' s on ' + out.accel + ')';
+      else if (m.kind === 'multi') out = await NP.separate(Object.assign({ kind: 'multi', passes: m.passes.map(p => p.kind === 'demucs'
+          ? { kind: 'demucs', model: p.key, sources: p.sources, stems: p.stems }
+          : { kind: 'mdx', model: p.key, stem: p.stem, nfft: p.nfft, dimF: p.dimF, dimT: p.dimT || 256, comp: p.comp }) }, base));
+      else out = await NP.separate(Object.assign({ kind: 'mdx', model: id, nfft: m.nfft, dimF: m.dimF, dimT: m.dimT || 256, comp: m.comp, swap: !!m.swap }, base));
+    } finally { h.remove(); clearInterval(ltick); }
+    window.__ppLastSep = ' (' + Math.round(out.seconds) + ' s on ' + out.accel + (out.npuNote ? '. Not on the NPU: ' + out.npuNote : '') + ')';
     try { localStorage.setItem(accKey, /nnapi|npu|gpu/i.test(String(out.accel)) ? 'nnapi' : 'cpu'); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); }
+    if (opts.judge && out.files.Vocals) {                              // after the split: the taggers judge the finished Vocals stem
+      try { const sp = await opts.judge(window.Capacitor.convertFileSrc(out.files.Vocals)); if (sp) { nm.spans = sp; nm.floor = 0; nm.fade = MASKS[3].fade; } }
+      catch (e) { console.warn('vocal check failed', e); window.__ppLastSep += ' Vocal check failed (' + errText(e) + '), so the stems were left as they came out.'; }
+    }
     if (nm) {
-      window.__ppLastSep += await nativeMask(nm, out.files.Vocals, ['Instrumental', 'Other'].map(n => out.files[n]), status);
+      if (nm.spans) window.__ppLastSep += await nativeMask(nm, out.files.Vocals, ['Instrumental', 'Other'].map(n => out.files[n]), status);
       if (hid) { NP.deleteFiles({ paths: [out.files.Vocals] }).catch(() => {}); delete out.files.Vocals; }
     }
     const res = {};
@@ -941,7 +1020,7 @@
     const W = hid ? wanted.concat('Vocals') : wanted;
     const mkEnc = n => n === 'Vocals' && hid ? { push() {}, finish() { return null; } } : makeEncoder(mkGate(n));
     if (m.kind === 'spleeter' && NATIVE && !pcm) return nativeSpleeter(opts.track, wanted, opts, status, onProgress);
-    if ((m.kind === 'sp4' || m.kind === 'mdx' || m.kind === 'demucs') && NATIVE && !pcm) return nativeStems(m, id, opts.track, wanted, opts, status, onProgress);
+    if ((m.kind === 'sp4' || m.kind === 'mdx' || m.kind === 'demucs' || m.kind === 'multi') && NATIVE && !pcm) return nativeStems(m, id, opts.track, wanted, opts, status, onProgress);
     if (m.kind === 'spleeter') {
       status('Loading models…');
       const sess = { vocals: await makeSession('sp_vocals', false, opts.lv), accomp: await makeSession('sp_accomp', false, opts.lv) };
@@ -972,6 +1051,7 @@
         return Object.fromEntries(outs.map((o, k) => [o.name, enc[k].finish()]).filter(q => q[1]));   // already {blob, ext}
       } finally { sess.forEach(x => x.release && x.release()); }
     }
+    if (m.kind === 'multi') throw new Error('This model set runs in the Android app only.');
     if (m.kind === 'mdx') {
       status('Loading model…');
       const sess = await makeSession(id, opts.gpu, opts.lv);
@@ -2481,7 +2561,7 @@
   async function transcribeRun(t, o, status) {
     let pipe = null;
     if (o.task === 'translate' && whEn(o.size)) { o = Object.assign({}, o, { size: 'base' }); status('Translating needs the multilingual Base model…'); }
-    const x = await whAudio(t, o, status);
+    const x = o.x || await whAudio(t, o, status);   // o.x: vocals already pulled out (the vocal vote reuses one Spleeter pass)
     const dur = x.length / 16000, acc = Math.max(0, Math.min(2, Math.round(+o.acc || 0)));
     // Only the parts with speech or singing go to Whisper. Each part is cut into 90 s pieces that overlap by 4 s, and a line belongs to the
     // piece it starts in, so nothing is cut at a seam. Between pieces it can rest if the phone is hot.
@@ -4727,6 +4807,9 @@
       // To add another, copy this line and use the exact file name from the model's "Files" page on Hugging Face.
       gemma4:  { id: 'litert-community/gemma-4-E2B-it-litert-lm', label: 'Gemma 4 E2B (LiteRT-LM, app only, ~2.4 GB, strong phone)', mb: 2400, lm: true, lid: 'lm_gemma4_e2b', url: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm' },
       gemma4e4b: { id: 'litert-community/gemma-4-E4B-it-litert-lm', label: 'Gemma 4 E4B (LiteRT-LM, app only, ~3.7 GB, flagship phones)', mb: 3650, lm: true, lid: 'lm_gemma4_e4b', url: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm' },
+      // From Google's AI Edge Gallery list, pinned to the version it tested. Gemma 3 1B: quick and small. Phi-4-mini (3.8B): the smartest here at reasoning and instructions.
+      gemma3_1b: { id: 'litert-community/Gemma3-1B-IT', label: 'Gemma 3 1B (LiteRT-LM, app only, ~560 MB, fast)', mb: 560, lm: true, lid: 'lm_gemma3_1b', url: 'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/42d538a932e8d5b12e6b3b455f5572560bd60b2c/gemma3-1b-it-int4.litertlm' },
+      phi4mini:  { id: 'litert-community/Phi-4-mini-instruct', label: 'Phi-4-mini 3.8B (LiteRT-LM, app only, ~3.7 GB, smartest, flagship phones)', mb: 3730, lm: true, lid: 'lm_phi4mini', url: 'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/054f4e2694a86f81a129a40596e08b8d74770a9d/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm' },
       qwen15lm:  { id: 'litert-community/Qwen2.5-1.5B-Instruct', label: 'Qwen2.5 1.5B (LiteRT-LM, app only, ~1.6 GB)', mb: 1600, lm: true, lid: 'lm_qwen15_q8', url: 'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm' },
       qwen15i4:  { id: 'leuconoe/litert-lm-unity-quantized', label: 'Qwen2.5 1.5B 4-bit (LiteRT-LM, app only, ~790 MB, community build)', mb: 790, lm: true, lid: 'lm_qwen15_i4', url: 'https://huggingface.co/leuconoe/litert-lm-unity-quantized/resolve/main/qwen2.5-1.5b-instruct/Qwen2.5-1.5B-Instruct_wi4b64_ekv4096.litertlm' },
       qwen05i4:  { id: 'leuconoe/litert-lm-unity-quantized', label: 'Qwen2.5 0.5B 4-bit (LiteRT-LM, app only, ~265 MB, community build, short memory)', mb: 265, lm: true, lid: 'lm_qwen05_i4', url: 'https://huggingface.co/leuconoe/litert-lm-unity-quantized/resolve/main/qwen2.5-0.5b-instruct/Qwen2.5-0.5B-Instruct_wi4b64_ekv1280.litertlm' },
@@ -5534,10 +5617,25 @@
     }
     // Take the language model out of RAM (it stays on disk and reloads later without asking).
     async function unloadModel() { clearTimeout(idleT); if (gen) { const g = gen; gen = null; try { await g.dispose(); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } } }
-    // How long the model may sit idle in RAM. Reloading a big model takes seconds, so phones with plenty of RAM keep it
-    // around for 5 minutes; heavy jobs (split, lyrics, tagging) still free it first.
+    // How long the model may sit idle in RAM. Reloading a big model takes many seconds, so phones with plenty of RAM keep it
+    // around for 15 minutes; heavy jobs (split, lyrics, tagging) still free it first.
     const bigRam = () => { try { return (navigator.deviceMemory || 0) >= 8; } catch (e) { return false; } };
-    const keepMs = () => bigRam() ? 300000 : 60000;
+    const keepMs = () => bigRam() ? 900000 : 60000;
+    // Warm start: tapping the chat box starts loading an already-downloaded model in the background, so it is
+    // (nearly) ready by the time the message is sent. Never downloads, never runs during a heavy job.
+    let warmT = 0;
+    cin.addEventListener('focus', () => {
+      clearTimeout(warmT);
+      warmT = setTimeout(() => {
+        if (gen || genP || !chatOn || !brainOn() || heavyBusy() || lsGet('ppvChatDl') !== '1') return;
+        (async () => {
+          try {
+            if (NATIVE && CHAT_MODELS[chatKey()].lm && !(await NP.exists({ id: CHAT_MODELS[chatKey()].lid })).ready) return;
+            await ensureModel(() => {}); if (!chatBusy) idleUnload();
+          } catch (e) { console.warn('chat warm-up failed', e); }
+        })();
+      }, 400);
+    });
     const idleUnload = () => { clearTimeout(idleT); idleT = setTimeout(() => { if (gen && !chatBusy && !holdModel) unloadModel(); }, keepMs()); };
     const heavyBusy = () => ['ppv-go', 'ppv-wgo', 'ppv-tag'].some(id => { const b = document.getElementById(id); return b && b.disabled; });
     // The chat brain (tiny language model) is optional. Everything Bloopy DOES (moods, playlists, tagging, player control) runs without it.
@@ -5546,9 +5644,10 @@
     const looksOk = r => { const L = (r.match(/\p{L}/gu) || []).length, W = (r.match(/\p{L}{2,}/gu) || []).length; return r.length <= 8 || (L / r.length >= 0.6 && W >= 2); };
     const FALLBACK = { split: 'Your split tracks are ready.', lyrics: 'The lyrics are ready.', tag: 'Tagging is finished.' };
     // Write the "all done" line NOW, while the model is loaded, so the model can leave RAM before the heavy job starts.
-    // Never downloads the model just for this; falls back to a fixed line if it is missing, slow or garbled.
+    // Only when the model is ALREADY in RAM: loading a multi-GB model just for one sentence held the real job up for up to 25 s.
+    // Otherwise (or if it is slow or garbled) the fixed line is used.
     async function signoff(job) {
-      if (!brainOn() || (!gen && lsGet('ppvChatDl') !== '1')) return null;
+      if (!brainOn() || !gen) return null;
       let aborted = false;
       const p = (async () => {
         const g = await ensureModel(() => {}); if (aborted) return null;
@@ -9189,10 +9288,10 @@
       '<label id="ppv-c-spinl" class="ppv-c" style="display:none;margin-top:6px"><input type="checkbox" id="ppv-c-spin"> Keep threads busy between steps (faster, hotter, uses more battery)</label></div>' +
       '<div id="ppv-stems"></div>' +
       '<div style="margin-top:8px">Mute vocal gaps</div><select id="ppv-gate"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Silences leftover noise between sung lines. Vocals stem only.</div>' +
-      '<div style="margin-top:8px">Mute non-vocal parts (uses lyrics/subtitles)</div><select id="ppv-mask"><option value="0">Off</option><option value="1">Gentle</option><option value="2">Normal</option><option value="3">Strong</option></select><div style="opacity:.6;font-size:11px;margin-top:4px">Removes solos and instrumental breaks from the Vocals stem and puts that sound back into Instrumental / Other. Needs synced lyrics or subtitles. If they did not come from Whisper, Whisper listens first to fix the line timing (slower; reused next time). Skipped if they look incomplete.</div>' +
+      '<label class="ppv-c" style="margin-top:8px"><input type="checkbox" id="ppv-agree"> Keep only real vocals (AIs check the Vocals stem)</label><div style="opacity:.6;font-size:11px;margin-top:4px">After the split, three taggers listen to the Vocals stem 2 seconds at a time and say voice or instrument. Parts with no voice (solos, synths) move to Instrumental / Other, and you are told what was moved. Parts they are unsure about are listed for you to hear and keep or cut.</div>' +
       '<div id="ppv-spl" style="margin-top:8px">Strength: <span id="ppv-sv">1</span><input id="ppv-sl" type="range" min="1" max="4" step="0.5" value="1" style="width:100%"><div style="opacity:.6;font-size:11px">Higher = less bleed, more watery artifacts</div><div style="margin-top:8px">Quality</div><select id="ppv-q"><option value="0">Standard</option><option value="1">Better (smooth seams, ~1.3x time)</option><option value="2">Best (+ averaged 2nd pass, ~2.7x time)</option></select></div>' +
       '<label id="ppv-gpu" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-gpuc"> Use GPU (faster, experimental)</label>' +
-      '<label id="ppv-nn" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-nnc"> Phone GPU/NPU (experimental). Demucs always uses the CPU</label>' +
+      '<label id="ppv-nn" class="ppv-c" style="display:none;margin-top:8px"><input type="checkbox" id="ppv-nnc"> Phone GPU/NPU (experimental). Demucs: Snapdragon NPU only, CPU on other phones</label>' +
       '<label id="ppv-tn" class="ppv-c" style="display:none;margin-top:4px;margin-left:22px"><input type="checkbox" id="ppv-tnc"> Speed test NPU vs CPU on first use (slower first split, then keeps the faster one)</label>' +
       '<label id=\"ppv-vidl\" class=\"ppv-c\" style=\"display:block;margin-top:8px\"><input type=\"checkbox\" id=\"ppv-vid\"> Keep the original video (video tracks only)</label><div class=\"ppv-note\">Saves each stem as a video with its sound replaced. Takes the video\u2019s full length per stem, keep the screen on.</div>' +
       '<details><summary>Where split tracks go</summary><div class="ppv-note">Split tracks never count as new library tracks. They are all kept together under \u201cSplit tracks\u201d in the library\u2019s view selector.</div>' +
@@ -9296,7 +9395,7 @@
     };
     if (!place()) { let n = 0; const iv = setInterval(() => { if (place() || ++n > 40) clearInterval(iv); }, 250); }
     setInterval(() => { if (!document.hidden) place(); }, 2000);
-    const $ = s => p.querySelector(s), st = $('#ppv-st'), bar = $('#ppv-bar i'), go = $('#ppv-go'), sel = $('#ppv-model'), sl = $('#ppv-sl'), sv = $('#ppv-sv'), gpu = $('#ppv-gpuc'), lsel = $('#ppv-lvl'), lvi = $('#ppv-lvi'), qsel = $('#ppv-q'), gsel = $('#ppv-gate'), msel = $('#ppv-mask');
+    const $ = s => p.querySelector(s), st = $('#ppv-st'), bar = $('#ppv-bar i'), go = $('#ppv-go'), sel = $('#ppv-model'), sl = $('#ppv-sl'), sv = $('#ppv-sv'), gpu = $('#ppv-gpuc'), lsel = $('#ppv-lvl'), lvi = $('#ppv-lvi'), qsel = $('#ppv-q'), gsel = $('#ppv-gate'), agree = $('#ppv-agree');
     const LV = () => +lsel.value === 4 ? customLevel() : LEVELS[+lsel.value] || null, showLv = () => { const l = LV(); lvi.textContent = !l ? 'No limits. Fastest, but can crash weak phones.' : l.custom ? 'Custom: ' + (l.threads ? l.threads + ' thread' + (l.threads > 1 ? 's' : '') : 'auto threads') + ', ' + Math.round(l.duty * 100) + '% rest.' : l.info; };
     let holdUntil = 0;                                                // keep "Done"/"Error" visible instead of being wiped by "Ready" a split second later
     const status = t => { st.textContent = t; document.querySelectorAll('.ppv-stx').forEach(e => { e.textContent = t; }); if (/^(Done|Error)/.test(t)) holdUntil = Date.now() + 5000; mas.react(t); }, ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ if (typeof ppCaught === "function") ppCaught(e); } };
@@ -9318,7 +9417,7 @@
     sect.onchange = () => { ls('ppvSect', sect.checked ? '1' : '0'); const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); };
     { const A = window.__ppApi; A && A.setStemSections && A.setStemSections(sect.checked); }
     gsel.value = ls('ppvGate') || '0'; gsel.onchange = () => ls('ppvGate', gsel.value);
-    msel.value = ls('ppvMask') || '0'; msel.onchange = () => ls('ppvMask', msel.value);
+    agree.checked = ls('ppvAgree') === '1'; agree.onchange = () => ls('ppvAgree', agree.checked ? '1' : '0');
     qsel.value = ls('ppvQuality') || '1'; qsel.onchange = () => ls('ppvQuality', qsel.value);
     lsel.onchange = () => { ls('ppvLevel', lsel.value); syncCust(); showLv(); refresh(); };
     // ---- Custom level controls (stored as JSON under ppvCustom) ----
@@ -9356,23 +9455,37 @@
         if (!t) throw new Error('Play or select a track first.');
         if (!want.length) throw new Error('Tick at least one stem.');
         await downloadModel(id, status, !!(LV() && LV().blob));
-        let ov = null, maskNote = '';
-        if (+msel.value) {
-          try { const al = await alignedCues(t, { strength: +sl.value, lv: LV() }, status); if (al) { ov = al.cues; maskNote = ' Whisper re-timed ' + al.matched + ' of ' + al.total + ' lyric lines' + (al.cached ? ' (saved from before).' : '.'); } }
-          catch (e) { console.warn('Whisper timing failed', e); maskNote = ' Whisper timing failed (' + errText(e) + '), so line lengths were estimated.'; }
-        }
+        let maskNote = '', judgedNative = false;
+        const fmt = s0 => Math.floor(s0 / 60) + ':' + String(Math.floor(s0 % 60)).padStart(2, '0');
+        // After the split: taggers judge the Vocals stem; unsure parts go to you. Returns padded keep spans.
+        const judge = async url => {
+          status('Checking the Vocals stem…');
+          const j = await judgeStem(await decodeMono(url, 32000), status, LV());
+          const ref = { cut: [], left: j.unsure, note: '' }; let kept = [];   // unsure parts go straight to you (transcriber referees were too slow)
+          const msgs = [];
+          if (j.cut.length) msgs.push('The taggers heard no voice in ' + j.cut.length + ' part' + (j.cut.length > 1 ? 's' : '') + ' of the Vocals stem, so ' + (j.cut.length > 1 ? 'they were' : 'it was') + ' moved out: ' + j.cut.map(c => fmt(c.a) + '–' + fmt(c.b) + ' (' + c.what + ')').join(', ') + '.');
+          const cutMsg = msgs.join(' ');
+          if (ref.left.length) { status((cutMsg ? cutMsg + ' ' : '') + ref.left.length + ' part' + (ref.left.length > 1 ? 's' : '') + ' still unclear: listen and choose below.'); kept = await reviewClips(ref.left, j.x16, 3, cutMsg); }
+          else if (cutMsg) status(cutMsg);
+          const sp = mergeSpans(j.keep.concat(kept));
+          maskNote = ' Vocal check: ' + (j.cut.length + ref.cut.length ? cutMsg : 'every noisy part of the Vocals stem sounded like a voice.') + (ref.left.length ? ' You judged ' + ref.left.length + ' unclear part' + (ref.left.length > 1 ? 's' : '') + '.' : '') + ref.note;
+          const pd = sp.map(q => [Math.max(0, q[0] - 0.1), q[1] + 0.2]);
+          return pd.length ? pd : [[-10, -9]];
+        };
         status('Decoding audio…');
-        let pcm = NATIVE && ['spleeter', 'sp4', 'mdx', 'demucs'].includes((MODELS[id] || {}).kind) ? null : await decode(t.url);
-        let mask = null, nmask = null;
-        if (+msel.value) {
-          const dur = pcm ? pcm[0].length / SR : await mediaDur(t.url);   // native engines decode in Java, so ask the media element for the length
-          const r = subtitleSpans(t.dbId, +msel.value, dur, loadTags()[t.dbId], ov), lvl = MASKS[+msel.value];
-          if (!r.spans) maskNote += r.skip;
-          else if (pcm) mask = makeMask(r.spans, +msel.value);
-          else nmask = { spans: r.spans, floor: lvl.floor, fade: lvl.fade };   // applied in Java to the finished stems
-        }
-        const res = await run(id, pcm, want, { strength: +sl.value, gpu: gpu.checked && !LV(), lv: LV(), quality: +qsel.value, gate: +gsel.value, mask, nmask, track: t, nnapi: NATIVE ? nnc.checked : false, tune: NATIVE && nnc.checked && tnc.checked }, status, f => { bar.style.width = (f * 100) + '%'; status('Separating… ' + Math.round(f * 100) + '%'); });
+        let pcm = NATIVE && ['spleeter', 'sp4', 'mdx', 'demucs', 'multi'].includes((MODELS[id] || {}).kind) ? null : await decode(t.url);
+        const mask = null, nmask = null, wantJ = agree.checked && !want.includes('Vocals') ? want.concat('Vocals') : want;
+        const res = await run(id, pcm, pcm ? wantJ : want, { judge: agree.checked && !pcm ? (u => { judgedNative = true; return judge(u); }) : null, strength: +sl.value, gpu: gpu.checked && !LV(), lv: LV(), quality: +qsel.value, gate: +gsel.value, mask, nmask, track: t, nnapi: NATIVE ? nnc.checked : false, tune: NATIVE && nnc.checked && tnc.checked }, status, f => { bar.style.width = (f * 100) + '%'; status('Separating… ' + Math.round(f * 100) + '%'); });
         pcm = null;
+        if (agree.checked && !judgedNative && res.Vocals) {               // in-page engines: judge the finished Vocals, then move the cut parts
+          const toUrl = e => URL.createObjectURL(e.blob || encode(e).blob);
+          const vu = toUrl(res.Vocals), spans = await judge(vu), m = makeMask(spans, 3);
+          const V = await decode(vu); URL.revokeObjectURL(vu);
+          const ex = []; for (const n of ['Instrumental', 'Other']) if (res[n]) { const u = toUrl(res[n]); ex.push([n, await decode(u)]); URL.revokeObjectURL(u); }
+          if (m) { status('Moving the cut parts out of Vocals…'); m.process(V[0], V[1], ex.map(q => q[1])); }
+          res.Vocals = encode(V); for (const [n, c] of ex) res[n] = encode(c);
+          if (!want.includes('Vocals')) delete res.Vocals;
+        }
         const files = []; let vidFail = 0;
         for (const n of want) {                                          // encode one at a time, free each stem after
           status('Encoding ' + n + '…'); await tick();
@@ -9395,6 +9508,39 @@
       if (NATIVE) NP.keepAlive({ on: false }).catch(() => {});
       wl && wl.release().catch(() => {});
       splitting = false; heavyJob = false; go.disabled = false; refresh();
+    }
+    // The person judges the parts the AIs disagree on. Each row plays Spleeter's vocals for that part. Resolves with the kept [a, b] spans.
+    function reviewClips(clips, x, nJ, cutMsg) {
+      return new Promise(done => {
+        const fmt = s0 => Math.floor(s0 / 60) + ':' + String(Math.floor(s0 % 60)).padStart(2, '0');
+        const keep = clips.map(c => c.v * 2 > nJ);                   // default: what most judges said
+        const box = document.createElement('div'); box.style.cssText = 'margin-top:8px;padding:8px;border:1px solid #484952;border-radius:10px;max-height:260px;overflow:auto';
+        let ctx = null, src = null, playing = -1;
+        const stop = () => { try { src && src.stop(); } catch (e) {} src = null; playing = -1; draw(); };
+        const play = i => {
+          if (playing === i) return stop(); stop();
+          ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+          const c = clips[i], a = Math.max(0, Math.floor((c.a - 0.3) * 16000)), b = Math.min(x.length, Math.ceil((c.b + 0.3) * 16000));
+          if (b <= a) return; const buf = ctx.createBuffer(1, b - a, 16000); buf.getChannelData(0).set(x.subarray(a, b));
+          src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.onended = () => { if (playing === i) { src = null; playing = -1; draw(); } };
+          ctx.resume && ctx.resume(); src.start(); playing = i; draw();
+        };
+        const finish = () => { stop(); try { ctx && ctx.close(); } catch (e) {} box.remove(); done(clips.filter((c, i) => keep[i]).map(c => [c.a, c.b])); };
+        function draw() {
+          box.innerHTML = (cutMsg ? '<div style="font-size:12px;margin-bottom:6px;opacity:.75">' + cutMsg + '</div>' : '') + '<div style="font-size:12px;margin-bottom:6px">' + clips.length + ' part' + (clips.length > 1 ? 's' : '') + ' where the AIs are not all sure. Play any of them (vocals only) and keep what is singing. Nothing is cut until you press Done.</div>' +
+            clips.map((c, i) => '<div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:12px"><button type="button" data-p="' + i + '">' + (playing === i ? '■' : '▶') + '</button>' +
+              '<span style="flex:1">' + fmt(c.a) + '–' + fmt(c.b) + ' · ' + c.v + ' of ' + nJ + ' taggers said voice</span>' +
+              '<button type="button" data-k="' + i + '" style="' + (keep[i] ? 'background:var(--accent,#7c5cff);color:#fff' : '') + '">Keep</button><button type="button" data-c="' + i + '" style="' + (!keep[i] ? 'background:#a33;color:#fff' : '') + '">Cut</button></div>').join('') +
+            '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button type="button" data-all="0">Set all to Cut</button><button type="button" data-all="1">Set all to Keep</button><button type="button" data-done="1" style="margin-left:auto">Done</button></div>';
+        }
+        box.addEventListener('click', e => {
+          const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+          if (d.p != null) play(+d.p); else if (d.k != null) { keep[+d.k] = true; draw(); } else if (d.c != null) { keep[+d.c] = false; draw(); }
+          else if (d.all != null) { keep.fill(d.all === '1'); draw(); }   // sets every row; you can still play and change any of them
+          else if (d.done) finish();
+        });
+        draw(); st.insertAdjacentElement('afterend', box); box.scrollIntoView({ block: 'nearest' });
+      });
     }
     go.onclick = () => { const A = window.__ppApi; return splitTrack(A && A.tracks()[A.currentIndex()]); };
     window.__ppSplitTrack = t => splitTrack(t);
