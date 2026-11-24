@@ -1178,6 +1178,15 @@ body.landscape .mm-cards { width: 260px; height: 150px; margin-bottom: -46px; tr
 body.landscape .mm-ante { font-size: 58px; }
 body.landscape .mm-up { font-size: 74px; }
 .mm-bar .mbtn-red { grid-column: 1 / -1; }
+/* seeds */
+.dp-seed { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9A917A; }
+.dp-seed input { width: 128px; padding: 6px 10px; border-radius: 10px; border: 2px solid #0a0f0c; background: #0f1813; color: #FFE9A8; font: 700 16px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; text-align: center; text-transform: uppercase; box-shadow: 0 0 0 1.5px #C9A22755; }
+.dp-seed input::placeholder { color: #6b6450; letter-spacing: 1px; font-size: 13px; }
+.dp-seed input:focus { outline: none; box-shadow: 0 0 0 2px #C9A227; }
+.mpanel-seed, .overlay-seed { text-align: center; font-size: 11px; color: #9A917A; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
+.mpanel-seed b, .overlay-seed b { color: #FFE9A8; font: 700 14px ui-monospace, Menlo, monospace; letter-spacing: 2px; user-select: text; -webkit-user-select: text; }
+.overlay-seed { margin: -14px 0 20px; }
+
 /* the deck picker */
 .mm-bar.is-decks { display: block; padding: 12px 14px 14px; }
 .deck-pick { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -2294,6 +2303,37 @@ function applyShopTags() {
   }
 }
 
+/* ============================== SEEDS ==============================
+   Every run has a seed: 8 letters and digits. Everything that decides the
+   run (shuffles, shops, packs, bosses, chances) draws from rng(), a generator
+   started from the seed, so the same seed played the same way gives the same
+   run. Its position is kept in the save. IDs and confetti still use
+   Math.random(). A few seeds are special; only a fingerprint of each is kept
+   here, and nothing on screen says so. */
+const SEED_CHARS = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ";   // no 0, so it can't be mistaken for O
+function randomSeed() { let out = ""; for (let i = 0; i < 8; i++) out += SEED_CHARS[Math.floor(Math.random() * SEED_CHARS.length)]; return out; }
+function cleanSeed(text) { return String(text || "").toUpperCase().replace(/0/g, "O").replace(/[^A-Z1-9]/g, "").slice(0, 8); }
+function seedHash(seed) { let h = 2166136261; for (const ch of seed) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+// mulberry32, stepping the number kept in state.rngState
+function rng() {
+  if (typeof state === "undefined" || state.rngState == null) return Math.random();
+  let t = (state.rngState = (state.rngState + 0x6D2B79F5) >>> 0);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const SEED_QUIRKS = { 3798268274: "royal", 3323909648: "aces", 1238610079: "dressed", 3349062626: "hearts", 4236578010: "shelf" };
+function seedQuirk() { return state.seed ? SEED_QUIRKS[seedHash("pp:" + state.seed + ":ante")] || null : null; }
+// Puts a Royal Flush (in the first suit you still have one in) on top of the deck.
+function stackRoyalFlush(deck) {
+  const need = ["A", "K", "Q", "J", "10"];
+  for (const suit of ["spades", "hearts", "clubs", "diamonds"]) {
+    const picks = need.map((r) => deck.find((c) => c.rank === r && c.suit === suit));
+    if (picks.every(Boolean)) { const set = new Set(picks.map((c) => c.id)); return [...picks, ...deck.filter((c) => !set.has(c.id))]; }
+  }
+  return deck;
+}
+
 /* ============================== DECKS ==============================
    Chosen when a run starts. Each changes a rule or two for the whole run.
    Their effects use the same types as vouchers, so they add into the same
@@ -2339,7 +2379,7 @@ function freshDeck(deckId = state.deckId) {
     for (const suit of suits) for (const rank of ranks) deck.push({ rank, suit, id: `${rank}-${suit}-${id()}` });
   }
   for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
   return deck;
@@ -2615,7 +2655,7 @@ const BOSS_BLIND_DEFS = [
 ];
 
 function pickBossBlind() {
-  return BOSS_BLIND_DEFS[Math.floor(Math.random() * BOSS_BLIND_DEFS.length)];
+  return BOSS_BLIND_DEFS[Math.floor(rng() * BOSS_BLIND_DEFS.length)];
 }
 
 // The ante at which a run is "complete", mirroring Balatro's final boss ante.
@@ -2669,7 +2709,7 @@ const FINAL_BOSS_DEFS = [
 ];
 
 function pickFinalBoss() {
-  return FINAL_BOSS_DEFS[Math.floor(Math.random() * FINAL_BOSS_DEFS.length)];
+  return FINAL_BOSS_DEFS[Math.floor(rng() * FINAL_BOSS_DEFS.length)];
 }
 
 // Returns true if a card should contribute 0 chips due to the active Boss Blind.
@@ -2690,7 +2730,7 @@ function tagBossDebuffedCards(cards) {
   if (!boss || !boss.debuffRandomChance) return;
   cards.forEach((c) => {
     if (c.bossDebuffed === undefined) {
-      c.bossDebuffed = Math.random() < boss.debuffRandomChance;
+      c.bossDebuffed = rng() < boss.debuffRandomChance;
     }
   });
 }
@@ -4462,7 +4502,8 @@ function newRun() { MENU.screen = "main"; MENU.choosingRun = false; MENU.pause =
 function startRunWithDeck(id) {
   SETTINGS.lastDeck = id; saveSettings();
   MENU.screen = null; MENU.choosingDeck = false; MENU.choosingRun = false; MENU.pause = false;
-  clearSave(); startGame(id);
+  const seed = MENU.seedInput; MENU.seedInput = "";
+  clearSave(); startGame(id, seed);
 }
 function DeckPicker() {
   const wrap = document.createElement("div");
@@ -4481,9 +4522,14 @@ function DeckPicker() {
     </div>
     <div class="dp-name serif">${d.name}</div>
     <div class="dp-desc">${d.desc}</div>
-    <div class="dp-dots">${DECKS.map((x, i) => `<i class="${i === MENU.deckIdx ? "on" : ""}"></i>`).join("")}</div>`;
+    <div class="dp-dots">${DECKS.map((x, i) => `<i class="${i === MENU.deckIdx ? "on" : ""}"></i>`).join("")}</div>
+    <label class="dp-seed"><span>Seed</span><input type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Random" value="${MENU.seedInput || ""}"></label>`;
   MENU.deckDir = 0;
   wrap.querySelectorAll(".dp-arrow").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); go(Number(b.dataset.step)); }; });
+  // Typing doesn't redraw (that would drop the keyboard); the value is kept for Start Run.
+  const seedBox = wrap.querySelector(".dp-seed input");
+  seedBox.oninput = () => { const v = cleanSeed(seedBox.value); if (v !== seedBox.value) seedBox.value = v; MENU.seedInput = v; };
+  seedBox.onkeydown = (e) => { if (e.key === "Enter") seedBox.blur(); };
   // swipe the card to flip through the decks
   const card = wrap.querySelector(".dp-card");
   let sx = null;
@@ -4766,7 +4812,7 @@ function PauseMenu() {
   if (MENU.panel) { back.appendChild(MenuPanel()); return back; }
   const box = document.createElement("div");
   box.className = "mpanel pause-panel";
-  box.innerHTML = `<div class="mpanel-title serif">Paused</div><div class="mpanel-sub">${currentDeck().name} · Ante ${state.ante} · ${BLIND_TYPES[state.blindIdx].label}</div>`;
+  box.innerHTML = `<div class="mpanel-title serif">Paused</div><div class="mpanel-sub">${currentDeck().name} · Ante ${state.ante} · ${BLIND_TYPES[state.blindIdx].label}</div>${state.seed ? `<div class="mpanel-seed">Seed <b>${state.seed}</b></div>` : ""}`;
   box.appendChild(MenuButton("Play", "blue", closePause));
   box.appendChild(MenuButton("Settings", "orange", () => { MENU.panel = "settings"; render(); }));
   box.appendChild(MenuButton("Skins", "purple", () => { MENU.panel = "skins"; render(); }));
@@ -4887,7 +4933,7 @@ const CHARM_SLEEVES = {
 };
 function rollCharmSleeve(def) {
   const rate = voucherBest("charmSleeveRate", Math.max);
-  let r = Math.random();
+  let r = rng();
   for (const [k, sl] of Object.entries(CHARM_SLEEVES)) {
     const c = sl.chance * rate * (k === "negative" && deckIs("negative") ? 10 : 1);   // Negative Deck
     if (r < c) return withCharmSleeve(def, k);
@@ -4965,7 +5011,7 @@ function rarityShuffle(pool) {
   const counts = {};
   pool.forEach((d) => { counts[d.rarity] = (counts[d.rarity] || 0) + 1; });
   const w = (d) => Math.max(0.0001, rarityOf(d).weight / counts[d.rarity]);
-  return pool.map((d) => [Math.pow(Math.random(), 1 / w(d)), d]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+  return pool.map((d) => [Math.pow(rng(), 1 / w(d)), d]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
 }
 function artifactsOfRarity(rarity) {
   const owned = new Set(state.charms.map((c) => c.id));
@@ -5037,7 +5083,7 @@ function roundEndCharms(wasBoss) {
   const gone = [];
   state.charms = state.charms.map((c) => {
     const e = c.effect;
-    if ((e.type === "plumMult" || e.type === "ripePlumX") && Math.random() < e.rot) {
+    if ((e.type === "plumMult" || e.type === "ripePlumX") && rng() < e.rot) {
       gone.push(c);
       if (e.type === "plumMult") state.plumGone = true;
       notes.push(`${c.name} rotted away`);
@@ -5240,7 +5286,7 @@ function pickSpectrals(n) {
   const pool = [...SPECTRAL_DEFS];
   while (out.length < n && pool.length) {
     const weights = pool.map((d) => (d.rare ? 0.12 : 1));
-    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let r = rng() * weights.reduce((a, b) => a + b, 0);
     let i = 0;
     while (i < pool.length - 1 && r > weights[i]) r -= weights[i++];
     out.push({ ...pool[i] });
@@ -5421,7 +5467,7 @@ function newUid() {
 const STAMP_KINDS = ["gold", "crimson", "azure"];
 const SLEEVE_KINDS = ["sparkler", "tithe", "molt", "larva", "anchor", "mirror", "glass"];
 function randomOf(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return arr[Math.floor(rng() * arr.length)];
 }
 // Puts a sleeve on a card (returns the new card). Archivist adds a stamp too.
 function withSleeve(card, sleeve) {
@@ -5474,7 +5520,7 @@ function generateShopStock(count) {
   if (deckIs("spectral")) availableItems.push(...SPECTRAL_DEFS.filter((d) => !d.rare && !ownedItemIds.has(d.id)).map(heldSpectral));
 
   // Sleight of Hand: some slots hold playing cards instead.
-  const cardSlots = voucherSum("shopPlayingCards") ? Array.from({ length: count }, () => Math.random() < 0.25).filter(Boolean).length : 0;
+  const cardSlots = voucherSum("shopPlayingCards") ? Array.from({ length: count }, () => rng() < 0.25).filter(Boolean).length : 0;
   const n = count - cardSlots;
   // Split between artifacts and items (Peddler / Bazaar tip it toward items)
   const w = voucherBest("itemRate", Math.max);
@@ -5483,7 +5529,7 @@ function generateShopStock(count) {
 
   // weighted shuffle: Star Vendor / Planetarium make charts likelier
   const chartW = voucherBest("chartRate", Math.max);
-  const weighted = (arr, wf) => arr.map((d) => [Math.pow(Math.random(), 1 / wf(d)), d]).sort((x, y) => y[0] - x[0]).map((x) => x[1]);
+  const weighted = (arr, wf) => arr.map((d) => [Math.pow(rng(), 1 / wf(d)), d]).sort((x, y) => y[0] - x[0]).map((x) => x[1]);
   const charmPool = rarityShuffle(availableCharms);
   const itemPool = weighted(availableItems, (d) => (d.chart ? chartW : d.spectral ? 0.5 : 1));
 
@@ -5497,14 +5543,14 @@ function generateShopStock(count) {
   const remaining = n - selected.length;
   if (remaining > 0) {
     const leftover = [...charmPool.slice(charmCount), ...itemPool.slice(itemCount)]
-      .sort(() => Math.random() - 0.5);
+      .sort(() => rng() - 0.5);
     selected = [...selected, ...leftover.slice(0, remaining).map((d) => (d.type === "charm" ? rollCharmSleeve(d) : d))];
   }
   for (let i = 0; i < cardSlots; i++) selected.push(shopPlayingCard());
 
   // Shuffle the combined pool
   for (let i = selected.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [selected[i], selected[j]] = [selected[j], selected[i]];
   }
   return selected;
@@ -5515,8 +5561,8 @@ function generateShopStock(count) {
 function shopPlayingCard() {
   const fancy = voucherSum("shopPlayingCards") >= 2;
   const extra = {};
-  if (fancy && Math.random() < 0.5) extra.sleeve = Math.random() < (deckIs("negative") ? 0.3 : 0.06) ? "negative" : randomOf(SLEEVE_KINDS);
-  if (fancy && Math.random() < 0.4) extra.stamp = randomOf(STAMP_KINDS);
+  if (fancy && rng() < 0.5) extra.sleeve = rng() < (deckIs("negative") ? 0.3 : 0.06) ? "negative" : randomOf(SLEEVE_KINDS);
+  if (fancy && rng() < 0.4) extra.stamp = randomOf(STAMP_KINDS);
   const card = makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), extra);
   const suit = card.suit[0].toUpperCase() + card.suit.slice(1);
   const lines = [];
@@ -6063,9 +6109,16 @@ function dealInitialHand(freshDeckArg) {
   state.usedCards = [];
 }
 
-function startGame(deckId) {
+function startGame(deckId, seed) {
   state.deckId = DECKS.some((x) => x.id === deckId) ? deckId : DECKS[0].id;
-  const d = freshDeck(state.deckId);
+  state.seedChosen = !!cleanSeed(seed);
+  state.seed = cleanSeed(seed) || randomSeed();
+  state.rngState = seedHash(state.seed);
+  let d = freshDeck(state.deckId);
+  const quirk = seedQuirk();
+  if (quirk === "aces") d = shuffleArray([...d, ...Array.from({ length: 12 }, (_, i) => makeCard("A", SUIT_KEYS[i % 4], { stamp: "gold" }))]);
+  if (quirk === "dressed") d = d.map((c) => ({ ...c, sleeve: randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  if (quirk === "hearts") d = d.map((c) => ({ ...c, suit: "hearts" }));
   state.handsThisRound = 0;
   state.luckyRound = false;
   state.roundHandSizeBonus = 0;
@@ -6171,6 +6224,10 @@ function startGame(deckId) {
   state.deck = d;
   state.hand = [];
   state.selected = [];
+  if (quirk === "shelf") {
+    const rares = shuffleArray(artifactPool().filter((x) => x.rarity === "rare")).slice(0, 2);
+    state.charms = [...state.charms, ...rares.map((x) => ({ ...withCharmSleeve(x, "negative"), uid: newUid() }))];
+  }
   openBlindSelect(1, 0);
 }
 
@@ -6183,7 +6240,7 @@ function resetRun() {
 function shuffleArray(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -6227,7 +6284,7 @@ function endRoundCarryover() {
       const others = allCards.filter((c) => !moltCards.includes(c) && c.sleeve !== "molt");
       const bare = others.filter((c) => !c.sleeve);
       const candidates = bare.length ? bare : others;
-      const target = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : moltCard;
+      const target = candidates.length ? candidates[Math.floor(rng() * candidates.length)] : moltCard;
       target.sleeve = "molt";
       nextTargets[target.id] = true;
     });
@@ -6288,7 +6345,7 @@ function beginBlind(nextAnte, nextBlindIdx) {
   state.discardsLeft = 4 + getExtraDiscards(state.items);
   while (useTag("encore")) state.playsLeft += 1;
   state.charms.filter((c) => c.effect.type === "nancyNegative").forEach(() => {
-    if (Math.random() >= 0.2) return;
+    if (rng() >= 0.2) return;
     const pool = [...state.charms.filter((c) => c.sleeve !== "negative").map((c) => ["charm", c]), ...state.items.filter((i) => i.sleeve !== "negative").map((i) => ["item", i])];
     if (!pool.length) return;
     const [kind, t] = randomOf(pool);
@@ -6338,6 +6395,7 @@ function beginBlind(nextAnte, nextBlindIdx) {
   // over with it.
   const returningCards = [...state.deck, ...state.usedCards, ...state.hand];
   state.deck = shuffleArray(returningCards);
+  if (seedQuirk() === "royal") state.deck = stackRoyalFlush(state.deck);
   
   dealInitialHand(state.deck);
   state.overlay = "playing";
@@ -6566,7 +6624,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
   const charms = effectiveCharms();
   const has = (type) => charms.find((c) => c.effect.type === type);
   const calc = has("calculatorReplay");
-  const calculatorFires = live && calc && Math.random() < Math.min(1, calc.effect.chance * chanceMultiplier());
+  const calculatorFires = live && calc && rng() < Math.min(1, calc.effect.chance * chanceMultiplier());
   const heart = has("heartstoneChance");
   let portraitCardId = null;
   const firstFace = cards.find((c) => !isCardDebuffed(c) && isFace(c));
@@ -6635,7 +6693,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
           case "thronesKingQueenX": if (card.rank === "K" || card.rank === "Q") xM(e.value); break;
           case "hydraSleeveX": if (card.sleeve) xM(e.value); break;
           case "heartstoneChance":
-            if (live && card.suit === "hearts" && Math.random() < Math.min(1, e.chance * chanceMultiplier())) xM(e.value);
+            if (live && card.suit === "hearts" && rng() < Math.min(1, e.chance * chanceMultiplier())) xM(e.value);
             break;
           default: break;
         }
@@ -6692,7 +6750,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
       case "jackknifeX": return xMH(1 + (c.jackBonus || 0));
       case "deuceChips": return addCH(c.deuceBonus || 0);
       case "cosmonautLevel":
-        if (live && Math.random() < Math.min(1, e.chance * chanceMultiplier())) {
+        if (live && rng() < Math.min(1, e.chance * chanceMultiplier())) {
           levelUpHand(base.name);
           push({ target: "charm", uid: c.uid, kind: "info", text: "Level up!" });
         }
@@ -6824,7 +6882,7 @@ function triggerCharmEffects(result, cards) {
   state.charms.forEach((charm) => {
     if (charm.effect.type === "engineRetrigger") return;
     if (charm.effect.type === "calculatorReplay") {
-      if (Math.random() < Math.min(1, charm.effect.chance * chanceMult)) {
+      if (rng() < Math.min(1, charm.effect.chance * chanceMult)) {
         // Trigger Calculator: replay scoring cards
         cardsToReplay = [...result.scoringCards];
         activateCharmSlide(charm, () => {
@@ -6924,7 +6982,7 @@ function playHand() {
       const chanceMult = chanceMultiplier();
       const chipsChance = Math.min(1, charm.effect.chipsChance * chanceMult);
       const moneyChance = Math.min(1 - chipsChance, charm.effect.moneyChance * chanceMult);
-      const rand = Math.random();
+      const rand = rng();
       if (rand < chipsChance) {
         state.rouletteBonus = charm.effect.chipsValue;
       } else if (rand < chipsChance + moneyChance) {
@@ -6932,7 +6990,7 @@ function playHand() {
       }
     }
     if (charm.effect.type === "coinFlip") {
-      if (Math.random() < Math.min(1, 0.5 * chanceMultiplier())) {
+      if (rng() < Math.min(1, 0.5 * chanceMultiplier())) {
         state.coinMultBonus = true;
       } else {
         state.money += charm.effect.moneyGain;
@@ -7005,7 +7063,7 @@ function finishPlay(finalScore, newPlaysLeft) {
     const popupEl = document.querySelector(".score-popup");
     if (popupEl) popupEl.classList.add("popup-out");
     // Glass sleeves: each one that scored has a 1 in 4 chance to shatter.
-    const shattered = new Set(state.hand.filter((c) => state.scoringIds.includes(c.id) && c.sleeve === "glass" && !isCardDebuffed(c) && Math.random() < 0.25).map((c) => c.id));
+    const shattered = new Set(state.hand.filter((c) => state.scoringIds.includes(c.id) && c.sleeve === "glass" && !isCardDebuffed(c) && rng() < 0.25).map((c) => c.id));
     let shardLabel = true;
     state.scoringIds.forEach((id) => {
       const el = document.querySelector(`.hand-fan .card[data-card-id="${id}"]`);
@@ -7290,14 +7348,14 @@ function goToShop() {
   const commonBases = PACK_BASES.filter((p) => !p.rare);
   const weights = commonBases.map((p) => (p.scarce ? 0.45 : 1));
   const rollBase = () => {
-    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let r = rng() * weights.reduce((a, b) => a + b, 0);
     let i = 0;
     while (i < weights.length - 1 && r > weights[i]) r -= weights[i++];
     return commonBases[i].id;
   };
   state.packStock = Array.from({ length: 2 + voucherSum("packSlots") }, () => {
-    if (Math.random() < 0.12) return { ...PACK_DEFS.find((p) => p.rare) };
-    const r = Math.random();
+    if (rng() < 0.12) return { ...PACK_DEFS.find((p) => p.rare) };
+    const r = rng();
     const id = rollBase() + (r < 0.12 ? "_mega" : r < 0.4 ? "_major" : "");
     return { ...PACK_DEFS.find((p) => p.id === id) };
   });
@@ -7333,7 +7391,7 @@ function openPack(packId) {
   if (kind === "itemPack") {
     // Tea Leaves: one more card. Omen Globe: any card can be a Spectral one.
     const spectralChance = voucherSum("arcanaSpectral");
-    choices = pickDefs(arcanaPool(), n + voucherSum("arcanaExtra")).map((d) => (Math.random() < spectralChance ? pickSpectrals(1)[0] : { ...d, arcana: true }));
+    choices = pickDefs(arcanaPool(), n + voucherSum("arcanaExtra")).map((d) => (rng() < spectralChance ? pickSpectrals(1)[0] : { ...d, arcana: true }));
   }
   if (kind === "celestialPack") {
     // secret hands' charts only once you've played that hand
@@ -7351,8 +7409,8 @@ function openPack(packId) {
     const nancy = LEGENDARY_DEFS.find((c) => c.id === "negativeNancy");
     if (deckIs("negative") && nancy && !owned.has(nancy.id) && !choices.some((c) => c.id === nancy.id)) choices[0] = { ...nancy };
   }
-  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { ...(Math.random() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}), ...(deckIs("negative") && Math.random() < 0.1 ? { sleeve: "negative" } : {}) }));
-  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: Math.random() < (deckIs("negative") ? 0.25 : 0.05) ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { ...(rng() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}), ...(deckIs("negative") && rng() < 0.1 ? { sleeve: "negative" } : {}) }));
+  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: rng() < (deckIs("negative") ? 0.25 : 0.05) ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
   state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: SETTINGS.packAnim ? Date.now() : 0, hand: kind === "spectralPack" || kind === "itemPack" ? packHandIds() : null, note: null };
   state.packPick = null;
   state.packSel = [];
@@ -7884,7 +7942,7 @@ function sellCharm(uid) {
     // Duplicate a random charm from current inventory (excluding the one being sold)
     const otherCharms = state.charms.filter((c) => c.uid !== uid);
     if (otherCharms.length > 0) {
-      const targetCharm = otherCharms[Math.floor(Math.random() * otherCharms.length)];
+      const targetCharm = otherCharms[Math.floor(rng() * otherCharms.length)];
       const charmDef = CHARM_DEFS.find((d) => d.id === targetCharm.id);
       if (charmDef) {
         const newCharm = { ...charmDef, uid: Math.random().toString(36).substring(7) };
@@ -7921,7 +7979,7 @@ function tryConsumeItem(item, itemUid) {
   let preservedBy = null;
   if (saveCount < 4) {
     for (const c of cameraCharms) {
-      if (Math.random() < Math.min(1, c.effect.chance * chanceMult)) { preservedBy = c; break; }
+      if (rng() < Math.min(1, c.effect.chance * chanceMult)) { preservedBy = c; break; }
     }
   }
   buzz(20);
@@ -8047,7 +8105,7 @@ function useItem(itemUid) {
 
   if (eff.type === "diceRandomMultX") {
     activateCharmSlide(item, () => {
-      state.nextHandMultX = eff.min + Math.random() * (eff.max - eff.min);
+      state.nextHandMultX = eff.min + rng() * (eff.max - eff.min);
       tryConsumeItem(item, itemUid);
       saveGame();
     });
@@ -8143,7 +8201,7 @@ function useItem(itemUid) {
       state.hand = newHand;
     });
   }
-  if (eff.type === "diceRandomChipsX") return quick(() => { state.nextHandChipsX = eff.min + Math.random() * (eff.max - eff.min); });
+  if (eff.type === "diceRandomChipsX") return quick(() => { state.nextHandChipsX = eff.min + rng() * (eff.max - eff.min); });
   if (eff.type === "raiseSellValue") {
     if (state.charms.length === 0) return;
     return quick(() => { state.charms = state.charms.map((c) => ({ ...c, sellBonus: (c.sellBonus || 0) + eff.value })); });
@@ -8231,7 +8289,7 @@ function useItem(itemUid) {
   }
   if (eff.type === "jackpotRoll") {
     return quick(() => {
-      if (Math.random() < Math.min(1, eff.chance * chanceMultiplier())) {
+      if (rng() < Math.min(1, eff.chance * chanceMultiplier())) {
         state.money += eff.value;
         state.bossBlindMessage = `Jackpot! +$${eff.value}`;
       } else {
@@ -8328,7 +8386,7 @@ function useItem(itemUid) {
   if (eff.type === "towerRerollRanks") {
     if (state.hand.length === 0) return;
     activateCharmSlide(item, () => {
-      state.hand = state.hand.map((c) => ({ ...c, rank: RANKS[Math.floor(Math.random() * RANKS.length)] }));
+      state.hand = state.hand.map((c) => ({ ...c, rank: RANKS[Math.floor(rng() * RANKS.length)] }));
       tryConsumeItem(item, itemUid);
       saveGame();
     });
@@ -8370,7 +8428,7 @@ function useItem(itemUid) {
     const ownedCharmIds = hasRingmaster ? new Set() : new Set(state.charms.map((c) => c.id));
     const pool = CHARM_DEFS.filter((c) => !ownedCharmIds.has(c.id));
     if (pool.length === 0) return;
-    const charmDef = pool[Math.floor(Math.random() * pool.length)];
+    const charmDef = pool[Math.floor(rng() * pool.length)];
     activateCharmSlide(item, () => {
       const newCharm = { ...charmDef, uid: Math.random().toString(36).slice(2, 9) };
       state.charms.push(newCharm);
@@ -8390,7 +8448,7 @@ function useItem(itemUid) {
         if (currentCount >= capacity) break;
         const pool = ITEM_DEFS.filter((i) => !ownedItemIds.has(i.id));
         if (pool.length === 0) break;
-        const def = pool[Math.floor(Math.random() * pool.length)];
+        const def = pool[Math.floor(rng() * pool.length)];
         const newItem = { ...def, uid: Math.random().toString(36).slice(2, 9) };
         state.items.push(newItem);
         ownedItemIds.add(def.id);
@@ -9215,6 +9273,7 @@ function renderScreen() {
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#E9C568">Victory</div>
       <div class="overlay-sub" style="margin:8px 0 24px">You beat the final boss at Ante ${FINAL_ANTE} with $${fmtBig(state.money)}. Run complete.</div>
+      ${state.seed ? `<div class="overlay-seed">Seed <b>${state.seed}</b></div>` : ""}
     `;
     overlay.appendChild(BigButton("Start New Run", newRun));
     overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
@@ -9225,8 +9284,10 @@ function renderScreen() {
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#A23B3B">Run Over</div>
       <div class="overlay-sub" style="margin:8px 0 24px">Fell short at Ante ${state.ante}, ${BLIND_TYPES[state.blindIdx].label} — ${fmtBig(state.roundScore)} / ${fmtBig(target)}</div>
+      ${state.seed ? `<div class="overlay-seed">Seed <b>${state.seed}</b></div>` : ""}
     `;
-    overlay.appendChild(BigButton("Try Again", () => startGame(state.deckId)));
+    // A typed seed is tried again as it was; a random one gets a fresh seed.
+    overlay.appendChild(BigButton("Try Again", () => startGame(state.deckId, state.seedChosen ? state.seed : "")));
     overlay.appendChild(BigButton("New Deck", newRun));
     overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
     app.appendChild(overlay);
