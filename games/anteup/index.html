@@ -9646,7 +9646,12 @@ function attachShelfDrag(piece, kind, def) {
       drag = { layer, ghost, zones, marker, target: null };
     };
 
-    const findRow = () => document.querySelector(`.shelf-row[data-kind="${kind}"]`);
+    // The shop draws its own shelf over the table's, so there can be two rows
+    // of this kind on the page: use the one this piece was picked up from
+    // (looked up again each time, since a render() mid-drag replaces it).
+    const rowSel = `.shelf-row[data-kind="${kind}"]`;
+    const rowIdx = Math.max(0, [...document.querySelectorAll(rowSel)].indexOf(piece.closest(".shelf-row")));
+    const findRow = () => { const rows = document.querySelectorAll(rowSel); return rows[rowIdx] || rows[rows.length - 1]; };
 
     const insertIndex = (row, x) => {
       const pieces = Array.from(row.querySelectorAll(".shelf-piece")).filter((p) => p.dataset.uid !== def.uid);
@@ -9677,7 +9682,7 @@ function attachShelfDrag(piece, kind, def) {
       drag.marker.style.display = "none";
       if (!drag.target && row) {
         const r = row.getBoundingClientRect();
-        if (ev.clientX >= r.left - 12 && ev.clientX <= r.right + 12 && ev.clientY >= r.top - 18 && ev.clientY <= r.bottom + 18) {
+        if (ev.clientX >= r.left - 16 && ev.clientX <= r.right + 16 && ev.clientY >= r.top - 32 && ev.clientY <= r.bottom + 32) {
           const { idx, pieces } = insertIndex(row, ev.clientX);
           const ref = pieces[idx] ? pieces[idx].getBoundingClientRect() : null;
           const last = pieces[pieces.length - 1] ? pieces[pieces.length - 1].getBoundingClientRect() : null;
