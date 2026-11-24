@@ -1446,7 +1446,7 @@ body:not(.landscape) .sb-inner {
 }
 body:not(.landscape) .sb-top { grid-area: top; text-align: left; display: flex; flex-direction: column; justify-content: center; }
 body:not(.landscape) .sb-score, body:not(.landscape) .sb-deck { grid-area: score; }
-body:not(.landscape) .sb-score { display: flex; flex-direction: column; justify-content: center; align-items: stretch; text-align: right; }
+body:not(.landscape) .sb-score { display: flex; flex-direction: column; justify-content: center; align-items: stretch; text-align: center; }
 body:not(.landscape) .sb-score .sb-score-val { font-size: 26px; }
 body:not(.landscape) .sb-hand { grid-area: hand; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; padding: 6px 8px; }
 body:not(.landscape) .sb-hand-name { font-size: 16px; text-align: left; }
@@ -1475,9 +1475,9 @@ body:not(.landscape) .sb-btns .opt-btn .opt-txt { font-size: 9px; }
 .sb-target { font-size: 9px; color: #9A917A; margin-top: 2px; }
 .sb-target b { color: #FFD45E; font-family: 'Fraunces', Georgia, serif; font-size: 12px; }
 .sb-label { font-size: 7.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #8B8368; }
-.sb-score { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; text-align: left; }
+.sb-score { display: flex; flex-direction: column; align-items: stretch; text-align: center; }
 .sb-score .sb-label { grid-row: 1; }
-.sb-score-val { grid-row: 1; justify-self: end; font-size: 19px; font-weight: 700; color: #F3ECD9; }
+.sb-score-val { font-size: 19px; font-weight: 700; color: #F3ECD9; }
 .sb-progress { grid-column: 1 / -1; height: 4px; border-radius: 3px; background: #0a0f0c; overflow: hidden; margin-top: 3px; }
 .sb-progress i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); }
 .sb-deck { display: flex; justify-content: center; padding: 2px; }
@@ -1493,8 +1493,8 @@ body:not(.landscape) .sb-btns .opt-btn .opt-txt { font-size: 9px; }
   flex: 1; min-width: 0; padding: 4px 2px; border-radius: 7px; font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 16px; color: #fff;
   border: 2px solid #0a0f0c; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
-.sb-chips { background: linear-gradient(180deg, #3FA9A0, #2a7f78); box-align: center; text-align: right; padding-right: 6px; }
-.sb-mult { background: linear-gradient(180deg, #D8473A, #A8302A); text-align: left; padding-left: 6px; }
+.sb-chips { background: linear-gradient(180deg, #3FA9A0, #2a7f78); text-align: center; }
+.sb-mult { background: linear-gradient(180deg, #D8473A, #A8302A); text-align: center; }
 .sb-hand.empty .sb-box { filter: saturate(.3) brightness(.6); }
 .sb-x { color: #E9C568; font-weight: 800; font-size: 13px; }
 .sb-box.bump { animation: spBump .22s cubic-bezier(.34,1.56,.64,1); }
@@ -4215,13 +4215,13 @@ function Sidebar(preview, selectedCards) {
     top.innerHTML = `<div class="sb-kicker">Booster pack</div><div class="sb-title serif">${po.name}</div><div class="sb-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"}</div>`;
   } else if (inShop) {
     const nIdx = (state.blindIdx + 1) % 3, nAnte = state.blindIdx === 2 ? state.ante + 1 : state.ante;
-    top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${targetForAnte(nAnte, nIdx).toLocaleString()}</div>`;
+    top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${fmtBig(targetForAnte(nAnte, nIdx))}</div>`;
   } else {
     const b = state.bossBlind;
     top.innerHTML = `<div class="sb-kicker">${b ? "Boss blind" : "Current blind"} · Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div>` +
       `<div class="sb-title serif${b ? " is-boss" : ""}">${b ? b.name : BLIND_TYPES[state.blindIdx].label}</div>` +
       (b ? `<div class="sb-sub">${b.desc}</div>` : "") +
-      `<div class="sb-target">Score at least <b>${targetForAnte(state.ante, state.blindIdx).toLocaleString()}</b></div>`;
+      `<div class="sb-target">Score at least <b>${fmtBig(targetForAnte(state.ante, state.blindIdx))}</b></div>`;
   }
   sb.appendChild(top);
 
@@ -4230,7 +4230,7 @@ function Sidebar(preview, selectedCards) {
     const target = targetForAnte(state.ante, state.blindIdx);
     const sc = document.createElement("div");
     sc.className = "sb-card sb-score";
-    sc.innerHTML = `<div class="sb-label">Round score</div><div class="sb-score-val serif">${state.roundScore.toLocaleString()}</div>` +
+    sc.innerHTML = `<div class="sb-label">Round score</div><div class="sb-score-val serif">${fmtBig(state.roundScore)}</div>` +
       `<div class="sb-progress"><i style="width:${Math.min(100, (state.roundScore / target) * 100)}%"></i></div>`;
     sb.appendChild(sc);
   } else {
@@ -4247,22 +4247,22 @@ function Sidebar(preview, selectedCards) {
   let name = "", chips = "0", mult = "0", total = null, bumpC = false, bumpM = false, lv = "", empty = false;
   if (p) {
     name = p.name;
-    chips = Math.round(p.chips).toLocaleString();
+    chips = fmtBig(Math.round(p.chips));
     mult = fmtNum(p.mult);
-    if (p.phase === "total") total = Number(p.score).toLocaleString();
+    if (p.phase === "total") total = fmtBig(Number(p.score));
     bumpC = p.phase === "counting" && p.bump === "chips";
     bumpM = p.phase === "counting" && (p.bump === "mult" || p.bump === "xmult");
   } else if (flash) {
     name = flash.hand;
-    if (!flash.all && HAND_TABLE[flash.hand]) { const b = handBase(flash.hand); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
+    if (!flash.all && HAND_TABLE[flash.hand]) { const b = handBase(flash.hand); chips = fmtBig(b.chips); mult = fmtNum(b.mult); }
   } else if (preview && !inShop) {
     name = preview.name;
-    chips = Math.round(preview.totalChips).toLocaleString();
+    chips = fmtBig(Math.round(preview.totalChips));
     mult = fmtNum(preview.totalMult);
   } else if (selectedCards.length && !inShop) {
     const r = evaluateSelection(selectedCards);
     name = r ? r.name : "";
-    if (name && HAND_TABLE[name]) { const b = handBase(name); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
+    if (name && HAND_TABLE[name]) { const b = handBase(name); chips = fmtBig(b.chips); mult = fmtNum(b.mult); }
   } else empty = true;
   const up = flash && (flash.all || flash.hand === name);
   if (name && HAND_TABLE[name]) lv = up && !flash.all ? `Lv ${flash.from} → ${flash.to}` : `Lv ${handLevel(name)}`;
@@ -5969,8 +5969,42 @@ const X_EFFECTS = new Set([
 ]);
 
 function fmtNum(n) {
-  const r = Math.round(n * 100) / 100;
-  return Number.isInteger(r) ? String(r) : r.toFixed(2).replace(/0$/, "");
+  return fmtBig(n);
+}
+// Numbers are never written out in full: under 1,000 as they are, then
+// shortened (12.3K, 4.56M, 7.8B, 1.2T), and from 1e15 in E notation (1.23e15).
+function fmtBig(n) {
+  n = Number(n) || 0;
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (!isFinite(a)) return sign + "∞";
+  const trim = (x) => x.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  if (a < 1000) {
+    const r = Math.round(a * 100) / 100;
+    return sign + (Number.isInteger(r) ? String(r) : trim(r.toFixed(2)));
+  }
+  const units = [[1e3, "K"], [1e6, "M"], [1e9, "B"], [1e12, "T"]];
+  for (const [v, u] of units) {
+    const x = a / v;
+    const digits = x >= 100 ? 0 : x >= 10 ? 1 : 2;
+    const txt = x.toFixed(digits);
+    if (Number(txt) < 1000) return sign + trim(txt) + u;
+  }
+  let e = Math.floor(Math.log10(a));
+  let m = a / Math.pow(10, e);
+  if (Number(m.toFixed(2)) >= 10) { m /= 10; e += 1; }
+  return sign + trim(m.toFixed(2)) + "e" + e;
+}
+// Text in the panel's boxes shrinks to fit instead of spilling out.
+function fitBoxText() {
+  document.querySelectorAll(".sb-box, .sb-total, .sb-score-val, .sb-val, .sb-target b").forEach((el) => {
+    el.style.fontSize = "";
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    for (let i = 0; i < 12 && el.scrollWidth > el.clientWidth + 1 && size > 9; i++) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
+  });
 }
 
 // Preview: a played hand counts itself before it scores (hands played, hand
@@ -8346,7 +8380,7 @@ function render() {
   left.innerHTML = `
     <div class="blind-label">ANTE ${state.ante} · ${BLIND_TYPES[state.blindIdx].label.toUpperCase()}</div>
     ${state.bossBlind ? `<div class="boss-blind-name serif${state.bossBlind.isFinal ? " boss-blind-final" : ""}" title="${state.bossBlind.desc}">${state.bossBlind.isFinal ? '<span class="boss-blind-final-tag">FINAL BOSS</span>' : ""}${state.bossBlind.name}</div><div class="boss-blind-desc">${state.bossBlind.desc}</div>` : ""}
-    <div class="score-line serif">${state.roundScore.toLocaleString()} <span class="score-target">/ ${target.toLocaleString()}</span></div>
+    <div class="score-line serif">${fmtBig(state.roundScore)} <span class="score-target">/ ${fmtBig(target)}</span></div>
   `;
   const progressTrack = document.createElement("div");
   progressTrack.className = "progress-track";
@@ -8549,7 +8583,7 @@ function render() {
     const earningsText = `earned ${parts.join(" + ")}`;
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#C9A227">Blind Cleared</div>
-      <div class="overlay-sub" style="margin:8px 0 24px">${state.roundScore.toLocaleString()} / ${target.toLocaleString()} · ${earningsText}</div>
+      <div class="overlay-sub" style="margin:8px 0 24px">${fmtBig(state.roundScore)} / ${fmtBig(target)} · ${earningsText}</div>
     `;
     overlay.appendChild(BigButton("Visit Shop", goToShop));
     app.appendChild(overlay);
@@ -8563,7 +8597,7 @@ function render() {
     const earningsText = `earned ${parts.join(" + ")}`;
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#E9C568">Final Boss Defeated</div>
-      <div class="overlay-sub" style="margin:8px 0 12px">${state.roundScore.toLocaleString()} / ${target.toLocaleString()} · ${earningsText}</div>
+      <div class="overlay-sub" style="margin:8px 0 12px">${fmtBig(state.roundScore)} / ${fmtBig(target)} · ${earningsText}</div>
       <div class="overlay-sub" style="margin:0 0 24px">You've beaten Ante ${FINAL_ANTE}. Bank the win, or keep climbing endless antes for a higher score.</div>
     `;
     overlay.appendChild(BigButton("Take the Win", takeTheWin));
@@ -8574,7 +8608,7 @@ function render() {
     overlay.className = "overlay";
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#E9C568">Victory</div>
-      <div class="overlay-sub" style="margin:8px 0 24px">You beat the final boss at Ante ${FINAL_ANTE} with $${state.money.toLocaleString()}. Run complete.</div>
+      <div class="overlay-sub" style="margin:8px 0 24px">You beat the final boss at Ante ${FINAL_ANTE} with $${fmtBig(state.money)}. Run complete.</div>
     `;
     overlay.appendChild(BigButton("Start New Run", newRun));
     overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
@@ -8584,7 +8618,7 @@ function render() {
     overlay.className = "overlay";
     overlay.innerHTML = `
       <div class="overlay-title serif" style="font-size:34px;color:#A23B3B">Run Over</div>
-      <div class="overlay-sub" style="margin:8px 0 24px">Fell short at Ante ${state.ante}, ${BLIND_TYPES[state.blindIdx].label} — ${state.roundScore.toLocaleString()} / ${target.toLocaleString()}</div>
+      <div class="overlay-sub" style="margin:8px 0 24px">Fell short at Ante ${state.ante}, ${BLIND_TYPES[state.blindIdx].label} — ${fmtBig(state.roundScore)} / ${fmtBig(target)}</div>
     `;
     overlay.appendChild(BigButton("Try Again", () => startGame(state.deckId)));
     overlay.appendChild(BigButton("New Deck", newRun));
@@ -8660,6 +8694,7 @@ function render() {
   syncLoopingAnimations();
   fitShop();
   fitSidebar();
+  fitBoxText();
   applyCardFlip(oldCardRects, wasFullDeal);
 }
 
