@@ -259,9 +259,13 @@
       if (!blob) {
         var r = await fetch(t.url); blob = await r.blob();       // blob: URL still alive this session
       }
-      var CH = 3 * 1024 * 1024, name = t.dbId + '.' + (t.ext || (t.kind === 'video' ? 'mp4' : 'mp3')), uri = null, size = 0;
+      // Small pieces with a pause between them. Each piece crosses to Android as text, and the page cannot answer a
+      // tap while one is being handed over: 3 MB pieces (4 MB of text each) back to back held it for seconds when a
+      // track restored from a backup (kept in the app's database) was played the first time, a video above all.
+      var CH = 512 * 1024, name = t.dbId + '.' + (t.ext || (t.kind === 'video' ? 'mp4' : 'mp3')), uri = null, size = 0;
       if (blob.size > 64 * 1024 * 1024 && N.hooks.toast) N.hooks.toast('Moving "' + (t.title || 'track') + '" to device storage…');
       for (var off = 0; off < blob.size || off === 0; off += CH) {
+        if (off) await new Promise(function (r) { setTimeout(r, 0); });
         var res = await Lib.writeChunk({ name: name, first: off === 0, base64: await b64(blob.slice(off, off + CH)) });
         uri = res.uri; size = res.size;
         if (blob.size === 0) break;
