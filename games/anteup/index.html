@@ -1175,6 +1175,43 @@ body.landscape .mm-cards { width: 260px; height: 150px; margin-bottom: -46px; tr
 body.landscape .mm-ante { font-size: 58px; }
 body.landscape .mm-up { font-size: 74px; }
 .mm-bar .mbtn-red { grid-column: 1 / -1; }
+/* the deck picker */
+.mm-bar.is-decks { display: block; padding: 12px 14px 14px; }
+.deck-pick { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dp-title { font-size: 15px; color: #E9C568; letter-spacing: 1px; }
+.dp-row { display: flex; align-items: center; gap: 16px; }
+.dp-arrow {
+  width: 40px; height: 40px; border-radius: 50%; border: 2px solid #0a0f0c; cursor: pointer; font-size: 26px; line-height: 1; color: #fff;
+  background: linear-gradient(180deg, #6b7a72, #4a5751); box-shadow: 0 3px 0 #2a332e;
+}
+.dp-arrow:active { transform: translateY(2px); box-shadow: 0 1px 0 #2a332e; }
+.dp-card {
+  width: 96px; height: 134px; border-radius: 10px; border: 2px solid #0a0f0c; padding: 5px; touch-action: pan-y;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--dc) 80%, #fff) 0%, var(--dc) 45%, color-mix(in srgb, var(--dc) 55%, #000) 100%);
+  box-shadow: 0 0 0 2px #C9A22788, 0 14px 24px -6px #000c; animation: bfloat 3.2s ease-in-out infinite;
+}
+.dp-card.from-right { animation: dpIn .28s cubic-bezier(.2,1.2,.4,1) both, bfloat 3.2s ease-in-out .28s infinite; --dx: 40px; }
+.dp-card.from-left { animation: dpIn .28s cubic-bezier(.2,1.2,.4,1) both, bfloat 3.2s ease-in-out .28s infinite; --dx: -40px; }
+@keyframes dpIn { from { opacity: 0; transform: translateX(var(--dx)) rotate(calc(var(--dx) / 8)); } }
+.dp-card-inner {
+  width: 100%; height: 100%; border-radius: 6px; border: 1.5px solid #ffffff55; display: flex; align-items: center; justify-content: center;
+  background: repeating-linear-gradient(135deg, #ffffff10 0 4px, transparent 4px 8px);
+}
+.dp-glyph { font-size: 42px; color: #fff; text-shadow: 0 2px 0 #0008, 0 0 14px #fff6; font-family: 'Fraunces', Georgia, serif; }
+.dp-name { font-size: 20px; font-weight: 700; color: #F3ECD9; }
+.dp-desc { font-size: 12px; color: #C9BFA4; text-align: center; min-height: 2.8em; max-width: 300px; line-height: 1.35; }
+.dp-dots { display: flex; gap: 4px; }
+.dp-dots i { width: 6px; height: 6px; border-radius: 50%; background: #ffffff25; }
+.dp-dots i.on { background: #FFD45E; }
+.dp-btns { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; width: 100%; margin-top: 6px; }
+.mm-bar .dp-btns .mbtn { grid-column: auto; min-height: 50px; }
+.mm-bar .dp-btns .mbtn-blue .mbtn-label { font-size: 22px; }
+body.landscape .mm-bar .dp-btns .mbtn { min-height: 42px; }
+body.landscape .mm-bar.is-decks { padding: 8px 12px 10px; }
+body.landscape .dp-card { width: 70px; height: 98px; }
+body.landscape .dp-glyph { font-size: 30px; }
+body.landscape .dp-desc { min-height: 0; font-size: 11px; }
+body.landscape .deck-pick { gap: 3px; }
 body.landscape .mm-bar { margin-top: 0; max-width: 340px; }
 
 /* ----- settings: left-handed, badges ----- */
@@ -1957,10 +1994,41 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
   return el;
 }
 
+/* ============================== DECKS ==============================
+   Chosen when a run starts. Each changes a rule or two for the whole run.
+   Their effects use the same types as vouchers, so they add into the same
+   sums (see boonList); the few that don't fit are checked with deckIs(). */
+const DECKS = [
+  { id: "standard", name: "Standard Deck", desc: "The usual 52 cards. No twists.", color: "#2f6b4a", glyph: "♠", effects: [] },
+  { id: "ember", name: "Ember Deck", desc: "+1 discard every round", color: "#b8402f", glyph: "✹", effects: [{ type: "extraDiscards", value: 1 }] },
+  { id: "tide", name: "Tide Deck", desc: "+1 hand every round", color: "#2f6fb8", glyph: "≈", effects: [{ type: "extraPlays", value: 1 }] },
+  { id: "gilt", name: "Gilt Deck", desc: "Start with $10 more", color: "#c99a22", glyph: "$", effects: [] },
+  { id: "verdant", name: "Verdant Deck", desc: "No interest. Each unused hand pays $2 at the end of a round, each unused discard $1", color: "#3f8f52", glyph: "❦", effects: [] },
+  { id: "onyx", name: "Onyx Deck", desc: "+1 artifact slot, but −1 hand every round", color: "#2a2a30", glyph: "◆", effects: [{ type: "extraPlays", value: -1 }] },
+  { id: "mystic", name: "Mystic Deck", desc: "+1 item slot. Start with 2 random items", color: "#7550b5", glyph: "✧", effects: [{ type: "extraItemSlot", value: 1 }] },
+  { id: "star", name: "Star Deck", desc: "Start with the Clairvoyance voucher, but −1 item slot", color: "#24325c", glyph: "★", effects: [{ type: "extraItemSlot", value: -1 }] },
+  { id: "hollow", name: "Hollow Deck", desc: "No face cards: 40 cards, Aces to 10s", color: "#6b7a72", glyph: "○", effects: [] },
+  { id: "checkered", name: "Checkered Deck", desc: "Only Spades and Hearts, 26 of each", color: "#8a2b2b", glyph: "♥", effects: [] },
+  { id: "painted", name: "Painted Deck", desc: "+2 hand size, but −1 artifact slot", color: "#c0623a", glyph: "✎", effects: [{ type: "extraHandSize", value: 2 }] },
+  { id: "balance", name: "Balance Deck", desc: "Chips and Mult are averaged on every hand. Blinds need twice the score", color: "#5a6fd8", glyph: "⚖", effects: [] },
+  { id: "chaos", name: "Chaos Deck", desc: "Every card's rank and suit is random", color: "#8e3fa8", glyph: "✺", effects: [] },
+];
+function currentDeck() { return DECKS.find((d) => d.id === state.deckId) || DECKS[0]; }
+function deckIs(id) { return (state.deckId || "standard") === id; }
+// Vouchers plus the deck's own effects, for everything that sums them.
+function boonList() { return [...state.vouchers, ...currentDeck().effects.map((effect) => ({ effect }))]; }
+
 /* ============================== DECK HELPERS ============================== */
-function freshDeck() {
+function freshDeck(deckId = state.deckId) {
   const deck = [];
-  for (const suit of SUIT_KEYS) for (const rank of RANKS) deck.push({ rank, suit, id: `${rank}-${suit}-${Math.random().toString(36).slice(2, 8)}` });
+  const id = () => Math.random().toString(36).slice(2, 8);
+  if (deckId === "chaos") {
+    for (let i = 0; i < 52; i++) { const rank = randomOf(RANKS), suit = randomOf(SUIT_KEYS); deck.push({ rank, suit, id: `${rank}-${suit}-${id()}` }); }
+  } else {
+    const suits = deckId === "checkered" ? ["spades", "spades", "hearts", "hearts"] : SUIT_KEYS;
+    const ranks = deckId === "hollow" ? RANKS.filter((r) => !["J", "Q", "K"].includes(r)) : RANKS;
+    for (const suit of suits) for (const rank of ranks) deck.push({ rank, suit, id: `${rank}-${suit}-${id()}` });
+  }
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -2135,7 +2203,7 @@ function targetForAnte(ante, blindIdx) {
       mult *= state.bossBlind.scoreMult;
     }
   }
-  return Math.round(100 * anteBaseMultiplier(ante) * mult);
+  return Math.round(100 * anteBaseMultiplier(ante) * mult * (deckIs("balance") ? 2 : 1));
 }
 
 // Balatro doesn't scale its blind requirement linearly with ante — each ante
@@ -3927,10 +3995,10 @@ const VOUCHERS = [
 const VOUCHER_BY_ID = Object.fromEntries(VOUCHERS.map((v) => [v.id, v]));
 // Sum (or best) of an effect across the vouchers you own.
 function voucherSum(type) {
-  return state.vouchers.filter((v) => v.effect.type === type).reduce((s, v) => s + v.effect.value, 0);
+  return boonList().filter((v) => v.effect.type === type).reduce((s, v) => s + v.effect.value, 0);
 }
 function voucherBest(type, pick) {
-  return state.vouchers.filter((v) => v.effect.type === type).reduce((m, v) => pick(m, v.effect.value), 1);
+  return boonList().filter((v) => v.effect.type === type).reduce((m, v) => pick(m, v.effect.value), 1);
 }
 function shopDiscountFactor() {
   return voucherBest("shopDiscount", Math.min);
@@ -4032,7 +4100,45 @@ function continueRun() {
   if (ppCash) { state.money += ppCash; saveGame(); }
   render();
 }
-function newRun() { MENU.screen = null; MENU.choosingRun = false; MENU.pause = false; clearSave(); startGame(); }
+// A new run starts at the deck picker on the title screen.
+function newRun() { MENU.screen = "main"; MENU.choosingRun = false; MENU.pause = false; MENU.panel = null; MENU.choosingDeck = true; render(); }
+function startRunWithDeck(id) {
+  SETTINGS.lastDeck = id; saveSettings();
+  MENU.screen = null; MENU.choosingDeck = false; MENU.choosingRun = false; MENU.pause = false;
+  clearSave(); startGame(id);
+}
+function DeckPicker() {
+  const wrap = document.createElement("div");
+  wrap.className = "deck-pick";
+  if (MENU.deckIdx == null) MENU.deckIdx = Math.max(0, DECKS.findIndex((d) => d.id === SETTINGS.lastDeck));
+  const d = DECKS[MENU.deckIdx];
+  const go = (step) => { MENU.deckIdx = (MENU.deckIdx + step + DECKS.length) % DECKS.length; MENU.deckDir = step; render(); };
+  wrap.innerHTML = `
+    <div class="dp-title serif">Choose a deck</div>
+    <div class="dp-row">
+      <button class="dp-arrow" data-step="-1" aria-label="Previous deck">‹</button>
+      <div class="dp-card${MENU.deckDir ? (MENU.deckDir > 0 ? " from-right" : " from-left") : ""}" style="--dc:${d.color}">
+        <div class="dp-card-inner"><span class="dp-glyph">${d.glyph}</span></div>
+      </div>
+      <button class="dp-arrow" data-step="1" aria-label="Next deck">›</button>
+    </div>
+    <div class="dp-name serif">${d.name}</div>
+    <div class="dp-desc">${d.desc}</div>
+    <div class="dp-dots">${DECKS.map((x, i) => `<i class="${i === MENU.deckIdx ? "on" : ""}"></i>`).join("")}</div>`;
+  MENU.deckDir = 0;
+  wrap.querySelectorAll(".dp-arrow").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); go(Number(b.dataset.step)); }; });
+  // swipe the card to flip through the decks
+  const card = wrap.querySelector(".dp-card");
+  let sx = null;
+  card.addEventListener("pointerdown", (e) => { sx = e.clientX; });
+  card.addEventListener("pointerup", (e) => { if (sx != null && Math.abs(e.clientX - sx) > 30) go(e.clientX < sx ? 1 : -1); sx = null; });
+  const btns = document.createElement("div");
+  btns.className = "dp-btns";
+  btns.appendChild(MenuButton("Start Run", "blue", () => startRunWithDeck(d.id)));
+  btns.appendChild(MenuButton("Back", "grey", () => { MENU.choosingDeck = false; render(); }));
+  wrap.appendChild(btns);
+  return wrap;
+}
 
 // The small button that opens the pause menu.
 /* ============================== SIDEBAR (sideways) ==============================
@@ -4206,7 +4312,10 @@ function MainMenu() {
 
   const bar = document.createElement("div");
   bar.className = "mm-bar";
-  if (MENU.choosingRun) {
+  if (MENU.choosingDeck) {
+    bar.classList.add("is-decks");
+    bar.appendChild(DeckPicker());
+  } else if (MENU.choosingRun) {
     bar.classList.add("choosing");
     bar.appendChild(MenuButton("Continue", "blue", continueRun, `Ante ${state.ante} · $${state.money}`));
     bar.appendChild(MenuButton("New Run", "green", newRun));
@@ -4237,7 +4346,7 @@ function PauseMenu() {
   if (MENU.panel) { back.appendChild(MenuPanel()); return back; }
   const box = document.createElement("div");
   box.className = "mpanel pause-panel";
-  box.innerHTML = `<div class="mpanel-title serif">Paused</div><div class="mpanel-sub">Ante ${state.ante} · ${BLIND_TYPES[state.blindIdx].label}</div>`;
+  box.innerHTML = `<div class="mpanel-title serif">Paused</div><div class="mpanel-sub">${currentDeck().name} · Ante ${state.ante} · ${BLIND_TYPES[state.blindIdx].label}</div>`;
   box.appendChild(MenuButton("Play", "blue", closePause));
   box.appendChild(MenuButton("Settings", "orange", () => { MENU.panel = "settings"; render(); }));
   box.appendChild(MenuButton("Skins", "purple", () => { MENU.panel = "skins"; render(); }));
@@ -5235,14 +5344,14 @@ function withNextHandBase(result) {
 
 function getExtraPlays(items) {
   const extra = [...items, ...state.charms].filter((i) => i.effect.type === "extraPlays").reduce((s, i) => s + i.effect.value, 0);
-  const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraPlays").reduce((s, v) => s + v.effect.value, 0);
+  const voucherExtra = boonList().filter((v) => v.effect.type === "extraPlays").reduce((s, v) => s + v.effect.value, 0);
   const gamblerReduction = state.charms.filter((c) => c.effect.type === "gamblerMult").reduce((s, c) => s + c.effect.playReduction, 0);
   // Vouchers can take hands away too (Time Warp), but never below 1 hand.
   return Math.max(-3, Math.max(0, extra - gamblerReduction) + voucherExtra);
 }
 function getExtraDiscards(items) {
   const extra = [...items, ...state.charms].filter((i) => i.effect.type === "extraDiscards").reduce((s, i) => s + i.effect.value, 0);
-  const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraDiscards").reduce((s, v) => s + v.effect.value, 0);
+  const voucherExtra = boonList().filter((v) => v.effect.type === "extraDiscards").reduce((s, v) => s + v.effect.value, 0);
   return Math.max(-4, extra + voucherExtra + (state.permDiscards || 0));
 }
 function getExtraHandSize(items) {
@@ -5258,6 +5367,7 @@ function getInterestBonus(items, money) {
   // Baseline economy mechanic: everyone earns $1 per $5 banked, capped at $5
   // (i.e. it stops helping past $25) so money can't snowball out of control.
   // Vault charms raise that cap.
+  if (deckIs("verdant")) return 0;
   const vaultBonus = state.charms.filter((c) => c.effect.type === "vaultInterestCap").reduce((s, c) => s + c.effect.value, 0);
   const interestVoucherBonus = state.vouchers.filter((v) => v.effect.type === "interestBonus").reduce((s, v) => s + v.effect.value, 0);
   return Math.min(5 + vaultBonus + voucherSum("interestCap"), Math.floor(money / 5)) + interestVoucherBonus;
@@ -5265,7 +5375,7 @@ function getInterestBonus(items, money) {
 function getLeftoverHandsBonus(playsLeft, discardsLeft) {
   // Guaranteed baseline income: $1 per unused play and $1 per unused discard
   // when a round is cleared, so efficient play pays off without needing luck.
-  return Math.max(0, playsLeft) + Math.max(0, discardsLeft);
+  return Math.max(0, playsLeft) * (deckIs("verdant") ? 2 : 1) + Math.max(0, discardsLeft);
 }
 
 /* ============================== GAME STATE ============================== */
@@ -5419,7 +5529,7 @@ function getEffectiveItemSlots() {
     (sum, c) => sum + (c.effect?.type === "foolExtraSlot" ? (c.effect.value || 1) : 0),
     0
   );
-  const voucherBonus = state.vouchers.reduce(
+  const voucherBonus = boonList().reduce(
     (sum, v) => sum + (v.effect?.type === "extraItemSlot" ? (v.effect.value || 1) : 0),
     0
   );
@@ -5432,7 +5542,7 @@ const MAX_OVERLAP = 44;
 
 function getHandSize() {
   const extra = getExtraHandSize(state.items);
-  const voucherExtra = state.vouchers.filter((v) => v.effect.type === "extraHandSize").reduce((s, v) => s + v.effect.value, 0);
+  const voucherExtra = boonList().filter((v) => v.effect.type === "extraHandSize").reduce((s, v) => s + v.effect.value, 0);
   const chainsReduction = state.charms.filter((c) => c.effect.type === "chainsMoneyPerHand").reduce((s, c) => s + c.effect.handSizeReduction, 0);
   const bossDelta = (state.bossBlind && state.bossBlind.handSizeDelta) || 0;
   const negInHand = (state.hand || []).filter((c) => c.sleeve === "negative").length;
@@ -5470,8 +5580,9 @@ function dealInitialHand(freshDeckArg) {
   state.usedCards = [];
 }
 
-function startGame() {
-  const d = freshDeck();
+function startGame(deckId) {
+  state.deckId = DECKS.some((x) => x.id === deckId) ? deckId : state.deckId || "standard";
+  const d = freshDeck(state.deckId);
   state.handsThisRound = 0;
   state.luckyRound = false;
   state.roundHandSizeBonus = 0;
@@ -5497,10 +5608,11 @@ function startGame() {
   state.handTypeCounts = {};
   state.bossBlindMessage = null;
   state.charms = [];
-  state.charmSlots = 5;
+  state.charmSlots = 5 + (deckIs("onyx") ? 1 : 0) - (deckIs("painted") ? 1 : 0);
   state.items = [];
   state.itemSlots = 2;
   state.vouchers = [];
+  if (deckIs("star")) { const v = VOUCHERS.find((x) => x.id === "clairvoyance"); if (v) state.vouchers = [{ ...v }]; }
   state.voucherStock = [];
   state.voucherReady = false;
   state.permHandSize = 0;
@@ -5555,6 +5667,8 @@ function startGame() {
     state.charms.push({ id: "ppp_bass", name: "Bass Boost", desc: "Press Play exclusive: x1.5 Mult on every hand", price: 10,
       color: "#6ee7d0", type: "charm", effect: { type: "pppEncore", add: 0, x: 1.5 }, uid: Math.random().toString(36).slice(2, 9) });
   }
+  if (deckIs("gilt")) state.money += 10;
+  if (deckIs("mystic")) state.items = shuffleArray(ITEM_DEFS.filter((x) => !x.chart && !x.secret)).slice(0, 2).map((x) => ({ ...x, uid: newUid() }));
   state.usedCards = [];
   dealInitialHand(d);
   state.overlay = "playing";
@@ -6031,7 +6145,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
   if (state.nextHandChipsX && state.nextHandChipsX !== 1) { chips *= state.nextHandChipsX; push({ target: "hand", kind: "chips", text: `X${fmtNum(state.nextHandChipsX)} Chips` }); }
   if (state.nextHandDoubleMult) { mult *= 2; push({ target: "hand", kind: "xmult", text: "X2 Mult" }); }
   if (state.nextHandMultX && state.nextHandMultX !== 1) { mult *= state.nextHandMultX; push({ target: "hand", kind: "xmult", text: `X${fmtNum(state.nextHandMultX)} Mult` }); }
-  if (state.nextHandBalance) { const avg = (chips + mult) / 2; chips = avg; mult = avg; push({ target: "hand", kind: "info", text: "Balanced" }); }
+  if (state.nextHandBalance || deckIs("balance")) { const avg = (chips + mult) / 2; chips = avg; mult = avg; push({ target: "hand", kind: "info", text: "Balanced" }); }
 
   // Boss Blind
   const boss = state.bossBlind;
@@ -7976,7 +8090,7 @@ function renderDeckModal() {
   header.className = "deck-modal-header";
   const titleWrap = document.createElement("div");
   titleWrap.innerHTML = `
-    <div class="deck-modal-title serif">The Deck</div>
+    <div class="deck-modal-title serif">${currentDeck().name}</div>
     <div class="deck-modal-sub"><span class="deck-modal-count">${state.deck.length}</span> of ${state.deck.length + state.hand.length + state.usedCards.length} cards still in the deck</div>
   `;
   header.appendChild(titleWrap);
@@ -8442,7 +8556,7 @@ function render() {
       <div class="overlay-title serif" style="font-size:34px;color:#E9C568">Victory</div>
       <div class="overlay-sub" style="margin:8px 0 24px">You beat the final boss at Ante ${FINAL_ANTE} with $${state.money.toLocaleString()}. Run complete.</div>
     `;
-    overlay.appendChild(BigButton("Start New Run", startGame));
+    overlay.appendChild(BigButton("Start New Run", newRun));
     overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
     app.appendChild(overlay);
   } else if (state.overlay === "over") {
@@ -8452,7 +8566,8 @@ function render() {
       <div class="overlay-title serif" style="font-size:34px;color:#A23B3B">Run Over</div>
       <div class="overlay-sub" style="margin:8px 0 24px">Fell short at Ante ${state.ante}, ${BLIND_TYPES[state.blindIdx].label} — ${state.roundScore.toLocaleString()} / ${target.toLocaleString()}</div>
     `;
-    overlay.appendChild(BigButton("Try Again", startGame));
+    overlay.appendChild(BigButton("Try Again", () => startGame(state.deckId)));
+    overlay.appendChild(BigButton("New Deck", newRun));
     overlay.appendChild(BigButton("Main Menu", () => { MENU.screen = "main"; render(); }));
     app.appendChild(overlay);
   } else if (state.overlay === "shop") {
