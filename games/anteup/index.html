@@ -1040,10 +1040,6 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .shelf-piece.csl-prismatic svg { animation: cslPrism 3s linear infinite; }
 @keyframes cslPrism { 0% { filter: drop-shadow(0 0 4px #ff6b6b); } 33% { filter: drop-shadow(0 0 4px #7FD08A); } 66% { filter: drop-shadow(0 0 4px #6bb8ff); } 100% { filter: drop-shadow(0 0 4px #ff6b6b); } }
 .shelf-piece.csl-negative svg { filter: invert(1) hue-rotate(180deg) drop-shadow(0 0 4px #b9a0ff); }
-.bcard-sleeve {
-  font-size: 8px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #0a0f0c;
-  background: var(--sc); border: 1.5px solid #0a0f0c; border-radius: 6px; padding: 0 6px; margin-top: -2px;
-}
 .sleeve-line { font-size: 12px; color: #C9BFA4; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--sc); background: color-mix(in srgb, var(--sc) 14%, transparent); }
 .sleeve-line b { color: var(--sc); }
 .bcard-face.is-playing-ware { display: flex; align-items: center; justify-content: center; }
@@ -1234,6 +1230,22 @@ body.back-sunset .deck-card-back, .back-prev-sunset .bp-card { background: radia
 .pack-hand-card.dragging { z-index: 5; transition: none; }
 .pack-hand-card.dragging .pack-card { box-shadow: 0 10px 18px #000b; }
 body.reduce-motion .pchoice.using, body.reduce-motion .pack-hand-card.changed .pack-card { animation-duration: .01s !important; }
+
+/* ----- Glass sleeve breaking ----- */
+.glass-burst { position: fixed; z-index: 140; pointer-events: none; }
+.glass-burst i {
+  position: absolute; width: var(--s); height: var(--s); margin: calc(var(--s) / -2);
+  background: linear-gradient(135deg, #ffffff 0%, #bfe8fa 55%, #7fc3e0 100%); opacity: .95;
+  clip-path: polygon(50% 0, 100% 70%, 20% 100%); box-shadow: 0 0 6px #bfe8fa;
+  animation: glassShard .9s cubic-bezier(.2,.7,.4,1) forwards;
+}
+@keyframes glassShard { to { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
+.glass-burst b {
+  position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); white-space: nowrap;
+  font-family: 'Fraunces', Georgia, serif; font-size: 15px; color: #dff4ff; text-shadow: 0 0 8px #4d8fae, 0 2px 0 #0008;
+  animation: glassWord 1s ease forwards;
+}
+@keyframes glassWord { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.7); } 20% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -140%); } }
 
 /* ============================== CARD NOTE (double tap) ============================== */
 .card-note {
@@ -1465,6 +1477,7 @@ const SLEEVE_COLORS = {
   larva: "#9B8A6F",
   anchor: "#8A9BAA",
   mirror: "#E0E0E0",
+  glass: "#9fd8f0",
 };
 // Stamps are a second, independent modifier layer that can sit on top of a
 // sleeve (e.g. a Mirror-sleeved card can also carry a Gold stamp). Rendered
@@ -1484,6 +1497,29 @@ function sleeveGlowShadow(sleeve, px) {
   const c = SLEEVE_COLORS[sleeve];
   if (!c) return "";
   return `, 0 0 0 ${px(2)}px ${c}, 0 0 ${px(10)}px ${px(2)}px ${c}66`;
+}
+
+// A Glass card breaking: the card flashes and falls apart into shards.
+function shatterCardEl(el, label = true) {
+  const r = el.getBoundingClientRect();
+  if (SETTINGS.reduceMotion) { el.style.opacity = "0"; return; }
+  const layer = document.createElement("div");
+  layer.className = "glass-burst";
+  layer.style.left = r.left + "px"; layer.style.top = r.top + "px";
+  layer.style.width = r.width + "px"; layer.style.height = r.height + "px";
+  const pieces = [];
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + Math.random() * 0.4;
+    const d = 40 + Math.random() * 60;
+    pieces.push(`<i style="--x:${(Math.cos(a) * d).toFixed(0)}px;--y:${(Math.sin(a) * d + 30).toFixed(0)}px;--r:${(Math.random() * 540 - 270).toFixed(0)}deg;--s:${(5 + Math.random() * 9).toFixed(0)}px;left:${(20 + Math.random() * 60).toFixed(0)}%;top:${(20 + Math.random() * 60).toFixed(0)}%"></i>`);
+  }
+  layer.innerHTML = pieces.join("") + (label ? `<b>Shattered!</b>` : "");
+  document.body.appendChild(layer);
+  el.style.transition = "opacity .12s ease, filter .12s ease";
+  el.style.filter = "brightness(2.2)";
+  el.style.opacity = "0";
+  buzz(35);
+  setTimeout(() => layer.remove(), 1100);
 }
 
 let lastCardTap = { id: null, t: 0 };
@@ -2864,6 +2900,7 @@ const SLEEVE_INFO = {
   anchor: "Drawn in your opening hand each round (up to 3 Anchor cards a round).",
   mirror: "When you play it, a copy goes into your deck.",
   negative: "+1 hand size while it's in your hand.",
+  glass: "X2 Mult every time it scores. 1 in 4 chance to shatter after the hand.",
 };
 const STAMP_INFO = {
   gold: "Pays $3 every time it scores.",
@@ -4224,7 +4261,7 @@ const SPECTRAL_DEFS = [
   { id: "kinfolk", name: "Kinfolk", desc: "Destroys 1 random card in your hand, adds 3 stamped face cards to your deck", color: "#8e7cc3" },
   { id: "bonePact", name: "Bone Pact", desc: "Destroys 1 random card in your hand, adds 2 sleeved Aces to your deck", color: "#cfc6b0" },
   { id: "chorus", name: "Chorus", desc: "Destroys 1 random card in your hand, adds 4 stamped number cards to your deck", color: "#5fa8c9" },
-  { id: "paupersPact", name: "Pauper's Pact", desc: "Gives you a random artifact (needs room), and your money drops to $0", color: "#8a96a3" },
+  { id: "paupersPact", name: "Pauper's Pact", desc: "Your money drops to $0. Gives you a random Negative artifact (no slot needed), and a second one if you had $15 or more", color: "#8a96a3" },
   { id: "seance", name: "Séance", desc: "Every card in your hand becomes the same random rank. −1 hand size for good", color: "#7E57C2" },
   { id: "phantomLimb", name: "Phantom Limb", desc: "A random artifact gets a Negative sleeve (it stops taking a slot). −1 hand size for good", color: "#6fb3a8" },
   { id: "halo", name: "Halo", desc: "A random unsleeved artifact gets a Sparkler, Gilded or Prismatic sleeve", color: "#FFE28A" },
@@ -4316,10 +4353,18 @@ function useSpectral(def) {
       addRunCards(Array.from({ length: 4 }, () => makeCard(randomOf(RANKS.slice(1, 10)), randomOf(SUIT_KEYS), { stamp: randomOf(STAMP_KINDS) })));
       return "4 number cards joined your deck";
     case "paupersPact": {
-      const d = charmRoom && randomCharmDef(artifactPool());
-      if (d) state.charms = [...state.charms, { ...d, uid: newUid() }];
+      // Negative, so they never need room. A fuller purse buys a second one.
+      const count = state.money >= 15 ? 2 : 1;
+      const got = [];
+      for (let i = 0; i < count; i++) {
+        const d = randomCharmDef(artifactPool());
+        if (!d) break;
+        const piece = { ...withCharmSleeve(d, "negative"), uid: newUid() };
+        state.charms = [...state.charms, piece];
+        got.push(d.name);
+      }
       state.money = 0;
-      return d ? `${d.name} is yours. Your purse is empty` : "No room for an artifact. Your purse is empty";
+      return got.length ? `${got.join(" and ")} ${got.length > 1 ? "are" : "is"} yours, Negative. Your purse is empty` : "No artifacts left to give. Your purse is empty";
     }
     case "seance": {
       const r = randomOf(RANKS);
@@ -4414,7 +4459,7 @@ function newUid() {
   return Math.random().toString(36).slice(2, 9);
 }
 const STAMP_KINDS = ["gold", "crimson", "azure"];
-const SLEEVE_KINDS = ["sparkler", "tithe", "molt", "larva", "anchor", "mirror"];
+const SLEEVE_KINDS = ["sparkler", "tithe", "molt", "larva", "anchor", "mirror", "glass"];
 function randomOf(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -5491,6 +5536,10 @@ function scoreHand(selectedCards, { live = false } = {}) {
         mult += card.moltBuff;
         push({ target: "card", id: card.id, kind: "mult", text: `+${card.moltBuff} Mult` });
       }
+      if (card.sleeve === "glass") {
+        mult *= 2;
+        push({ target: "card", id: card.id, kind: "xmult", text: "X2 Mult" });
+      }
       charms.forEach((c) => {
         const e = c.effect;
         const addC = (n) => { chips += n; push({ target: "card", id: card.id, kind: "chips", text: `+${fmtNum(n)}`, from: c.uid }); };
@@ -5877,9 +5926,13 @@ function finishPlay(finalScore, newPlaysLeft) {
     // fly the scoring cards up and fade the popup before the hand refills
     const popupEl = document.querySelector(".score-popup");
     if (popupEl) popupEl.classList.add("popup-out");
+    // Glass sleeves: each one that scored has a 1 in 4 chance to shatter.
+    const shattered = new Set(state.hand.filter((c) => state.scoringIds.includes(c.id) && c.sleeve === "glass" && !isCardDebuffed(c) && Math.random() < 0.25).map((c) => c.id));
+    let shardLabel = true;
     state.scoringIds.forEach((id) => {
       const el = document.querySelector(`.hand-fan .card[data-card-id="${id}"]`);
       if (!el) return;
+      if (shattered.has(id)) { shatterCardEl(el, shardLabel); shardLabel = false; return; }
       el.style.transition = "transform .3s cubic-bezier(.4,0,.7,.3), opacity .3s ease";
       el.style.transform = `${el.dataset.finalTransform} translateY(-70px) scale(1.15)`;
       el.style.opacity = "0";
@@ -5901,7 +5954,8 @@ function finishPlay(finalScore, newPlaysLeft) {
       }).filter(Boolean);
       
       state.scoringIds = [];
-      const playedCards = state.hand.filter((c) => state.selected.includes(c.id));
+      const playedCards = state.hand.filter((c) => state.selected.includes(c.id) && !shattered.has(c.id));
+      if (shattered.size) noteDestroyed(state.hand.filter((c) => shattered.has(c.id)));
       const { newDeck, newHand } = refillHand(state.deck, state.hand, state.selected);
       state.deck = [...newDeck, ...mirrorClones];
       noteAdded(mirrorClones.length);
@@ -8607,7 +8661,7 @@ function ShopOverlay() {
     card.innerHTML = `
       <span class="bprice">${price < item.price ? `<s>$${item.price}</s>` : ""}$${price}</span>
       <div class="bcard-face full${item.type === "playing" ? " is-playing-ware" : ""}"><div class="bcard-art">${item.type === "playing" ? "" : AnteArt.card({ ...item, arcana: item.type === "item" && !item.chart && !ARCANA_EXCLUDE.has(item.id) })}</div></div>
-      <div class="bcard-name">${item.name}</div>${item.sleeve && CHARM_SLEEVES[item.sleeve] ? `<span class="bcard-sleeve" style="--sc:${CHARM_SLEEVES[item.sleeve].color}">${CHARM_SLEEVES[item.sleeve].name}</span>` : ""}
+      <div class="bcard-name">${item.name}</div>
       <button class="bbuy" ${state.money < price || slotsFull ? "disabled" : ""}>${slotsFull ? "Full" : "Buy"}</button>`;
     if (item.type === "playing") card.querySelector(".bcard-art").appendChild(playingCardEl(item.card, 1.25));
     card.querySelector(".bbuy").onclick = (e) => { e.stopPropagation(); buyItem(i); };
