@@ -329,15 +329,17 @@
   function relic(inner, cls = "", legendary = false, sleeve = null) {
     const edge = legendary ? "#F2A65A" : GOLD;
     const bg = legendary ? ["#3a2418", "#140b07", "legbg"] : ["#2a3a2c", "#0e1510", "relicbg"];
-    return `<svg class="aart relic ${legendary ? "legendary " : ""}${cls}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
-      `<defs><radialGradient id="${bg[2]}" cx=".5" cy=".38" r=".7"><stop offset="0" stop-color="${bg[0]}"/><stop offset="1" stop-color="${bg[1]}"/></radialGradient></defs>` +
+    const rid = "rl" + ++cardSeq;
+    const body = `<defs><radialGradient id="${bg[2]}" cx=".5" cy=".38" r=".7"><stop offset="0" stop-color="${bg[0]}"/><stop offset="1" stop-color="${bg[1]}"/></radialGradient></defs>` +
       (legendary ? `<rect x="0.5" y="0.5" width="63" height="63" rx="10" fill="none" stroke="#F2A65A" stroke-width="1" opacity=".5"/>` : "") +
       `<rect x="1.5" y="1.5" width="61" height="61" rx="9" fill="url(#${bg[2]})" stroke="${edge}" stroke-width="${legendary ? 1.8 : 1.4}"/>` +
       `<rect x="4.5" y="4.5" width="55" height="55" rx="6.5" fill="none" stroke="${edge}" stroke-width=".6" opacity=".55"/>` +
       [[4.5, 4.5], [59.5, 4.5], [4.5, 59.5], [59.5, 59.5]].map(([x, y]) => `<path d="M${x} ${y - 2.6} L${x + 2.6} ${y} L${x} ${y + 2.6} L${x - 2.6} ${y}Z" fill="${edge}"/>`).join("") +
       (legendary ? `<path d="M32 1.5 L35 5 L32 8.5 L29 5Z M32 62.5 L35 59 L32 55.5 L29 59Z" fill="${edge}"/>` : "") +
-      `<g transform="translate(32 32) scale(.74) translate(-32 -32)">${engrave(inner, legendary ? 0.45 : 0.22)}</g>` +
-      (sleeve ? charmSleeveWrap(sleeve, "rsl" + ++cardSeq, 64, 64) : "") + `</svg>`;
+      `<g transform="translate(32 32) scale(.74) translate(-32 -32)">${engrave(inner, legendary ? 0.45 : 0.22)}</g>`;
+    return `<svg class="aart relic ${legendary ? "legendary " : ""}${cls}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      (sleeve === "negative" ? negativeOf(body, rid) : body) +
+      (sleeve ? charmSleeveWrap(sleeve, rid + "s", 64, 64) : "") + `</svg>`;
   }
 
   // ---------- vouchers: every one is the same coupon card ----------
@@ -518,6 +520,11 @@
     prismatic: { tint: "rainbow" },
     negative: { tint: "#b9a0ff" },
   };
+  // Negative: the piece itself is drawn as a true colour negative; the
+  // sleeve over it is not.
+  function negativeOf(body, id) {
+    return `<defs><filter id="${id}neg" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0"/></filter></defs><g filter="url(#${id}neg)">${body}</g>`;
+  }
   function charmSleeveWrap(sleeve, id, w, h) {
     const st = CHARM_SLEEVE_ART[sleeve];
     if (!st) return "";
@@ -590,7 +597,7 @@
       win = `<rect x="7.5" y="13" width="49" height="51" rx="4" fill="#000" opacity=".28"/><rect x="7.5" y="13" width="49" height="51" rx="4" fill="none" stroke="${S.edge}" stroke-width=".9" opacity=".8"/>`;
     }
     const numeral = kind === "arcana" ? (hashStr(def.id) % 22) + 1 : 0;
-    return `<svg class="aart full-card card-${kind}${def.sleeve === "negative" ? " is-negative" : ""} ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+    const body =
       `<defs><linearGradient id="${id}b" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="${S.bg[0]}"/><stop offset="1" stop-color="${S.bg[1]}"/></linearGradient>` +
       `<clipPath id="${id}k"><rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6"/></clipPath></defs>` +
       `<rect x="1.2" y="1.2" width="61.6" height="83.6" rx="6" fill="url(#${id}b)"/>` +
@@ -608,7 +615,9 @@
       `<path d="M5 70 H59 L57 81 H7Z" fill="${S.band}" stroke="${kind === "arcana" ? INK : S.edge}" stroke-width=".9"/>` +
       nameText(def.name || "", 77.6, S.bandText) +
       (legendary ? sparkle(54, 18, 3.4, "#F6C445") + sparkle(10, 60, 2.6, "#F6C445") : "") +
-      `<path d="M9 16 Q11 40 9 62" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity="${kind === "arcana" ? 0.35 : 0.12}"/>` +
+      `<path d="M9 16 Q11 40 9 62" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity="${kind === "arcana" ? 0.35 : 0.12}"/>`;
+    return `<svg class="aart full-card card-${kind}${def.sleeve === "negative" ? " is-negative" : ""} ${cls}" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      (def.sleeve === "negative" ? negativeOf(body, id) : body) +
       (def.sleeve ? charmSleeveWrap(def.sleeve, id + "s", 64, 86) : "") +
       `</svg>`;
   }
