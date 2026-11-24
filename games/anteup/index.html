@@ -1457,6 +1457,19 @@ body.landscape .bottom-bar .sub-controls-row { grid-column: 2; grid-row: 2; just
 body.landscape .bottom-bar .hands-wrap { display: none; }
 body.landscape .bottom-bar .deck-widget { transform: scale(.72); transform-origin: center; margin: -8px -6px; }
 body.landscape .score-popup { display: none; }
+/* buttons below the cards (the default): one row under the hand */
+body.btn-below.landscape .bottom-bar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 4px; }
+body.btn-below.landscape .bottom-bar .hand-fan { grid-column: 1 / -1; grid-row: 1; }
+body.btn-below.landscape .bottom-bar .actions-row { grid-column: 2; grid-row: 2; flex-direction: row; justify-self: center; align-self: center; gap: 10px; }
+body.btn-below.landscape .bottom-bar .actions-row > * { min-width: 150px; }
+/* Sort on one side of the buttons, the deck on the other */
+body.btn-below.landscape .bottom-bar .sub-controls-row { display: contents; }
+body.btn-below.landscape .bottom-bar .sub-controls-row > .sort-toggle-wrap:not(.hands-wrap) { grid-column: 1; grid-row: 2; justify-self: end; align-self: center; margin-right: 14px; }
+body.btn-below.landscape .bottom-bar .sub-controls-row > .deck-widget { grid-column: 3; grid-row: 2; justify-self: start; align-self: center; margin: -8px 0 -8px 14px; }
+body.btn-below.lefty.landscape .bottom-bar .actions-row { flex-direction: row-reverse; }
+body.btn-below.lefty.landscape .bottom-bar .sub-controls-row > .sort-toggle-wrap:not(.hands-wrap) { grid-column: 3; justify-self: start; margin: 0 0 0 14px; }
+body.btn-below.lefty.landscape .bottom-bar .sub-controls-row > .deck-widget { grid-column: 1; justify-self: end; margin: -8px 14px -8px 0; }
+
 /* sidebar on the right instead */
 body.sb-right.landscape .sidebar { left: auto; right: 8px; }
 body.sb-right.landscape #app { padding-left: 14px; padding-right: 186px; }
@@ -1464,10 +1477,10 @@ body.sb-right.landscape #app > .gear-shelf { left: 14px; right: 186px; }
 body.sb-right.landscape .bottom-bar { left: 0; right: 182px; }
 body.sb-right.landscape .shop-overlay, body.sb-right.landscape .pack-overlay { left: 0; right: 182px; padding-left: 14px; padding-right: 4px; }
 /* left-handed: the button column goes on the left of the hand */
-body.lefty.landscape .bottom-bar { grid-template-columns: 158px minmax(0, 1fr); }
-body.lefty.landscape .bottom-bar .hand-fan { grid-column: 2; grid-row: 1 / 3; }
-body.lefty.landscape .bottom-bar .actions-row { grid-column: 1; grid-row: 1; justify-self: stretch; flex-direction: column; }
-body.lefty.landscape .bottom-bar .sub-controls-row { grid-column: 1; grid-row: 2; justify-self: stretch; }
+body.lefty.landscape:not(.btn-below) .bottom-bar { grid-template-columns: 158px minmax(0, 1fr); }
+body.lefty.landscape:not(.btn-below) .bottom-bar .hand-fan { grid-column: 2; grid-row: 1 / 3; }
+body.lefty.landscape:not(.btn-below) .bottom-bar .actions-row { grid-column: 1; grid-row: 1; justify-self: stretch; flex-direction: column; }
+body.lefty.landscape:not(.btn-below) .bottom-bar .sub-controls-row { grid-column: 1; grid-row: 2; justify-self: stretch; }
 
 /* shop and pack screens open beside the sidebar */
 body.landscape .shop-overlay, body.landscape .pack-overlay { left: 182px; }
@@ -3943,7 +3956,7 @@ function rollVoucher() {
    Skins / Quit. Settings and Skins are panels that open over either.
    Preferences live in their own localStorage key, apart from the run. */
 const SETTINGS_KEY = "anteup_settings_v1";
-const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, sidebar: "left", haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
+const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, sidebar: "left", btnPos: "below", haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
 const SETTINGS = { ...SETTINGS_DEFAULTS };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch (e) {}
 function saveSettings() {
@@ -3988,6 +4001,7 @@ function applySkins() {
   document.body.classList.toggle("reduce-motion", !!SETTINGS.reduceMotion);
   document.body.classList.toggle("lefty", !!SETTINGS.lefty);
   document.body.classList.toggle("sb-right", SETTINGS.sidebar === "right");
+  document.body.classList.toggle("btn-below", SETTINGS.btnPos !== "beside");
   document.body.classList.toggle("no-badges", !SETTINGS.badges);
   const felt = (FELT_SKINS[SETTINGS.felt] || FELT_SKINS.emerald).c;
   ["--f1", "--f2", "--f3", "--f1s", "--f2s"].forEach((v, i) => document.documentElement.style.setProperty(v, felt[i]));
@@ -4269,6 +4283,7 @@ function MenuPanel() {
     list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Display</div>`);
     list.appendChild(row("Left-handed", seg([[false, "Off"], [true, "On"]], !!SETTINGS.lefty, (v) => set("lefty", v)), "Puts Play Hand and Discard on the left (sideways: buttons left of the hand)"));
     list.appendChild(row("Sidebar", seg([["left", "Left"], ["right", "Right"]], SETTINGS.sidebar || "left", (v) => set("sidebar", v)), "Which side the info column sits on when the phone is sideways"));
+    list.appendChild(row("Buttons", seg([["below", "Below"], ["beside", "Beside"]], SETTINGS.btnPos === "beside" ? "beside" : "below", (v) => set("btnPos", v)), "Sideways: Play Hand and Discard below the cards, or beside them"));
     list.appendChild(row("Progress badges", seg([[true, "Show"], [false, "Hide"]], !!SETTINGS.badges, (v) => set("badges", v)), "Values and bars on artifacts"));
     list.appendChild(row("Reduce motion", seg([[false, "Off"], [true, "On"]], !!SETTINGS.reduceMotion, (v) => set("reduceMotion", v)), "Stops floating cards and spinning rays"));
     list.appendChild(row("Haptics", seg([[true, "On"], [false, "Off"]], !!SETTINGS.haptics, (v) => { set("haptics", v); buzz(30); }), "Buzz on scoring and buying"));
@@ -5427,7 +5442,7 @@ function getHandSize() {
 function computeFanLayout() {
   const viewportW = window.innerWidth;
   // In landscape the deck/sort column and the button column flank the hand.
-  const sidePadding = isLandscape() ? 186 + 158 + 24 : 16;
+  const sidePadding = isLandscape() ? 186 + (SETTINGS.btnPos === "beside" ? 158 : 0) + 24 : 16;
   const available = viewportW - sidePadding;
   const handSize = getHandSize();
   const target = Math.min(available, MAX_FAN_WIDTH);
