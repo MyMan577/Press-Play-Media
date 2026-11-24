@@ -1178,6 +1178,22 @@ body.landscape .mm-cards { width: 260px; height: 150px; margin-bottom: -46px; tr
 body.landscape .mm-ante { font-size: 58px; }
 body.landscape .mm-up { font-size: 74px; }
 .mm-bar .mbtn-red { grid-column: 1 / -1; }
+/* scrapbook */
+.mm-bar .mm-scrap { grid-column: 1 / -1; min-height: 44px; }
+.mm-bar .mm-scrap .mbtn-label { font-size: 18px; }
+.scrap-page { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: #e9dcb81a; box-shadow: inset 0 2px 6px #0008; }
+.scrap-page.done { background: #e9dcb833; box-shadow: inset 0 2px 6px #0006, 0 0 0 1.5px #C9A22788; }
+.scrap-chars { display: flex; gap: 6px; }
+.scrap-bit { min-width: 34px; padding: 5px 4px; border-radius: 6px; text-align: center; font: 700 16px ui-monospace, Menlo, monospace; letter-spacing: 2px; color: #6b6450; background: #0f1813; border: 1.5px dashed #3a4a40; }
+.scrap-bit.got { color: #3a2f1c; background: #e9dcb8; border: 1.5px solid #0a0f0c; transform: rotate(-2deg); }
+.scrap-bit.got:nth-child(even) { transform: rotate(2deg); }
+.scrap-page { flex-wrap: wrap; }
+.scrap-page .mbtn { flex: 0 0 auto; width: auto; min-width: 0; min-height: 36px; padding: 6px 16px; }
+.scrap-page .mbtn .mbtn-label { font-size: 16px; }
+.scrap-face { display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 8px 12px #000b); }
+.scrap-face svg { width: 100%; height: 100%; display: block; }
+.kind-scrap.picked .pchoice-face { box-shadow: none; filter: drop-shadow(0 0 10px #e9dcb8) drop-shadow(0 0 3px #FFD45E); }
+
 /* seeds */
 .dp-seed { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9A917A; }
 .dp-seed input { width: 128px; padding: 6px 10px; border-radius: 10px; border: 2px solid #0a0f0c; background: #0f1813; color: #FFE9A8; font: 700 16px/1 ui-monospace, Menlo, monospace; letter-spacing: 2px; text-align: center; text-transform: uppercase; box-shadow: 0 0 0 1.5px #C9A22755; }
@@ -2332,6 +2348,101 @@ function stackRoyalFlush(deck) {
     if (picks.every(Boolean)) { const set = new Set(picks.map((c) => c.id)); return [...picks, ...deck.filter((c) => !set.has(c.id))]; }
   }
   return deck;
+}
+
+// Each special seed bends the shop, packs and vouchers to its theme too.
+const QUIRK_ARTIFACTS = {
+  royal: ["crown", "duke", "portrait", "encoreMask", "maskMaker"],
+  aces: ["midas", "gildedHand", "bullion"],
+  hearts: ["heartstone", "tidepool", "chalkboard"],
+};
+const QUIRK_VOUCHERS = {
+  royal: ["largerAbdomen", "deepPockets", "doubleDown", "allIn"],
+  aces: ["liquidAssets", "trustFund", "piggyBank", "goldenGoose", "compoundInterest", "windfall", "cardSharp", "pawnKing"],
+  dressed: ["polish", "lacquer", "sleightOfHand", "grandIllusion"],
+  hearts: ["clairvoyance", "starMap", "starVendor", "planetarium"],
+};
+const QUIRK_START_VOUCHER = { royal: "largerAbdomen", aces: "piggyBank", dressed: "polish", hearts: "clairvoyance", shelf: "overstock" };
+// How much likelier an artifact is in shops and Artifact Packs on this seed.
+function quirkArtifactBoost(d) {
+  const q = seedQuirk();
+  if (!q) return 1;
+  if ((QUIRK_ARTIFACTS[q] || []).includes(d.id)) return 5;
+  if (q === "shelf" && d.rarity === "rare") return 5;
+  return 1;
+}
+function quirkVoucherBoost(v) {
+  const q = seedQuirk();
+  if (!q) return 1;
+  if ((QUIRK_VOUCHERS[q] || []).includes(v.id)) return 4;
+  if (q === "shelf" && v.tier === 2) return 4;
+  return 1;
+}
+
+/* ============================== SCRAPBOOK ==============================
+   Torn scraps now and then turn up as a choice in a booster pack. Each is a
+   piece (2 characters) of one of the special seeds; taking it puts it in the
+   Scrapbook on the title screen, which is kept between runs. A finished page
+   shows the whole seed and can start a run with it. Nothing says what a seed
+   does. The pages are stored scrambled. */
+const SCRAPBOOK_KEY = "anteup_scrapbook_v1";
+const SCRAP_PAGES = ["WSGHC6UP", "K1A8SI6E", "3F22FVLF", "92G5EK7E", "T5ZW686D"];
+const SCRAP_CHANCE = 0.05;   // per pack opened, while pieces are still missing
+function scrapPageCode(p) {
+  const enc = SCRAP_PAGES[p];
+  let out = "";
+  for (let i = 0; i < enc.length; i++) out += SEED_CHARS[(SEED_CHARS.indexOf(enc[i]) - 11 - i * 7 - p * 5 + 34 * 4) % 34];
+  return out;
+}
+function scrapsOwned() {
+  try { const v = JSON.parse(localStorage.getItem(SCRAPBOOK_KEY) || "[]"); return new Set(Array.isArray(v) ? v : []); } catch (e) { return new Set(); }
+}
+function scrapsMissing() {
+  const have = scrapsOwned();
+  const out = [];
+  for (let i = 0; i < SCRAP_PAGES.length * 4; i++) if (!have.has(i)) out.push(i);
+  return out;
+}
+// Adds one missing scrap; returns its number, or null when the book is full.
+// Plain Math.random(): which scrap you get doesn't follow the run's seed.
+function grantScrap() {
+  const missing = scrapsMissing();
+  if (!missing.length) return null;
+  const pick = missing[Math.floor(Math.random() * missing.length)];
+  const have = scrapsOwned();
+  have.add(pick);
+  try { localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify([...have].sort((a, b) => a - b))); } catch (e) {}
+  return pick;
+}
+const SCRAP_CHOICE = { type: "scrap", id: "tornScrap", name: "Torn Scrap", desc: "A scrap of torn paper with something scrawled on it", color: "#d8c9a3" };
+function scrapArt() {
+  return `<svg class="aart scrap-art" viewBox="0 0 64 86" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M8 10 L22 6 L30 11 L44 5 L56 9 L58 30 L54 44 L59 60 L55 80 L38 77 L26 81 L12 78 L6 62 L10 46 L5 28 Z" fill="#e9dcb8" stroke="#0a0f0c" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M8 10 L22 6 L30 11 L44 5 L56 9 L58 30 L54 44 L59 60 L55 80 L38 77 L26 81 L12 78 L6 62 L10 46 L5 28 Z" fill="none" stroke="#b9a77a" stroke-width="1" transform="translate(2 2) scale(.94)"/>
+    <text x="32" y="40" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="700" font-size="15" fill="#3a2f1c" letter-spacing="2">? ?</text>
+    <path d="M14 52 Q24 49 34 53 T52 52 M16 60 Q28 57 40 61 M18 68 Q26 66 36 69" stroke="#8a7a55" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  </svg>`;
+}
+function ScrapbookPanel(box) {
+  const have = scrapsOwned();
+  box.innerHTML = `<div class="mpanel-title serif">Scrapbook</div><div class="mpanel-sub">${have.size} of ${SCRAP_PAGES.length * 4} scraps</div>`;
+  const list = document.createElement("div");
+  list.className = "mpanel-scroll";
+  SCRAP_PAGES.forEach((_, p) => {
+    const code = scrapPageCode(p);
+    const parts = [0, 1, 2, 3].map((k) => have.has(p * 4 + k));
+    const done = parts.every(Boolean);
+    const page = document.createElement("div");
+    page.className = "scrap-page" + (done ? " done" : "");
+    page.innerHTML = `<div class="scrap-chars">${[0, 1, 2, 3].map((k) => `<span class="scrap-bit${parts[k] ? " got" : ""}">${parts[k] ? code.slice(k * 2, k * 2 + 2) : "··"}</span>`).join("")}</div>`;
+    if (done) {
+      const go = MenuButton("Play", "blue", () => { MENU.panel = null; MENU.seedInput = code; MENU.choosingDeck = true; MENU.choosingRun = false; render(); });
+      go.classList.add("mbtn-small");
+      page.appendChild(go);
+    }
+    list.appendChild(page);
+  });
+  box.appendChild(list);
 }
 
 /* ============================== DECKS ==============================
@@ -4412,7 +4523,12 @@ function voucherHint(v) {
 function rollVoucher() {
   const owned = new Set(state.vouchers.map((v) => v.id));
   const pool = VOUCHERS.filter((v) => !owned.has(v.id) && (!v.upgrades || owned.has(v.upgrades)));
-  return pool.length ? { ...randomOf(pool) } : null;
+  if (!pool.length) return null;
+  const weights = pool.map(quirkVoucherBoost);
+  let r = rng() * weights.reduce((a, b) => a + b, 0);
+  let i = 0;
+  while (i < pool.length - 1 && r > weights[i]) r -= weights[i++];
+  return { ...pool[i] };
 }
 
 /* ============================== MENUS ==============================
@@ -4790,6 +4906,7 @@ function MainMenu() {
     bar.appendChild(MenuButton("Play", "blue", () => { if (hasLiveRun()) { MENU.choosingRun = true; render(); } else newRun(); }));
     bar.appendChild(MenuButton("Settings", "orange", () => { MENU.panel = "settings"; render(); }));
     bar.appendChild(MenuButton("Skins", "purple", () => { MENU.panel = "skins"; render(); }));
+    if (scrapsOwned().size) { const sb = MenuButton("Scrapbook", "green", () => { MENU.panel = "scrapbook"; render(); }); sb.classList.add("mm-scrap"); bar.appendChild(sb); }
     bar.appendChild(MenuButton("Quit", "red", quitGame));
   }
   wrap.appendChild(bar);
@@ -4882,6 +4999,8 @@ function MenuPanel() {
     danger.appendChild(rs);
     list.appendChild(danger);
     box.appendChild(list);
+  } else if (MENU.panel === "scrapbook") {
+    ScrapbookPanel(box);
   } else {
     box.innerHTML = `<div class="mpanel-title serif">Skins</div>`;
     box.appendChild(seg([["face", "Card faces"], ["back", "Card backs"], ["felt", "Table"]], MENU.skinTab, (v) => { MENU.skinTab = v; render(); }));
@@ -4939,6 +5058,7 @@ function rollCharmSleeve(def) {
     if (r < c) return withCharmSleeve(def, k);
     r -= c;
   }
+  if (seedQuirk() === "dressed") return withCharmSleeve(def, randomOf(["sparkler", "tithe", "gilded", "prismatic"]));
   return def;
 }
 function withCharmSleeve(def, sleeve) {
@@ -5010,7 +5130,7 @@ function rarityOf(def) { return RARITIES[def && def.rarity] || RARITIES.common; 
 function rarityShuffle(pool) {
   const counts = {};
   pool.forEach((d) => { counts[d.rarity] = (counts[d.rarity] || 0) + 1; });
-  const w = (d) => Math.max(0.0001, rarityOf(d).weight / counts[d.rarity]);
+  const w = (d) => Math.max(0.0001, (rarityOf(d).weight / counts[d.rarity]) * quirkArtifactBoost(d));
   return pool.map((d) => [Math.pow(rng(), 1 / w(d)), d]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
 }
 function artifactsOfRarity(rarity) {
@@ -6150,6 +6270,7 @@ function startGame(deckId, seed) {
   state.vouchers = [];
   if (deckIs("star")) { const v = VOUCHERS.find((x) => x.id === "clairvoyance"); if (v) state.vouchers = [{ ...v }]; }
   if (deckIs("zodiac")) state.vouchers = ["overstock", "peddler", "starVendor"].map((x) => VOUCHER_BY_ID[x]).filter(Boolean).map((v) => ({ ...v }));
+  { const qv = VOUCHER_BY_ID[QUIRK_START_VOUCHER[seedQuirk()]]; if (qv && !state.vouchers.some((v) => v.id === qv.id)) state.vouchers = [...state.vouchers, { ...qv }]; }
   state.voucherStock = [];
   state.voucherReady = false;
   state.permHandSize = 0;
@@ -7356,9 +7477,11 @@ function goToShop() {
   state.packStock = Array.from({ length: 2 + voucherSum("packSlots") }, () => {
     if (rng() < 0.12) return { ...PACK_DEFS.find((p) => p.rare) };
     const r = rng();
-    const id = rollBase() + (r < 0.12 ? "_mega" : r < 0.4 ? "_major" : "");
+    let id = rollBase() + (r < 0.12 ? "_mega" : r < 0.4 ? "_major" : "");
+    if (seedQuirk() === "dressed") id = id.replace("cardPack", "ornatePack");
     return { ...PACK_DEFS.find((p) => p.id === id) };
   });
+  if (seedQuirk() === "shelf" && !state.packStock.some((p) => p && p.rare)) state.packStock[0] = { ...PACK_DEFS.find((p) => p.rare) };
 
   applyShopTags();
   state.overlay = "shop";
@@ -7401,6 +7524,8 @@ function openPack(packId) {
     const fav = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
     const favChart = fav && voucherSum("chartFavourite") && ITEM_DEFS.find((d) => d.chart && d.effect.hand === fav);
     if (favChart && !choices.some((c) => c.id === favChart.id)) choices[0] = { ...favChart };
+    const flushChart = seedQuirk() === "hearts" && ITEM_DEFS.find((d) => d.chart && d.effect.hand === "Flush");
+    if (flushChart && !choices.some((c) => c.id === flushChart.id)) choices[choices.length - 1] = { ...flushChart };
   }
   if (kind === "spectralPack") choices = pickSpectrals(n);
   if (kind === "legendPack") {
@@ -7409,8 +7534,13 @@ function openPack(packId) {
     const nancy = LEGENDARY_DEFS.find((c) => c.id === "negativeNancy");
     if (deckIs("negative") && nancy && !owned.has(nancy.id) && !choices.some((c) => c.id === nancy.id)) choices[0] = { ...nancy };
   }
-  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { ...(rng() < 0.25 ? { stamp: randomOf(STAMP_KINDS) } : {}), ...(deckIs("negative") && rng() < 0.1 ? { sleeve: "negative" } : {}) }));
-  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(randomOf(RANKS), randomOf(SUIT_KEYS), { sleeve: rng() < (deckIs("negative") ? 0.25 : 0.05) ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  // Special seeds: the Royal one deals Aces and faces, the Heart one Hearts, the Ace one Gold stamps.
+  const quirk = seedQuirk();
+  const packRank = () => (quirk === "royal" ? randomOf(["A", "J", "Q", "K"]) : randomOf(RANKS));
+  const packSuit = () => (quirk === "hearts" ? "hearts" : randomOf(SUIT_KEYS));
+  if (kind === "cardPack") choices = Array.from({ length: n }, () => makeCard(packRank(), packSuit(), { ...(rng() < 0.25 || quirk === "aces" ? { stamp: quirk === "aces" ? "gold" : randomOf(STAMP_KINDS) } : {}), ...(deckIs("negative") && rng() < 0.1 ? { sleeve: "negative" } : {}) }));
+  if (kind === "ornatePack") choices = Array.from({ length: n }, () => makeCard(packRank(), packSuit(), { sleeve: rng() < (deckIs("negative") ? 0.25 : 0.05) ? "negative" : randomOf(SLEEVE_KINDS), stamp: randomOf(STAMP_KINDS) }));
+  if (choices.length >= 2 && Math.random() < SCRAP_CHANCE && scrapsMissing().length) choices[Math.floor(Math.random() * choices.length)] = { ...SCRAP_CHOICE };
   state.packOpen = { id: packId, name: pack.name, choices, picks: pack.picks || 1, openedAt: SETTINGS.packAnim ? Date.now() : 0, hand: kind === "spectralPack" || kind === "itemPack" ? packHandIds() : null, note: null };
   state.packPick = null;
   state.packSel = [];
@@ -7439,6 +7569,8 @@ function takePackChoice(index) {
     state.packSel = [];
   } else if (choice.spectral) {
     note = useSpectral(choice);
+  } else if (choice.type === "scrap") {
+    note = grantScrap() != null ? "The scrap went into your Scrapbook" : "The scrap crumbled to dust";
   } else if (choice.type === "charm") {
     if (choice.sleeve !== "negative" && charmsUsed() >= state.charmSlots) return;
     state.charms = [...state.charms, { ...choice, uid: newUid() }];
@@ -7755,6 +7887,9 @@ function PackOverlay() {
     } else if (choice.spectral) {
       el.innerHTML = `<div class="pchoice-face spectral-face">${AnteArt.icon(choice)}</div>`;
       el.classList.add("kind-spectral");
+    } else if (choice.type === "scrap") {
+      el.innerHTML = `<div class="pchoice-face scrap-face">${scrapArt()}</div>`;
+      el.classList.add("kind-scrap");
     } else {
       const kind = choice.type === "charm" ? "kind-charm" : "kind-item";
       el.innerHTML = `<div class="pchoice-face full-face">${AnteArt.card(choice)}</div>`;
@@ -7813,6 +7948,10 @@ function PackOverlay() {
       kind = "Spectral";
       name = c.name;
       desc = c.desc + (po.hand ? "<br>Works on the hand shown below the cards." : "");
+    } else if (c.type === "scrap") {
+      kind = "Scrap";
+      name = c.name;
+      desc = c.desc + "<br>Goes into your Scrapbook.";
     } else if (c.chart) {
       kind = "Star Chart";
       name = c.name;
