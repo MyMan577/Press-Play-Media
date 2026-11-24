@@ -1088,7 +1088,7 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
   display: flex; align-items: center; justify-content: center; padding: 20px; animation: zonesIn .18s ease-out;
 }
 .mpanel {
-  position: relative; width: 100%; max-width: 320px; max-height: calc(100vh - 40px); display: flex; flex-direction: column; gap: 12px;
+  position: relative; width: 100%; max-width: 320px; max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); display: flex; flex-direction: column; gap: 12px;
   padding: 18px 16px 16px; border-radius: 18px; border: 2px solid #0a0f0c;
   background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
   box-shadow: 0 0 0 2px #C9A22766, 0 24px 60px -12px #000c;
@@ -1096,7 +1096,7 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .mpanel.wide { max-width: 420px; }
 .mpanel-title { text-align: center; font-size: 26px; font-weight: 700; color: #FFE9A8; letter-spacing: 1px; text-shadow: 0 2px 0 #0008; }
 .mpanel-sub { text-align: center; font-size: 11px; color: #9A917A; margin-top: -8px; letter-spacing: .5px; text-transform: uppercase; font-weight: 700; }
-.mpanel-scroll { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.mpanel-scroll { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
 .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #131d18; box-shadow: inset 0 2px 6px #0008; }
 .mrow-label { font-size: 13px; font-weight: 700; color: #F3ECD9; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .mrow-label span { font-size: 10.5px; font-weight: 500; color: #9A917A; }
@@ -1107,7 +1107,7 @@ body.landscape .pack-hand-card .pack-card { zoom: .66 !important; }
 .mseg-opt.on { color: #16230E; background: linear-gradient(180deg, #FFD45E, #E9A83A); }
 .mpanel > .mseg { align-self: center; }
 .mskin-head { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: #E9C568; margin-top: 4px; }
-.mskin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; overflow-y: auto; min-height: 0; padding: 4px 2px; }
+.mskin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; min-height: 0; flex: 1 1 auto; align-content: start; padding: 4px 2px; }
 .mskin { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border-radius: 12px; cursor: pointer; font: inherit; color: #C9BFA4; background: #131d18; border: 2px solid transparent; }
 .mskin.on { border-color: #FFD45E; color: #FFE9A8; box-shadow: 0 0 14px -2px #FFD45E; }
 .mskin-name { font-size: 11px; font-weight: 700; }
@@ -3775,7 +3775,15 @@ function MainMenu() {
     bar.appendChild(MenuButton("Quit", "red", quitGame));
   }
   wrap.appendChild(bar);
-  if (MENU.panel) wrap.appendChild(MenuPanel());
+  if (MENU.panel) {
+    // Same centred overlay as the pause menu, so the panel sits over the title
+    // screen instead of being pushed below the buttons (and off-screen in portrait).
+    const back = document.createElement("div");
+    back.className = "pause-back";
+    back.onclick = (e) => { if (e.target === back) { MENU.panel = null; MENU.confirmReset = false; render(); } };
+    back.appendChild(MenuPanel());
+    wrap.appendChild(back);
+  }
   return wrap;
 }
 
