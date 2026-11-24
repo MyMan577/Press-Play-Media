@@ -31750,13 +31750,35 @@ async function ppMp4Chapters(blob){
     try { window.open(found.url, '_blank'); } catch(e){ location.href = found.url; }   // Android hands this to the browser
     var el = $('update-banner'); if (el) el.hidden = true;
   }
+  // The newest release, as { tag_name, html_url, assets }. GitHub's API lets a network ask only 60 times an hour
+  // without signing in, and a phone network puts many phones behind one address, so it often answers 403 (or 429).
+  // Then, in the Android app, the release page itself is read through Android (no such limit, and no browser CORS
+  // rule): github.com/.../releases/latest forwards to .../releases/tag/build-N.
+  function latest(){
+    return fetch(API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' })
+      .then(function(r){
+        if (r.ok) return r.json();
+        var e = new Error('GitHub answered ' + r.status); e.limited = r.status === 403 || r.status === 429; throw e;
+      })
+      .catch(function(e){
+        var H = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.CapacitorHttp;
+        if (!H || !(Capacitor.isNativePlatform && Capacitor.isNativePlatform())) throw e;
+        return H.request({ url: PAGE, method: 'GET', headers: { Accept: 'text/html' } }).then(function(r){
+          var m = /\/releases\/tag\/(build-(\d+))/.exec(String((r && r.url) || '') + ' ' + String((r && r.data) || '').slice(0, 300000));
+          if (!m) throw e;
+          var n = m[2];
+          return { tag_name: m[1], html_url: 'https://github.com/MyMan577/Terrifying-Press/releases/tag/' + m[1],
+                   assets: [{ name: 'press-play-1.0.' + n + '.apk',
+                              browser_download_url: 'https://github.com/MyMan577/Terrifying-Press/releases/download/' + m[1] + '/press-play-1.0.' + n + '.apk' }] };
+        }, function(){ throw e; });
+      });
+  }
   function check(manual){
     if (busy) return;
     if (!build && !manual) return;                       // a local build has nothing to compare against
     busy = true;
     if (manual) status('Checking…');
-    fetch(API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' })
-      .then(function(r){ if (!r.ok) throw new Error('GitHub answered ' + r.status); return r.json(); })
+    latest()
       .then(function(j){
         set('ppUpdateAt', String(Date.now()));
         var m = /(\d+)\s*$/.exec(String(j.tag_name || '')), n = m ? +m[1] : 0;
@@ -31769,7 +31791,11 @@ async function ppMp4Chapters(blob){
           status(build ? 'You are up to date.' : 'The newest release is ' + name(n) + '.');
         }
       })
-      .catch(function(e){ if (manual) status('Could not check: ' + ((e && e.message) || 'no connection') + '.'); })
+      .catch(function(e){
+        if (!manual) return;
+        status(e && e.limited ? 'Could not check: GitHub is limiting checks from this network right now. Try again in an hour.'
+                              : 'Could not check: ' + ((e && e.message) || 'no connection') + '.');
+      })
       .then(function(){ busy = false; });
   }
 
