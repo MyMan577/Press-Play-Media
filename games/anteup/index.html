@@ -743,14 +743,19 @@ body.landscape .bshop {
 body.landscape .bshop-sign { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); margin: 0; }
 body.landscape .bshop-sign span { font-size: 17px; padding: 2px 22px 3px; }
 body.landscape .bshop-top, body.landscape .bshop-bottom { display: contents; }
-body.landscape .bshop-actions { grid-column: 1; }
+/* Same layout as portrait, laid out wide: left column is Next Round and
+   Reroll above the voucher, right column the wares above the packs. */
+body.landscape .bshop-actions { grid-column: 1; grid-row: 1; flex-direction: row; }
+body.landscape .bshop-actions .bbtn { flex: 1; }
 body.landscape .bshop-wares {
-  grid-column: 2; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(74px, 1fr);
-  overflow-x: auto; overflow-y: hidden; align-content: center; min-height: 0;
+  grid-column: 2; grid-row: 1; grid-template-columns: repeat(var(--wcols, 6), minmax(0, 1fr)); align-content: center; min-height: 0;
 }
-body.landscape .bshop-voucher { grid-column: 3; justify-content: center; }
-body.landscape .bshop-packs { grid-column: 4; justify-content: center; }
-body.landscape .bpack-row { grid-template-columns: repeat(2, 78px); }
+body.landscape .bshop-voucher { grid-column: 1; grid-row: 2; justify-content: center; }
+body.landscape .bshop-packs { grid-column: 2; grid-row: 2; justify-content: center; }
+body.landscape .bpack-row { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 78px; margin-top: 4px; }
+body.landscape .bvoucher { margin-top: 4px; }
+body.landscape .bvoucher-plinth { display: none; }
+body.landscape .bshop-voucher .bwell-label, body.landscape .bshop-packs .bwell-label { margin-bottom: 2px; }
 body.landscape .bcard-face { max-width: 74px; }
 body.landscape .bcard-name { font-size: 10.5px; }
 /* ============================== HAND LEVELS ============================== */
@@ -855,6 +860,7 @@ body.landscape .pack-spacer { display: none; }
   animation: packSpin 40s linear infinite;
 }
 @keyframes packSpin { to { transform: rotate(360deg); } }
+.pack-rays-clip { position: absolute; inset: 0; border-radius: 16px; overflow: hidden; pointer-events: none; }
 .pack-sign { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); margin: 0; }
 .pack-sign span { font-size: 17px; padding: 2px 20px 3px; }
 .pack-torn {
@@ -1304,6 +1310,211 @@ body.landscape .bottom-bar .sub-controls-row {
   flex-direction: column; align-items: center; gap: 10px; margin: 0;
 }
 body.landscape .score-popup { top: 46%; }
+
+/* Sideways on a phone the screen is only ~380px tall: everything smaller. */
+body.landscape #app { padding: 6px 14px 6px; }
+body.landscape .blind-label { font-size: 9.5px; letter-spacing: 1.5px; }
+body.landscape .boss-blind-name { font-size: 13px; }
+body.landscape .header .score-line { font-size: 21px; }
+body.landscape .progress-track { height: 5px; margin-top: 4px; }
+body.landscape .stats-row { gap: 10px; }
+body.landscape .stat-value { font-size: 14px; }
+body.landscape .stat-label { font-size: 8px; letter-spacing: .6px; }
+body.landscape .header-right { gap: 10px; }
+body.landscape .opt-btn.compact { padding: 5px 6px; border-radius: 8px; }
+body.landscape .opt-lines i { width: 11px; height: 2px; }
+body.landscape .shelf-label { font-size: 8.5px; }
+body.landscape .preview-bar { min-height: 30px; margin: 16px 0 0; gap: 8px; }
+body.landscape .preview-name { font-size: 15px; }
+body.landscape .chip-pill { padding: 2px 9px; font-size: 12px; }
+body.landscape .chip-pill-label { font-size: 8px; }
+body.landscape .lv-tag { font-size: 8px; }
+body.landscape .deck-widget { transform: scale(.82); transform-origin: center bottom; }
+body.landscape .bottom-bar .sub-controls-row { gap: 6px; }
+body.landscape .bottom-bar .actions-row { gap: 7px; }
+
+/* shop, sideways */
+body.landscape .shop-overlay { padding: 6px 14px max(6px, env(safe-area-inset-bottom)); }
+body.landscape .shop-title { font-size: 18px; }
+body.landscape .shop-sub { font-size: 9px; }
+body.landscape .shop-money { font-size: 13px; padding: 3px 10px; }
+body.landscape .shop-deck-corner { transform: scale(.7); }
+body.landscape .bshop { margin-top: 14px; padding: 14px 8px 8px; gap: 13px 6px; grid-template-columns: 172px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+body.landscape .bshop-actions .bbtn-big { font-size: 15px; }
+body.landscape .bshop.tight .bpack-row { grid-auto-columns: calc(var(--face, 74px) + 4px); }
+
+body.landscape .bcard-name { font-size: 9.5px; min-height: 0; margin-top: 2px; display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.landscape .bshop-wares .bcard { gap: 2px; }
+
+/* the bottom row, sideways: each pack and the voucher lie on their side
+   (art left; price, name and button right), and the well labels sit on the
+   wells' top edge, so the row is short and fills its width */
+body.landscape .bshop-voucher, body.landscape .bshop-packs { position: relative; padding: 12px 8px 7px; justify-content: center; }
+body.landscape .bshop-voucher > .bwell-label, body.landscape .bshop-packs > .bwell-label {
+  position: absolute; top: -8px; left: 50%; transform: translateX(-50%); margin: 0; font-size: 8px; padding: 1px 8px;
+}
+body.landscape .bpack-row { display: flex; justify-content: space-evenly; align-items: center; gap: 10px; margin: 0; }
+body.landscape .bshop-packs .bcard, body.landscape .bvoucher {
+  display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto auto; column-gap: 9px; row-gap: 3px;
+  align-items: center; justify-items: start; margin: 0;
+}
+body.landscape .bshop-packs .bcard-face { grid-column: 1; grid-row: 1 / 4; width: 84px; max-width: 84px !important; margin: -10px -8px; }
+body.landscape .bshop-packs .bcard-art { width: 100%; }
+body.landscape .bvoucher-art, body.landscape .bvoucher-ghost { grid-column: 1; grid-row: 1 / 4; width: 54px !important; }
+body.landscape .bvoucher.empty { display: flex; }
+body.landscape .bshop-packs .bprice, body.landscape .bvoucher .bprice { position: static; transform: none; grid-column: 2; grid-row: 1; font-size: 12px; padding: 2px 7px 3px; }
+body.landscape .bshop-packs .bcard-name, body.landscape .bvoucher .bcard-name { grid-column: 2; grid-row: 2; margin: 0; max-width: 84px; text-align: left; white-space: normal; line-height: 1.15; }
+body.landscape .bshop-packs .bbuy, body.landscape .bvoucher .bbuy { grid-column: 2; grid-row: 3; }
+body.landscape .bshop-packs .bcard.sold .bcard-face { width: 60px; height: 70px; margin: 0; }
+
+
+body.landscape .bbuy { padding: 3px 9px; font-size: 9px; }
+body.landscape .bshop-wares { gap: 12px 4px; padding: 12px 4px 4px; }
+
+/* ============ SIDEBAR LAYOUT (sideways) ============ */
+.sidebar { display: none; }
+body.landscape .sidebar {
+  display: flex; flex-direction: column; gap: 5px; position: fixed; left: 8px; top: 6px; bottom: max(6px, env(safe-area-inset-bottom)); width: 168px; z-index: 20;
+  padding: 6px; border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg, #2c3f36 0%, #23332c 60%, #1b2822 100%);
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px #C9A22755, 0 14px 30px -12px #000c;
+}
+.sb-card { background: #131d18; border-radius: 10px; border: 1px solid #00000080; box-shadow: inset 0 2px 8px #000000a0; padding: 5px 8px; text-align: center; }
+.sb-top { padding: 5px 8px 6px; background: linear-gradient(180deg, #3a2a1a, #1e150d); box-shadow: inset 0 0 0 1px #C9A22755; }
+.sb-kicker { font-size: 8px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: #E9C568; }
+.sb-title { font-size: 16px; font-weight: 700; color: #F3ECD9; line-height: 1.1; }
+.sb-title.is-boss { color: #E8A8A8; }
+.sb-sub { font-size: 8.5px; color: #C9BFA4; line-height: 1.25; margin-top: 2px; }
+.sb-target { font-size: 9px; color: #9A917A; margin-top: 2px; }
+.sb-target b { color: #FFD45E; font-family: 'Fraunces', Georgia, serif; font-size: 12px; }
+.sb-label { font-size: 7.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #8B8368; }
+.sb-score { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; text-align: left; }
+.sb-score .sb-label { grid-row: 1; }
+.sb-score-val { grid-row: 1; justify-self: end; font-size: 19px; font-weight: 700; color: #F3ECD9; }
+.sb-progress { grid-column: 1 / -1; height: 4px; border-radius: 3px; background: #0a0f0c; overflow: hidden; margin-top: 3px; }
+.sb-progress i { display: block; height: 100%; background: linear-gradient(90deg, #C9A227, #FFD45E); }
+.sb-deck { display: flex; justify-content: center; padding: 2px; }
+.sb-deck .deck-widget { transform: scale(.78); margin: -6px 0; }
+.sb-hand { padding: 5px 6px 6px; }
+.sb-hand-name { font-size: 13px; font-weight: 600; color: #F3ECD9; font-style: italic; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-hand.empty .sb-hand-name { color: #6E6754; font-style: normal; font-size: 11px; }
+.sb-hand .lv-tag { font-style: normal; }
+.sb-hand-body { display: grid; margin-top: 4px; }
+.sb-boxes, .sb-total { grid-area: 1 / 1; }
+.sb-boxes { display: flex; align-items: center; gap: 4px; }
+.sb-box {
+  flex: 1; min-width: 0; padding: 4px 2px; border-radius: 7px; font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 16px; color: #fff;
+  border: 2px solid #0a0f0c; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.sb-chips { background: linear-gradient(180deg, #3FA9A0, #2a7f78); box-align: center; text-align: right; padding-right: 6px; }
+.sb-mult { background: linear-gradient(180deg, #D8473A, #A8302A); text-align: left; padding-left: 6px; }
+.sb-hand.empty .sb-box { filter: saturate(.3) brightness(.6); }
+.sb-x { color: #E9C568; font-weight: 800; font-size: 13px; }
+.sb-box.bump { animation: spBump .22s cubic-bezier(.34,1.56,.64,1); }
+.sb-total { align-self: center; justify-self: stretch; font-size: 22px; font-weight: 700; color: #FFE9A8; border-radius: 7px; padding: 2px 4px;
+  background: linear-gradient(180deg, #3a2a1a, #1e150d); border: 2px solid #C9A227; box-shadow: 0 0 14px #C9A22788; }
+/* the end of a play: the boxes fold away, the hand's score lands, then the boxes come back */
+.sb-hand.is-total .sb-boxes { animation: sbBoxesOut .28s ease-in var(--ta, 0ms) both; }
+.sb-hand.is-total .sb-total { animation: sbTotalIn .42s cubic-bezier(.34,1.56,.64,1) calc(var(--ta, 0ms) + .18s) both; }
+.sb-hand.back .sb-boxes { animation: sbBoxesIn .3s ease-out var(--ta, 0ms) both; }
+@keyframes sbBoxesOut { to { opacity: 0; transform: scale(.6); } }
+@keyframes sbTotalIn { from { opacity: 0; transform: scale(1.6); } to { opacity: 1; transform: none; } }
+@keyframes sbBoxesIn { from { opacity: 0; transform: translateY(6px); } }
+/* a level-up glows in the hand box */
+.sb-hand.level-up { animation: sbLevel 2.6s ease var(--la, 0ms) both; }
+.sb-hand.level-up .lv-tag { background: #4DB873; animation: sbLvTag .5s cubic-bezier(.34,1.56,.64,1) var(--la, 0ms) both; }
+@keyframes sbLevel { 0%, 70% { box-shadow: inset 0 2px 8px #000000a0, 0 0 0 2px #4DB873, 0 0 16px #4DB87388; } 100% { box-shadow: inset 0 2px 8px #000000a0; } }
+@keyframes sbLvTag { from { transform: scale(1.8); } }
+.sb-btns { display: flex; gap: 5px; }
+.sb-btns .sb-btn { flex: 1; justify-content: center; }
+.sb-btn-hands {
+  font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; cursor: pointer; color: #fff;
+  border: 2px solid #0a0f0c; border-radius: 10px; padding: 6px 4px; background: linear-gradient(180deg, #4a90d9, #2f6fb8); box-shadow: 0 3px 0 #1a3f6e, 0 6px 12px #0006;
+}
+.sb-btn-hands:active { transform: translateY(2px); box-shadow: 0 1px 0 #1a3f6e; }
+.sb-btns .opt-btn { padding: 6px 4px; }
+.sb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: auto; }
+.sb-cell { background: #131d18; border-radius: 9px; border: 1px solid #00000080; box-shadow: inset 0 2px 6px #000000a0; padding: 2px 4px 3px; text-align: center; }
+.sb-val { font-size: 17px; font-weight: 700; line-height: 1.1; color: #F3ECD9; }
+.sb-val small { font-size: 10px; color: #8B8368; }
+.sb-cell.plays .sb-val { color: #3FA9A0; }
+.sb-cell.discards .sb-val { color: #D8574A; }
+.sb-cell.money { grid-column: 1 / -1; padding: 3px; }
+.sb-cell.money .sb-val { font-size: 20px; color: #FFD45E; }
+.sb-extras { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.sb-extras span { font-size: 8px; font-weight: 800; color: #E9C568; background: #0a0f0c; border: 1px solid #C9A22755; border-radius: 6px; padding: 1px 5px; }
+
+/* the rest of the screen moves over for it */
+body.landscape #app { padding-left: 186px; }
+body.landscape #app > .header, body.landscape #app > .preview-bar { display: none; }
+body.landscape #app > .gear-shelf { position: absolute; top: 6px; left: 186px; right: 14px; width: auto; margin: 0; justify-content: center; }
+body.landscape .bottom-bar {
+  left: 182px; grid-template-columns: minmax(0, 1fr) 158px; grid-template-rows: auto auto; align-items: center; column-gap: 8px;
+}
+body.landscape .bottom-bar .hand-fan { grid-column: 1; grid-row: 1 / 3; }
+body.landscape .bottom-bar .actions-row { grid-column: 2; grid-row: 1; justify-self: stretch; align-self: end; }
+body.landscape .bottom-bar .sub-controls-row { grid-column: 2; grid-row: 2; justify-self: stretch; align-self: start; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 6px; }
+body.landscape .bottom-bar .hands-wrap { display: none; }
+body.landscape .bottom-bar .deck-widget { transform: scale(.72); transform-origin: center; margin: -8px -6px; }
+body.landscape .score-popup { display: none; }
+/* buttons below the cards (the default): one row under the hand */
+body.btn-below.landscape .bottom-bar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 4px; }
+body.btn-below.landscape .bottom-bar .hand-fan { grid-column: 1 / -1; grid-row: 1; }
+body.btn-below.landscape .bottom-bar .actions-row { grid-column: 2; grid-row: 2; flex-direction: row; justify-self: center; align-self: center; gap: 10px; }
+body.btn-below.landscape .bottom-bar .actions-row > * { min-width: 150px; }
+/* Sort on one side of the buttons, the deck on the other */
+body.btn-below.landscape .bottom-bar .sub-controls-row { display: contents; }
+body.btn-below.landscape .bottom-bar .sub-controls-row > .sort-toggle-wrap:not(.hands-wrap) { grid-column: 1; grid-row: 2; justify-self: end; align-self: center; margin-right: 14px; }
+body.btn-below.landscape .bottom-bar .sub-controls-row > .deck-widget { grid-column: 3; grid-row: 2; justify-self: start; align-self: center; margin: -8px 0 -8px 14px; }
+body.btn-below.lefty.landscape .bottom-bar .actions-row { flex-direction: row-reverse; }
+body.btn-below.lefty.landscape .bottom-bar .sub-controls-row > .sort-toggle-wrap:not(.hands-wrap) { grid-column: 3; justify-self: start; margin: 0 0 0 14px; }
+body.btn-below.lefty.landscape .bottom-bar .sub-controls-row > .deck-widget { grid-column: 1; justify-self: end; margin: -8px 14px -8px 0; }
+
+/* sidebar on the right instead */
+body.sb-right.landscape .sidebar { left: auto; right: 8px; }
+body.sb-right.landscape #app { padding-left: 14px; padding-right: 186px; }
+body.sb-right.landscape #app > .gear-shelf { left: 14px; right: 186px; }
+body.sb-right.landscape .bottom-bar { left: 0; right: 182px; }
+body.sb-right.landscape .shop-overlay, body.sb-right.landscape .pack-overlay { left: 0; right: 182px; padding-left: 14px; padding-right: 4px; }
+/* left-handed: the button column goes on the left of the hand */
+body.lefty.landscape:not(.btn-below) .bottom-bar { grid-template-columns: 158px minmax(0, 1fr); }
+body.lefty.landscape:not(.btn-below) .bottom-bar .hand-fan { grid-column: 2; grid-row: 1 / 3; }
+body.lefty.landscape:not(.btn-below) .bottom-bar .actions-row { grid-column: 1; grid-row: 1; justify-self: stretch; flex-direction: column; }
+body.lefty.landscape:not(.btn-below) .bottom-bar .sub-controls-row { grid-column: 1; grid-row: 2; justify-self: stretch; }
+
+/* shop and pack screens open beside the sidebar */
+body.landscape .shop-overlay, body.landscape .pack-overlay { left: 182px; }
+body.landscape .shop-overlay { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding-left: 4px; }
+body.landscape .shop-overlay .shop-header-row, body.landscape .pack-overlay .pack-header { display: none; }
+body.landscape .shop-overlay .gear-shelf, body.landscape .pack-overlay .gear-shelf { grid-column: 1 / -1; grid-row: 1; margin: 0; justify-self: center; }
+body.landscape .shop-overlay .bshop {
+  grid-column: 1; grid-row: 2; margin-top: 14px;
+  grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1.4fr); grid-template-rows: minmax(0, 1fr) auto;
+}
+body.landscape .shop-overlay .bshop-actions { grid-column: 1; grid-row: 1; flex-direction: column; }
+body.landscape .shop-overlay .bshop-wares { grid-column: 2 / 4; grid-row: 1; }
+body.landscape .shop-overlay .bshop-voucher { grid-column: 1 / 3; grid-row: 2; }
+body.landscape .shop-overlay .bshop-packs { grid-column: 3; grid-row: 2; }
+body.landscape .pack-overlay { padding-left: 4px; }
+
+/* pack screen, sideways: fits without scrolling */
+body.landscape .pack-overlay { padding: 6px 14px max(6px, env(safe-area-inset-bottom)); }
+body.landscape .pack-header .shop-title { font-size: 18px; white-space: nowrap; }
+body.landscape .pack-stage { margin-top: 14px; padding: 16px 8px 6px; }
+body.landscape .pack-sign span { font-size: 14px; padding: 1px 16px 2px; }
+body.landscape .pack-sign { top: -14px; }
+body.landscape .pack-torn { width: 32px; }
+body.landscape .pack-fan { padding: 4px 0 2px; }
+body.landscape .pack-hand { margin-top: 2px; }
+body.landscape .pack-hand .bwell-label { margin-bottom: 2px; font-size: 8px; }
+body.landscape .pack-hand-card { height: 48px; }
+body.landscape .pack-hand-card .pack-card { zoom: .55 !important; }
+body.landscape .pack-info { min-height: 44px; margin-top: 6px; padding: 4px 10px; }
+body.landscape .pack-info-name { font-size: 14px; }
+body.landscape .pack-info-desc { font-size: 10.5px; }
+body.landscape .pack-actions { margin-top: 6px; }
+body.landscape .pack-actions .bbtn { min-height: 36px; }
+body.landscape .pack-actions .bbtn-big { font-size: 15px; }
 body.landscape .gear-drop-zones { top: 28vh; height: 34vh; }
 
 </style>
@@ -1794,6 +2005,12 @@ function handLevel(name) {
   return (state.handLevels && state.handLevels[name]) || 1;
 }
 // Base Chips/Mult of a hand type at its current level.
+// Raise a hand's level and remember it, so the sidebar can show the level-up.
+function levelUpHand(name, by = 1) {
+  const from = handLevel(name);
+  state.handLevels = { ...(state.handLevels || {}), [name]: from + by };
+  state.levelUpFlash = { hand: name, from, to: from + by, at: Date.now() };
+}
 function handBase(name) {
   const t = HAND_TABLE[name];
   const up = HAND_LEVEL_UP[name] || { chips: 0, mult: 0 };
@@ -3739,7 +3956,7 @@ function rollVoucher() {
    Skins / Quit. Settings and Skins are panels that open over either.
    Preferences live in their own localStorage key, apart from the run. */
 const SETTINGS_KEY = "anteup_settings_v1";
-const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
+const SETTINGS_DEFAULTS = { speed: 1, reduceMotion: false, packAnim: true, preview: true, sort: "rank", lefty: false, sidebar: "left", btnPos: "below", haptics: true, badges: true, face: "classic", back: "emerald", felt: "emerald" };
 const SETTINGS = { ...SETTINGS_DEFAULTS };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch (e) {}
 function saveSettings() {
@@ -3783,6 +4000,8 @@ function applySkins() {
   Object.keys(BACK_SKINS).forEach((k) => document.body.classList.toggle("back-" + k, k === SETTINGS.back));
   document.body.classList.toggle("reduce-motion", !!SETTINGS.reduceMotion);
   document.body.classList.toggle("lefty", !!SETTINGS.lefty);
+  document.body.classList.toggle("sb-right", SETTINGS.sidebar === "right");
+  document.body.classList.toggle("btn-below", SETTINGS.btnPos !== "beside");
   document.body.classList.toggle("no-badges", !SETTINGS.badges);
   const felt = (FELT_SKINS[SETTINGS.felt] || FELT_SKINS.emerald).c;
   ["--f1", "--f2", "--f3", "--f1s", "--f2s"].forEach((v, i) => document.documentElement.style.setProperty(v, felt[i]));
@@ -3816,6 +4035,124 @@ function continueRun() {
 function newRun() { MENU.screen = null; MENU.choosingRun = false; MENU.pause = false; clearSave(); startGame(); }
 
 // The small button that opens the pause menu.
+/* ============================== SIDEBAR (sideways) ==============================
+   Holding the phone sideways, the run's information lives in a column on
+   the left: what you're facing (or the shop / pack), the round score, the
+   hand box (chips x mult; the hand's score lands there when it's played;
+   level-ups show there), Hands and Options, and plays, discards, money,
+   ante and round. */
+function Sidebar(preview, selectedCards) {
+  const sb = document.createElement("div");
+  sb.className = "sidebar";
+  const po = state.packOpen;
+  const inShop = state.overlay === "shop" || !!po;
+  const round = (state.ante - 1) * 3 + state.blindIdx + 1;
+
+  // what you're facing
+  const top = document.createElement("div");
+  top.className = "sb-card sb-top";
+  if (po) {
+    top.innerHTML = `<div class="sb-kicker">Booster pack</div><div class="sb-title serif">${po.name}</div><div class="sb-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"}</div>`;
+  } else if (inShop) {
+    const nIdx = (state.blindIdx + 1) % 3, nAnte = state.blindIdx === 2 ? state.ante + 1 : state.ante;
+    top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${targetForAnte(nAnte, nIdx).toLocaleString()}</div>`;
+  } else {
+    const b = state.bossBlind;
+    top.innerHTML = `<div class="sb-kicker">${b ? "Boss blind" : "Current blind"}</div>` +
+      `<div class="sb-title serif${b ? " is-boss" : ""}">${b ? b.name : BLIND_TYPES[state.blindIdx].label}</div>` +
+      (b ? `<div class="sb-sub">${b.desc}</div>` : "") +
+      `<div class="sb-target">Score at least <b>${targetForAnte(state.ante, state.blindIdx).toLocaleString()}</b></div>`;
+  }
+  sb.appendChild(top);
+
+  // round score (or the deck, in the shop)
+  if (!inShop) {
+    const target = targetForAnte(state.ante, state.blindIdx);
+    const sc = document.createElement("div");
+    sc.className = "sb-card sb-score";
+    sc.innerHTML = `<div class="sb-label">Round score</div><div class="sb-score-val serif">${state.roundScore.toLocaleString()}</div>` +
+      `<div class="sb-progress"><i style="width:${Math.min(100, (state.roundScore / target) * 100)}%"></i></div>`;
+    sb.appendChild(sc);
+  } else {
+    const dk = document.createElement("div");
+    dk.className = "sb-card sb-deck";
+    dk.appendChild(renderDeckWidget());
+    sb.appendChild(dk);
+  }
+
+  // the hand box
+  const p = state.popup;
+  const flashRaw = state.levelUpFlash;
+  const flash = flashRaw && Date.now() - flashRaw.at < 2600 ? flashRaw : null;
+  let name = "", chips = "0", mult = "0", total = null, bumpC = false, bumpM = false, lv = "", empty = false;
+  if (p) {
+    name = p.name;
+    chips = Math.round(p.chips).toLocaleString();
+    mult = fmtNum(p.mult);
+    if (p.phase === "total") total = Number(p.score).toLocaleString();
+    bumpC = p.phase === "counting" && p.bump === "chips";
+    bumpM = p.phase === "counting" && (p.bump === "mult" || p.bump === "xmult");
+  } else if (flash) {
+    name = flash.hand;
+    if (!flash.all && HAND_TABLE[flash.hand]) { const b = handBase(flash.hand); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
+  } else if (preview) {
+    name = preview.name;
+    chips = Math.round(preview.totalChips).toLocaleString();
+    mult = fmtNum(preview.totalMult);
+  } else if (selectedCards.length) {
+    const r = evaluateSelection(selectedCards);
+    name = r ? r.name : "";
+    if (name && HAND_TABLE[name]) { const b = handBase(name); chips = b.chips.toLocaleString(); mult = fmtNum(b.mult); }
+  } else empty = true;
+  const up = flash && (flash.all || flash.hand === name);
+  if (name && HAND_TABLE[name]) lv = up && !flash.all ? `Lv ${flash.from} → ${flash.to}` : `Lv ${handLevel(name)}`;
+  if (flash && flash.all) lv = "+1 level";
+  const hb = document.createElement("div");
+  hb.className = "sb-card sb-hand" + (total != null ? " is-total" : "") + (up ? " level-up" : "") + (empty ? " empty" : "");
+  hb.innerHTML = `<div class="sb-hand-name serif">${name || (inShop ? "Hands" : "Select cards")}${lv ? `<span class="lv-tag">${lv}</span>` : ""}</div>` +
+    `<div class="sb-hand-body"><div class="sb-boxes"><div class="sb-box sb-chips${bumpC ? " bump" : ""}">${chips}</div><span class="sb-x">×</span><div class="sb-box sb-mult${bumpM ? " bump" : ""}">${mult}</div></div>` +
+    (total != null ? `<div class="sb-total serif">${total}</div>` : "") + `</div>`;
+  // re-renders keep the animations where they were
+  const since = (t) => (t ? -(Date.now() - t) + "ms" : "0ms");
+  if (total != null) hb.style.setProperty("--ta", since(p.totalAt));
+  else if (state.popupEndedAt && Date.now() - state.popupEndedAt < 500) { hb.classList.add("back"); hb.style.setProperty("--ta", since(state.popupEndedAt)); }
+  if (up) hb.style.setProperty("--la", since(flash.at));
+  hb.querySelector(".sb-hand-name").onclick = openHandLevels;
+  sb.appendChild(hb);
+
+  // Hands and Options
+  const btns = document.createElement("div");
+  btns.className = "sb-btns";
+  const hands = document.createElement("button");
+  hands.className = "sb-btn sb-btn-hands";
+  hands.textContent = "Hands";
+  hands.onclick = openHandLevels;
+  btns.appendChild(hands);
+  const opt = OptionsButton();
+  opt.classList.add("sb-btn");
+  btns.appendChild(opt);
+  sb.appendChild(btns);
+
+  // the counters
+  const grid = document.createElement("div");
+  grid.className = "sb-grid";
+  const cell = (label, value, cls) => `<div class="sb-cell ${cls || ""}"><div class="sb-label">${label}</div><div class="sb-val serif">${value}</div></div>`;
+  const extras = [];
+  if (state.runMultiplier !== 1) extras.push(`Run Mult x${state.runMultiplier}`);
+  if (state.nextHandChipBonus > 0) extras.push(`Next +${state.nextHandChipBonus} Chips`);
+  if (state.nextHandDoubleChips) extras.push("Next Chips x2");
+  if (state.nextHandDoubleMult) extras.push("Next Mult x2");
+  if (state.nextHandMultX !== 1) extras.push(`Next Mult x${state.nextHandMultX.toFixed(2)}`);
+  if (state.nextHandRetrigger) extras.push("Retrigger");
+  if (state.nextHandBalance) extras.push("Balanced");
+  grid.innerHTML = cell("Plays", state.playsLeft, "plays") + cell("Discards", state.discardsLeft, "discards") +
+    `<div class="sb-cell money"><div class="sb-val serif">$${state.money}</div></div>` +
+    cell("Ante", `${state.ante}<small>/${FINAL_ANTE}</small>`, "ante") + cell("Round", round, "round") +
+    (extras.length ? `<div class="sb-extras">${extras.map((t) => `<span>${t}</span>`).join("")}</div>` : "");
+  sb.appendChild(grid);
+  return sb;
+}
+
 // The hand levels table: every poker hand's level, times played and score.
 function openHandLevels(e) {
   if (e && e.stopPropagation) e.stopPropagation();
@@ -3944,7 +4281,9 @@ function MenuPanel() {
     list.appendChild(row("Sort new hands by", seg([["rank", "Rank"], ["suit", "Suit"]], SETTINGS.sort, (v) => set("sort", v)), "Used when a run starts"));
     list.appendChild(row("Pack opening", seg([[true, "Animate"], [false, "Skip"]], !!SETTINGS.packAnim, (v) => set("packAnim", v))));
     list.insertAdjacentHTML("beforeend", `<div class="mskin-head">Display</div>`);
-    list.appendChild(row("Left-handed", seg([[false, "Off"], [true, "On"]], !!SETTINGS.lefty, (v) => set("lefty", v)), "Swaps Play Hand and Discard"));
+    list.appendChild(row("Left-handed", seg([[false, "Off"], [true, "On"]], !!SETTINGS.lefty, (v) => set("lefty", v)), "Puts Play Hand and Discard on the left (sideways: buttons left of the hand)"));
+    list.appendChild(row("Sidebar", seg([["left", "Left"], ["right", "Right"]], SETTINGS.sidebar || "left", (v) => set("sidebar", v)), "Which side the info column sits on when the phone is sideways"));
+    list.appendChild(row("Buttons", seg([["below", "Below"], ["beside", "Beside"]], SETTINGS.btnPos === "beside" ? "beside" : "below", (v) => set("btnPos", v)), "Sideways: Play Hand and Discard below the cards, or beside them"));
     list.appendChild(row("Progress badges", seg([[true, "Show"], [false, "Hide"]], !!SETTINGS.badges, (v) => set("badges", v)), "Values and bars on artifacts"));
     list.appendChild(row("Reduce motion", seg([[false, "Off"], [true, "On"]], !!SETTINGS.reduceMotion, (v) => set("reduceMotion", v)), "Stops floating cards and spinning rays"));
     list.appendChild(row("Haptics", seg([[true, "On"], [false, "Off"]], !!SETTINGS.haptics, (v) => { set("haptics", v); buzz(30); }), "Buzz on scoring and buying"));
@@ -4457,7 +4796,7 @@ function useSpectral(def) {
     case "wispLantern": {
       const counts = state.handTypeCounts || {};
       const fav = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || "High Card";
-      state.handLevels = { ...(state.handLevels || {}), [fav]: handLevel(fav) + 2 };
+      levelUpHand(fav, 2);
       state.permDiscards = (state.permDiscards || 0) - 1;
       return `${fav} went up 2 levels`;
     }
@@ -4470,6 +4809,7 @@ function useSpectral(def) {
       const lv = { ...(state.handLevels || {}) };
       Object.keys(HAND_TABLE).forEach((h) => { lv[h] = handLevel(h) + 1; });
       state.handLevels = lv;
+      state.levelUpFlash = { hand: "Every hand", from: 0, to: 0, all: true, at: Date.now() };
       return "Every hand went up a level";
     }
   }
@@ -5102,14 +5442,16 @@ function getHandSize() {
 function computeFanLayout() {
   const viewportW = window.innerWidth;
   // In landscape the deck/sort column and the button column flank the hand.
-  const sidePadding = isLandscape() ? 16 + 2 * 170 : 16;
+  const sidePadding = isLandscape() ? 186 + (SETTINGS.btnPos === "beside" ? 158 : 0) + 24 : 16;
   const available = viewportW - sidePadding;
   const handSize = getHandSize();
   const target = Math.min(available, MAX_FAN_WIDTH);
   const rawOverlap = CARD_W - (target - CARD_W) / (handSize - 1);
   const overlap = Math.max(MIN_OVERLAP, Math.min(MAX_OVERLAP, rawOverlap));
   const widthAtOverlap = CARD_W + (handSize - 1) * (CARD_W - overlap);
-  const scale = Math.max(0.62, Math.min(1, available / widthAtOverlap));
+  let scale = Math.max(0.62, Math.min(1, available / widthAtOverlap));
+  // Sideways the screen is short: size everything from its height too.
+  if (isLandscape()) scale = Math.min(scale, Math.max(0.6, window.innerHeight / 430));
   return { overlap, scale };
 }
 
@@ -5645,7 +5987,7 @@ function scoreHand(selectedCards, { live = false } = {}) {
       case "deuceChips": return addCH(c.deuceBonus || 0);
       case "cosmonautLevel":
         if (live && Math.random() < Math.min(1, e.chance * chanceMultiplier())) {
-          state.handLevels = { ...(state.handLevels || {}), [base.name]: handLevel(base.name) + 1 };
+          levelUpHand(base.name);
           push({ target: "charm", uid: c.uid, kind: "info", text: "Level up!" });
         }
         return;
@@ -5741,7 +6083,7 @@ function animateScoring(result, onDone) {
   render();
   const step = () => {
     if (i >= evs.length) {
-      state.popup = { ...state.popup, chips: result.chips, mult: result.mult, score: result.score, phase: "total" };
+      state.popup = { ...state.popup, chips: result.chips, mult: result.mult, score: result.score, phase: "total", totalAt: Date.now() };
       render();
       buzz(result.score >= targetForAnte(state.ante, state.blindIdx) - state.roundScore ? [30, 40, 60] : 25);
       setTimeout(onDone, 700 / gameSpeed());
@@ -5971,6 +6313,7 @@ function finishPlay(finalScore, newPlaysLeft) {
     setTimeout(() => {
       state.popup = null;
       state.popupStartedAt = null;
+      state.popupEndedAt = Date.now();
       
       // Handle Mirror sleeve clones - clone played Mirror cards before clearing scoringIds.
       // Use all played cards (not just scoringIds) since a card's sleeve applies whether
@@ -6325,7 +6668,7 @@ function takePackChoice(index) {
     if (choice.sleeve !== "negative" && charmsUsed() >= state.charmSlots) return;
     state.charms = [...state.charms, { ...choice, uid: newUid() }];
   } else if (choice.type === "item" && choice.chart) {
-    state.handLevels = { ...(state.handLevels || {}), [choice.effect.hand]: handLevel(choice.effect.hand) + 1 };
+    levelUpHand(choice.effect.hand);
     noteChartUsed();
   } else if (choice.type === "item") {
     if (state.items.length >= getEffectiveItemSlots()) return;
@@ -6536,7 +6879,7 @@ function packHandSlot(c, cls) {
 }
 // Width of each card's step in the pack's hand, so the row fits the panel.
 function packHandStep(n) {
-  const cardW = isLandscape() ? 41 : 51;
+  const cardW = isLandscape() ? 34 : 51;
   const inner = Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 28;
   return { cardW, step: Math.max(14, Math.min(44, Math.floor((inner - cardW) / Math.max(1, n - 1)))) };
 }
@@ -6599,7 +6942,7 @@ function PackOverlay() {
   const opening = elapsed < 1500;
   const dealAt = opening ? 950 - elapsed : 0;
   stage.style.setProperty("--t", -Math.min(elapsed, 1500) + "ms");
-  stage.innerHTML = `<div class="pack-rays"></div><div class="bshop-sign pack-sign serif"><span>${(po.picks || 1) > 1 ? `Pick ${po.picks}` : "Pick One"}</span></div><div class="pack-torn">${AnteArt.icon(def)}</div>` +
+  stage.innerHTML = `<div class="pack-rays-clip"><div class="pack-rays"></div></div><div class="bshop-sign pack-sign serif"><span>${(po.picks || 1) > 1 ? `Pick ${po.picks}` : "Pick One"}</span></div><div class="pack-torn">${AnteArt.icon(def)}</div>` +
     (opening ? `<div class="pack-opening"><div class="po-flash"></div>` +
       Array.from({ length: 12 }, (_, i) => `<i class="po-spark" style="--a:${i * 30 + (i % 3) * 7}deg;--d:${70 + (i % 4) * 22}px"></i>`).join("") +
       `<div class="po-pack"><div class="po-top">${AnteArt.icon(def)}</div><div class="po-bottom">${AnteArt.icon(def)}</div></div></div>` : "");
@@ -6608,7 +6951,7 @@ function PackOverlay() {
   fan.className = "pack-fan";
   // Card width: as big as fits the row, up to 96px (78px sideways).
   const room = Math.min(isLandscape() ? 760 : 640, window.innerWidth - 28) - 24;
-  const cw = Math.floor(Math.min(isLandscape() ? (po.hand ? 60 : 78) : 112, (room - (po.choices.length - 1) * 8) / po.choices.length));
+  const cw = Math.floor(Math.min(isLandscape() ? (po.hand ? 50 : 64) : 112, (room - (po.choices.length - 1) * 8) / po.choices.length));
   fan.style.setProperty("--cw", cw + "px");
   const pick = state.packPick != null && po.choices[state.packPick] ? state.packPick : null;
   const mid = (po.choices.length - 1) / 2;
@@ -7007,7 +7350,7 @@ function useItem(itemUid) {
   if (eff.type === "levelHand") {
     return quick(() => {
       noteChartUsed();
-      state.handLevels = { ...(state.handLevels || {}), [eff.hand]: handLevel(eff.hand) + 1 };
+      levelUpHand(eff.hand);
       const b = handBase(eff.hand);
       state.bossBlindMessage = `${eff.hand} → Lv ${handLevel(eff.hand)} (${b.chips} × ${b.mult})`;
       setTimeout(() => { state.bossBlindMessage = null; render(); }, 1800);
@@ -7815,6 +8158,7 @@ function isLandscape() {
 function render() {
   if (ITEM_INSTANT || PACK_BUSY) return;
   document.body.classList.toggle("landscape", isLandscape());
+  SHELF_PIECE = isLandscape() ? 38 : 46;
   if (state.deckOverlayOpen && state.overlay !== "playing" && state.overlay !== "shop") state.deckOverlayOpen = false;
   const oldCardRects = captureCardRects();
   const app = document.getElementById("app");
@@ -7923,6 +8267,7 @@ function render() {
     previewBar.appendChild(placeholder);
   }
   app.appendChild(previewBar);
+  if (isLandscape()) app.appendChild(Sidebar(preview, selectedCards));
 
   const spacer = document.createElement("div");
   spacer.className = "spacer";
@@ -8001,7 +8346,7 @@ function render() {
   subRow.appendChild(sortWrap);
   // Hand levels and play counts, styled to match the sort toggle beside it.
   const handsWrap = document.createElement("div");
-  handsWrap.className = "sort-toggle-wrap";
+  handsWrap.className = "sort-toggle-wrap hands-wrap";
   handsWrap.innerHTML = `<div class="sort-toggle-label" style="font-size:${Math.round(7 * cardScale)}px">Hands</div>`;
   const handsBtn = document.createElement("button");
   handsBtn.className = "sort-opt hands-opt";
@@ -8023,8 +8368,8 @@ function render() {
   spacerBottom.style.height = Math.round(170 * cardScale) + 70 + "px";
   app.appendChild(spacerBottom);
 
-  // ===== SCORE POPUP =====
-  if (state.popup) {
+  // ===== SCORE POPUP ===== (sideways it plays in the sidebar instead)
+  if (state.popup && !isLandscape()) {
     const popup = document.createElement("div");
     popup.className = "score-popup";
     const p = state.popup;
@@ -8196,7 +8541,22 @@ function syncLoopingAnimations() {
 // needs scrolling. (It still scrolls as a last resort on tiny screens.)
 function fitShop() {
   const shop = document.querySelector(".shop-overlay .bshop");
-  if (!shop || isLandscape()) return;
+  if (!shop) return;
+  if (isLandscape()) {
+    // Same layout as portrait, laid out wide (wares in one row), shrunk
+    // until it fits the short screen.
+    const wares = shop.querySelector(".bshop-wares");
+    if (wares) wares.style.setProperty("--wcols", Math.max(3, wares.children.length));
+    const over = () => Math.max(0, shop.scrollHeight - shop.clientHeight) + (wares ? Math.max(0, wares.scrollHeight - wares.clientHeight) : 0);
+    if (over() <= 1) return;
+    let w = 74;
+    shop.classList.add("tight");
+    for (let i = 0; i < 16 && over() > 1 && w > 34; i++) {
+      w -= 3;
+      shop.style.setProperty("--face", w + "px");
+    }
+    return;
+  }
   const over = () => shop.scrollHeight - shop.clientHeight;
   if (over() <= 1) return;
   const face = shop.querySelector(".bshop-wares .bcard-face");
@@ -8360,7 +8720,7 @@ function ItemSidebar() {
    drawn as what they are. Tap one to read it. Drag one and drop zones light
    up: Sell (and Use, for items); dropping it back on its own shelf moves it
    to that spot. When a shelf holds more than fits, the pieces overlap. */
-const SHELF_PIECE = 46;
+let SHELF_PIECE = 46; // 38 sideways (set in render)
 
 function sellValue(def) {
   return Math.max(1, Math.floor((def.price / 2) * voucherBest("sellMultiplier", Math.max))) + (def.sellBonus || 0);
@@ -8378,7 +8738,7 @@ function sellItem(uid) {
 
 function shelfWidths() {
   const total = isLandscape()
-    ? Math.min(Math.round(window.innerWidth * 0.52) - 76, 640)
+    ? Math.min(window.innerWidth - 186 - 40, 720)
     : Math.min(window.innerWidth - 32, 640);
   const gap = 12;
   const charmsW = Math.round((total - gap) * 0.6);
