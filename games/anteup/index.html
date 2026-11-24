@@ -1291,6 +1291,80 @@ body.back-sunset .deck-card-back, .back-prev-sunset .bp-card { background: radia
 .pack-hand-card.dragging .pack-card { box-shadow: 0 10px 18px #000b; }
 body.reduce-motion .pchoice.using, body.reduce-motion .pack-hand-card.changed .pack-card { animation-duration: .01s !important; }
 
+/* ----- tags and the blind select screen ----- */
+.tag-badge {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+  font-family: 'Fraunces', Georgia, serif; font-weight: 700; font-size: 13px; color: #fff; text-shadow: 0 1px 0 #0008;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tc) 70%, #fff), var(--tc) 60%, color-mix(in srgb, var(--tc) 60%, #000));
+  border: 2px solid #0a0f0c; box-shadow: 0 0 0 1.5px #E9C56899, 0 3px 6px #0009;
+}
+.tag-badge.small { width: 20px; height: 20px; font-size: 9px; border-width: 1.5px; }
+.sb-tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.tag-toast { box-shadow: 0 0 0 2px #c0408088, 0 0 30px #c0408066; }
+.blind-select {
+  position: fixed; inset: 0; z-index: 30; background-clip: padding-box; overflow-y: auto; overscroll-behavior: contain;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--f2s, #16241A) 92%, transparent) 0%, var(--f3, #0A100C) 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 8px 10px max(12px, env(safe-area-inset-bottom));
+  animation: zonesIn .2s ease-out;
+}
+.bs-head { text-align: center; }
+.bs-title { font-size: 26px; font-weight: 700; color: #F3ECD9; }
+.bs-sub { font-size: 11px; color: #9A917A; }
+.bs-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 640px; align-items: stretch; }
+.bs-card {
+  --bc: #4a90d9; position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 6px 8px; border-radius: 14px; text-align: center;
+  background: linear-gradient(180deg, #2c3f36 0%, #1b2822 100%); border: 2px solid #0a0f0c; box-shadow: 0 0 0 2px color-mix(in srgb, var(--bc) 45%, transparent), 0 14px 26px -12px #000c;
+}
+.bs-big { --bc: #F29A2E; }
+.bs-boss { --bc: #E5574A; }
+.bs-card.current { box-shadow: 0 0 0 2.5px var(--bc), 0 0 22px -4px var(--bc), 0 18px 30px -12px #000c; }
+.bs-card .bs-play { margin-top: auto; }
+.bs-card .bs-skip { margin-top: auto; }
+.bs-card .bs-play + .bs-skip { margin-top: 0; }
+.bs-card .bs-state { margin-top: auto; }
+.bs-card .bs-state + .bs-skip { margin-top: 4px; }
+.tag-badge { cursor: pointer; }
+.tag-tip {
+  position: fixed; z-index: 200; max-width: 220px; padding: 7px 10px; border-radius: 10px; pointer-events: none;
+  background: #131d18f2; border: 1.5px solid var(--tc); box-shadow: 0 10px 24px #000c;
+  display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #C9BFA4; line-height: 1.3; animation: zonesIn .14s ease-out;
+}
+.tag-tip b { color: #fff; font-family: 'Fraunces', Georgia, serif; font-size: 13px; }
+.bs-card.past { opacity: .55; filter: saturate(.5); }
+.bs-label { font-size: 8.5px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: #fff; background: var(--bc); border: 1.5px solid #0a0f0c; border-radius: 7px; padding: 1px 8px; }
+.bs-name { font-size: 15px; font-weight: 700; color: #F3ECD9; line-height: 1.1; }
+.bs-boss .bs-name { color: #E8A8A8; }
+.bs-desc { font-size: 9.5px; color: #C9BFA4; line-height: 1.25; }
+.bs-target { font-size: 9px; color: #9A917A; display: flex; flex-direction: column; }
+.bs-target b { font-size: 18px; color: #FFD45E; }
+.bs-reward { font-size: 9.5px; color: #9A917A; }
+.bs-reward b { color: #E9C568; }
+.bs-state { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding: 1px 8px; border-radius: 6px; border: 1.5px solid currentColor; transform: rotate(-6deg); }
+.bs-state.done { color: #7FD08A; }
+.bs-state.skipped { color: #c38bff; }
+.bs-play {
+  width: 100%; font-family: 'Fraunces', Georgia, serif; font-size: 17px; font-weight: 700; color: #fff; cursor: pointer; padding: 7px 4px; border-radius: 10px;
+  border: 2px solid #0a0f0c; background: linear-gradient(180deg, #F29A2E, #D9761B); box-shadow: 0 4px 0 #8a4a10;
+}
+.bs-play:active { transform: translateY(3px); box-shadow: 0 1px 0 #8a4a10; }
+.bs-skip {
+  width: 100%; display: flex; align-items: center; gap: 6px; text-align: left; padding: 5px 6px; border-radius: 10px; cursor: pointer; font: inherit; color: #F3ECD9;
+  background: #131d18; border: 1.5px solid #c0408077; box-shadow: inset 0 2px 6px #000a;
+}
+.bs-skip.idle { cursor: default; border-color: #ffffff18; }
+.bs-skip:not(.idle):active { transform: translateY(1px); }
+.bs-skip-txt { display: flex; flex-direction: column; min-width: 0; font-size: 9.5px; line-height: 1.2; }
+.bs-skip-txt b { font-size: 11px; color: #f2a5cd; }
+.bs-skip-txt small { font-size: 8px; color: #9A917A; text-transform: uppercase; letter-spacing: .8px; font-weight: 800; }
+.bs-held { display: flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #9A917A; }
+body.landscape .blind-select { left: 210px; gap: 8px; padding: 8px 12px; }
+body.sb-right.landscape .blind-select { left: 0; right: 210px; }
+body.landscape .bs-title { font-size: 19px; }
+body.landscape .bs-card { padding: 7px 6px 6px; gap: 3px; }
+body.landscape .blind-select { justify-content: flex-start; padding-top: 6px; }
+body.landscape .bs-target b { font-size: 15px; }
+body.landscape .bs-play { font-size: 15px; padding: 4px; }
+
 /* ----- Glass sleeve breaking ----- */
 .glass-burst { position: fixed; z-index: 140; pointer-events: none; }
 .glass-burst i {
@@ -2044,6 +2118,153 @@ function renderCard(card, { selected, scoring, dimmed, scale, marginLeft, arcInd
   return el;
 }
 
+/* ============================== TAGS ==============================
+   Skipping a Small or Big Blind wins the tag shown on it. "Now" tags pay out
+   at once; the rest wait for their moment (the next shop, the next round,
+   the next Boss Blind you beat). A Double Tag copies the next tag you get. */
+const TAG_DEFS = [
+  { id: "double", name: "Double Tag", desc: "Gives a copy of the next tag you get (except Double Tags)", color: "#c04080", glyph: "×2" },
+  { id: "economy", name: "Economy Tag", desc: "Doubles your money (up to +$40)", color: "#c99a22", glyph: "$", now: true },
+  { id: "speed", name: "Speed Tag", desc: "$5 for every blind you've skipped this run", color: "#3FA9A0", glyph: "»", now: true },
+  { id: "handy", name: "Handy Tag", desc: "$1 for every hand you've played this run", color: "#4a90d9", glyph: "✋", now: true },
+  { id: "investment", name: "Investment Tag", desc: "$25 after you beat the next Boss Blind", color: "#7a6a2a", glyph: "▲" },
+  { id: "orbital", name: "Orbital Tag", desc: "Levels up a random poker hand 3 times", color: "#24325c", glyph: "◎", now: true },
+  { id: "juggle", name: "Juggle Tag", desc: "+3 hand size for the next round", color: "#d0743b", glyph: "∞" },
+  { id: "voucher", name: "Voucher Tag", desc: "The next shop has an extra voucher", color: "#a0522d", glyph: "V" },
+  { id: "dice", name: "Dice Tag", desc: "Your first reroll in the next shop is free", color: "#5a6fd8", glyph: "⚄" },
+  { id: "coupon", name: "Coupon Tag", desc: "Everything the next shop opens with is free", color: "#4DB873", glyph: "%" },
+  { id: "sparkler", name: "Sparkler Tag", desc: "The next shop's first artifact is free and comes in a Sparkler sleeve", color: "#FFB84D", glyph: "✦", sleeve: "sparkler" },
+  { id: "gilded", name: "Gilded Tag", desc: "The next shop's first artifact is free and comes in a Gilded sleeve", color: "#F2C94C", glyph: "◆", sleeve: "gilded" },
+  { id: "prismatic", name: "Prismatic Tag", desc: "The next shop's first artifact is free and comes in a Prismatic sleeve", color: "#c38bff", glyph: "◈", sleeve: "prismatic" },
+  { id: "negative", name: "Negative Tag", desc: "The next shop's first artifact is free and comes in a Negative sleeve", color: "#7a55b0", glyph: "◐", sleeve: "negative" },
+  { id: "arcana", name: "Arcana Tag", desc: "Opens a free Mega Arcana Pack", color: "#7FBA9A", glyph: "✧", now: true, pack: "itemPack_mega" },
+  { id: "star", name: "Star Tag", desc: "Opens a free Mega Celestial Pack", color: "#4a6fb3", glyph: "★", now: true, pack: "celestialPack_mega" },
+  { id: "card", name: "Card Tag", desc: "Opens a free Mega Card Pack", color: "#b8a77a", glyph: "♠", now: true, pack: "cardPack_mega" },
+  { id: "artifact", name: "Artifact Tag", desc: "Opens a free Mega Artifact Pack", color: "#C9A227", glyph: "♛", now: true, pack: "artifactPack_mega" },
+  { id: "ghost", name: "Ghost Tag", desc: "Opens a free Spectral Pack", color: "#8f9bff", glyph: "☾", now: true, pack: "spectralPack" },
+  { id: "boss", name: "Boss Tag", desc: "Rerolls this ante's Boss Blind", color: "#C23A30", glyph: "☠", now: true },
+  { id: "topup", name: "Top-up Tag", desc: "Gives you up to 2 random artifacts (needs room)", color: "#6b9b4a", glyph: "+", now: true },
+];
+const TAG_BY_ID = Object.fromEntries(TAG_DEFS.map((t) => [t.id, t]));
+function rollTag() { return randomOf(TAG_DEFS).id; }
+function tagBadge(id, cls = "") {
+  const t = TAG_BY_ID[id];
+  return t ? `<span class="tag-badge ${cls}" style="--tc:${t.color}" data-tag="${id}" role="button" aria-label="${t.name}">${t.glyph}</span>` : "";
+}
+function holdsTag(id) { return (state.tags || []).some((t) => t.id === id); }
+// Take one held tag of this kind; true if there was one.
+function useTag(id) {
+  const i = (state.tags || []).findIndex((t) => t.id === id);
+  if (i < 0) return false;
+  state.tags = state.tags.filter((_, k) => k !== i);
+  return true;
+}
+// Win a tag. Held Double Tags each add a copy (they never copy a Double Tag).
+function grantTag(id) {
+  state.tags = state.tags || [];
+  let copies = 1;
+  if (id !== "double") {
+    const doubles = state.tags.filter((t) => t.id === "double").length;
+    copies += doubles;
+    state.tags = state.tags.filter((t) => t.id !== "double");
+  }
+  const notes = [];
+  for (let i = 0; i < copies; i++) {
+    const t = TAG_BY_ID[id];
+    if (t && t.now) notes.push(payTag(id));
+    else state.tags = [...state.tags, { id, uid: newUid() }];
+  }
+  const t = TAG_BY_ID[id];
+  state.tagToast = { text: (copies > 1 ? `${t.name} ×${copies}` : t.name) + (notes.filter(Boolean).length ? " · " + notes.filter(Boolean).join(" · ") : ""), at: Date.now() };
+}
+// Tags that pay out the moment you get them.
+function payTag(id) {
+  const t = TAG_BY_ID[id];
+  if (t.pack) {
+    state.pendingPacks = [...(state.pendingPacks || []), t.pack];
+    return "";
+  }
+  switch (id) {
+    case "economy": { const g = Math.min(40, Math.max(0, state.money)); state.money += g; return `+$${g}`; }
+    case "speed": { const g = 5 * (state.blindsSkippedRun || 0); state.money += g; return `+$${g}`; }
+    case "handy": { const g = state.handsPlayedRun || 0; state.money += g; return `+$${g}`; }
+    case "orbital": { const h = randomOf(Object.keys(HAND_TABLE)); levelUpHand(h, 3); return `${h} +3 levels`; }
+    case "boss": {
+      if (state.anteRoll) state.anteRoll.boss = state.anteRoll.ante === FINAL_ANTE ? pickFinalBoss() : pickBossBlind();
+      return state.anteRoll ? `Boss is now ${state.anteRoll.boss.name}` : "";
+    }
+    case "topup": {
+      let n = 0;
+      for (let i = 0; i < 2 && charmsUsed() < state.charmSlots; i++) {
+        const d = randomCharmDef(artifactPool());
+        if (!d) break;
+        state.charms = [...state.charms, { ...d, uid: newUid() }];
+        n++;
+      }
+      return n ? `+${n} artifact${n > 1 ? "s" : ""}` : "no room";
+    }
+  }
+  return "";
+}
+// Tapping a tag's icon opens a small box with what it does; tapping anywhere
+// else closes it. (Caught early, so tapping the icon on a Skip button only
+// opens the box and doesn't skip.)
+document.addEventListener("click", (e) => {
+  const badge = e.target.closest && e.target.closest("[data-tag]");
+  const open = document.querySelector(".tag-tip");
+  if (open) open.remove();
+  if (!badge) return;
+  e.stopPropagation();
+  e.preventDefault();
+  if (open && open.dataset.for === badge.dataset.tag + badge.getBoundingClientRect().left) return;
+  const t = TAG_BY_ID[badge.dataset.tag];
+  if (!t) return;
+  const tip = document.createElement("div");
+  tip.className = "tag-tip";
+  tip.dataset.for = badge.dataset.tag + badge.getBoundingClientRect().left;
+  tip.style.setProperty("--tc", t.color);
+  tip.innerHTML = `<b>${t.name}</b><span>${t.desc}</span>`;
+  document.body.appendChild(tip);
+  const r = badge.getBoundingClientRect();
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  const below = r.bottom + 6 + h < window.innerHeight;
+  tip.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2)) + "px";
+  tip.style.top = (below ? r.bottom + 6 : r.top - h - 6) + "px";
+}, true);
+
+// Free packs from tags open one after another, on the blind select screen.
+function openPendingPack() {
+  if (state.packOpen || !(state.pendingPacks || []).length) return false;
+  const id = state.pendingPacks[0];
+  state.pendingPacks = state.pendingPacks.slice(1);
+  openPack(id);
+  return true;
+}
+// Shop tags, used as the shop opens.
+function applyShopTags() {
+  if (useTag("voucher")) {
+    const v = rollVoucher();
+    if (v && !state.voucherStock.some((x) => x && x.id === v.id)) state.voucherStock = [...state.voucherStock, v];
+  }
+  if (useTag("dice")) state.freeReroll = true;
+  for (const t of TAG_DEFS.filter((x) => x.sleeve)) {
+    while (useTag(t.id)) {
+      let i = state.shopStock.findIndex((it) => it && it.type === "charm" && !it.sleeve && !it.tagged);
+      if (i < 0) {
+        const d = randomCharmDef(artifactPool());
+        if (!d) break;
+        state.shopStock = [{ ...d, type: "charm" }, ...state.shopStock];
+        i = 0;
+      }
+      state.shopStock = state.shopStock.map((it, k) => (k === i ? { ...withCharmSleeve(it, t.sleeve), price: 0, tagged: true } : it));
+    }
+  }
+  if (useTag("coupon")) {
+    state.shopStock = state.shopStock.map((it) => (it ? { ...it, price: 0, tagged: true } : it));
+    state.packStock = (state.packStock || []).map((pk) => (pk ? { ...pk, price: 0 } : pk));
+  }
+}
+
 /* ============================== DECKS ==============================
    Chosen when a run starts. Each changes a rule or two for the whole run.
    Their effects use the same types as vouchers, so they add into the same
@@ -2062,6 +2283,7 @@ const DECKS = [
   { id: "painted", name: "Painted Deck", desc: "+2 hand size, but −1 artifact slot", color: "#c0623a", glyph: "✎", effects: [{ type: "extraHandSize", value: 2 }] },
   { id: "balance", name: "Balance Deck", desc: "Chips and Mult are averaged on every hand. Blinds need twice the score", color: "#5a6fd8", glyph: "⚖", effects: [] },
   { id: "chaos", name: "Chaos Deck", desc: "Every card's rank and suit is random", color: "#8e3fa8", glyph: "✺", effects: [] },
+  { id: "twin", name: "Twin Deck", desc: "After you beat each Boss Blind, gain a Double Tag", color: "#b03a6a", glyph: "◑", effects: [] },
 ];
 function currentDeck() { return DECKS.find((d) => d.id === state.deckId) || DECKS[0]; }
 function deckIs(id) { return (state.deckId || "standard") === id; }
@@ -2523,6 +2745,51 @@ const CHARM_DEFS = [
     color: "#4A7FA8",
     type: "charm",
     effect: { type: "conductorUniqueRankMult", value: 1 }
+  },
+  {
+    id: "sodaBottle",
+    name: "Soda Bottle",
+    desc: "Sell this to get a free Double Tag",
+    price: 4,
+    color: "#5fb3d9",
+    type: "charm",
+    effect: { type: "sodaDoubleTag", value: 1 }
+  },
+  {
+    id: "rewind",
+    name: "Rewind",
+    desc: "X0.25 Mult for every blind you've skipped this run",
+    price: 6,
+    color: "#7E57C2",
+    type: "charm",
+    effect: { type: "rewindSkipX", value: 0.25 }
+  },
+  {
+    id: "hopscotch",
+    name: "Hopscotch",
+    desc: "Earn $4 every time you skip a blind",
+    price: 5,
+    color: "#E8743B",
+    type: "charm",
+    effect: { type: "hopscotchSkipMoney", value: 4 }
+  },
+  {
+    id: "passMark",
+    name: "Pass Mark",
+    desc: "Gains +3 Mult for good every time you skip a Booster Pack",
+    price: 6,
+    color: "#C23A30",
+    type: "charm",
+    effect: { type: "passMarkMult", value: 3 }
+  },
+  {
+    id: "tagAlong",
+    name: "Tag Along",
+    desc: "+4 Mult for every tag you're holding",
+    price: 5,
+    color: "#c04080",
+    type: "charm",
+    effect: { type: "tagAlongMult", value: 4 }
   },
   {
     id: "alchemist",
@@ -4205,7 +4472,7 @@ function Sidebar(preview, selectedCards) {
   sb.className = "sb-inner";
   outer.appendChild(sb);
   const po = state.packOpen;
-  const inShop = state.overlay === "shop" || !!po;
+  const inShop = state.overlay === "shop" || state.overlay === "select" || !!po;
   const round = (state.ante - 1) * 3 + state.blindIdx + 1;
 
   // what you're facing
@@ -4213,6 +4480,9 @@ function Sidebar(preview, selectedCards) {
   top.className = "sb-card sb-top";
   if (po) {
     top.innerHTML = `<div class="sb-kicker">Booster pack</div><div class="sb-title serif">${po.name}</div><div class="sb-sub">${(po.picks || 1) > 1 ? `${po.picks} picks left` : "Choose 1"}</div>`;
+  } else if (state.overlay === "select" && state.selectBlind) {
+    const sbl = state.selectBlind;
+    top.innerHTML = `<div class="sb-kicker">Ante ${sbl.ante}/${FINAL_ANTE}</div><div class="sb-title serif">Choose your blind</div><div class="sb-sub">Up next: ${sbl.idx === 2 && state.anteRoll ? state.anteRoll.boss.name : BLIND_TYPES[sbl.idx].label} · ${fmtBig(targetForAnte(sbl.ante, sbl.idx))}</div>`;
   } else if (inShop) {
     const nIdx = (state.blindIdx + 1) % 3, nAnte = state.blindIdx === 2 ? state.ante + 1 : state.ante;
     top.innerHTML = `<div class="sb-kicker">Ante ${state.ante}/${FINAL_ANTE} · Round ${round}</div><div class="sb-title serif">The Shop</div><div class="sb-sub">Next: ${BLIND_TYPES[nIdx].label} · ${fmtBig(targetForAnte(nAnte, nIdx))}</div>`;
@@ -4306,9 +4576,67 @@ function Sidebar(preview, selectedCards) {
   if (state.nextHandRetrigger) extras.push("Retrigger");
   if (state.nextHandBalance) extras.push("Balanced");
   grid.innerHTML = cell("Plays", state.playsLeft, "plays") + cell("Discards", state.discardsLeft, "discards") + cell("Money", "$" + state.money, "money") +
-    (extras.length ? `<div class="sb-extras">${extras.map((t) => `<span>${t}</span>`).join("")}</div>` : "");
+    (extras.length ? `<div class="sb-extras">${extras.map((t) => `<span>${t}</span>`).join("")}</div>` : "") +
+    ((state.tags || []).length ? `<div class="sb-tags">${state.tags.map((t) => tagBadge(t.id, "small")).join("")}</div>` : "");
   sb.appendChild(grid);
   return outer;
+}
+
+// Before each blind: the ante's three blinds side by side. The next one can
+// be played, or (Small and Big) skipped for the tag shown on it.
+function BlindSelect() {
+  const sb = state.selectBlind;
+  const roll = state.anteRoll;
+  const wrap = document.createElement("div");
+  wrap.className = "blind-select";
+  wrap.innerHTML = `<div class="bs-head"><div class="bs-title serif">Ante ${sb.ante}</div><div class="bs-sub">Play the next blind, or skip it for its tag</div></div>`;
+  const row = document.createElement("div");
+  row.className = "bs-row";
+  [0, 1, 2].forEach((i) => {
+    // the boss's own target rules (The Noose, The Bulwark...) apply to its preview
+    const realBoss = state.bossBlind;
+    if (i === 2) state.bossBlind = roll.boss;
+    const target = targetForAnte(sb.ante, i);
+    state.bossBlind = realBoss;
+    const skipped = (roll.skipped || []).includes(i);
+    const done = i < sb.idx && !skipped;
+    const current = i === sb.idx;
+    const boss = i === 2 ? roll.boss : null;
+    const card = document.createElement("div");
+    card.className = "bs-card bs-" + ["small", "big", "boss"][i] + (current ? " current" : "") + (i < sb.idx ? " past" : "");
+    card.innerHTML = `
+      <div class="bs-label">${BLIND_TYPES[i].label}</div>
+      <div class="bs-name serif">${boss ? boss.name : BLIND_TYPES[i].label}</div>
+      ${boss ? `<div class="bs-desc">${boss.desc}</div>` : ""}
+      <div class="bs-target">Score at least<b class="serif">${fmtBig(target)}</b></div>
+      <div class="bs-reward">Reward <b>$${3 + i}+</b></div>
+      ${skipped ? `<div class="bs-state skipped">Skipped</div>` : done ? `<div class="bs-state done">Beaten</div>` : ""}`;
+    if (current) {
+      const play = document.createElement("button");
+      play.className = "bs-play";
+      play.textContent = "Play";
+      play.onclick = playSelectedBlind;
+      card.appendChild(play);
+    }
+    if (i < 2) {
+      const tagId = roll.tags[i];
+      const t = TAG_BY_ID[tagId];
+      const skip = document.createElement(current ? "button" : "div");
+      skip.className = "bs-skip" + (current ? "" : " idle");
+      skip.innerHTML = `${tagBadge(tagId)}<span class="bs-skip-txt">${current ? "<small>Skip for</small>" : "<small>Skip reward</small>"}<b>${t.name}</b></span>`;
+      if (current) skip.onclick = skipBlind;
+      card.appendChild(skip);
+    }
+    row.appendChild(card);
+  });
+  wrap.appendChild(row);
+  if ((state.tags || []).length) {
+    const held = document.createElement("div");
+    held.className = "bs-held";
+    held.innerHTML = `<span>Your tags</span>` + state.tags.map((t) => tagBadge(t.id)).join("");
+    wrap.appendChild(held);
+  }
+  return wrap;
 }
 
 // The hand levels table: every poker hand's level, times played and score.
@@ -4659,6 +4987,9 @@ function charmProgress(c) {
       break;
     }
     case "ratchetBossMult": out.stat = `+${c.ratchetBonus || 0}`; break;
+    case "passMarkMult": out.stat = `+${c.passBonus || 0}`; break;
+    case "rewindSkipX": out.stat = `X${fmtNum(1 + (state.blindsSkippedRun || 0) * e.value)}`; break;
+    case "tagAlongMult": out.stat = `+${(state.tags || []).length * e.value}`; break;
     case "punchCardX": {
       const n = (state.handsPlayedRun || 0) % e.everyN;
       out.bar = { value: n, max: e.everyN, label: `${n} / ${e.everyN} hands — X${e.value} on the ${e.everyN}th`, ready: n === e.everyN - 1 };
@@ -5711,7 +6042,7 @@ function startGame(deckId) {
   state.playsLeft = 4 + getExtraPlays(state.items);
   state.discardsLeft = 4 + getExtraDiscards(state.items);
   state.money = 4 + PPHub.take('cash') + (PPHub.has('purse') ? 2 : 0) + PPHub.charm('cash');   // Pocket Money and the Starter Purse from the Press Play shop
-  { const sp = PPHub.take('spare'); if (sp) { state.playsLeft += sp; state.discardsLeft += sp; } state.discardsLeft += PPHub.charm('discard'); }   // Spare Hand: first round only
+  { const sp = PPHub.take('spare'); state.firstRoundBonus = { plays: sp || 0, discards: (sp || 0) + PPHub.charm('discard') }; }   // Spare Hand: first round only (added when it starts)
   if (PPHub.take('encore') && charmsUsed() < state.charmSlots && !state.charms.some((c) => c.id === "ppp_encore")) {
     state.charms.push({ id: "ppp_encore", name: "Encore", desc: "Press Play exclusive: +4 Mult, then x1.2 Mult on every hand", price: 10,
       color: "#8b5cff", type: "charm", effect: { type: "pppEncore", add: 4, x: 1.2 }, uid: Math.random().toString(36).slice(2, 9) });
@@ -5723,11 +6054,15 @@ function startGame(deckId) {
   if (deckIs("gilt")) state.money += 10;
   if (deckIs("mystic")) state.items = shuffleArray(ITEM_DEFS.filter((x) => !x.chart && !x.secret)).slice(0, 2).map((x) => ({ ...x, uid: newUid() }));
   state.usedCards = [];
-  dealInitialHand(d);
-  state.overlay = "playing";
-  state.dealAnim = true;
-  saveGame();
-  render();
+  state.tags = [];
+  state.blindsSkippedRun = 0;
+  state.anteRoll = null;
+  state.pendingPacks = [];
+  state.freeReroll = false;
+  state.deck = d;
+  state.hand = [];
+  state.selected = [];
+  openBlindSelect(1, 0);
 }
 
 function resetRun() {
@@ -5745,7 +6080,8 @@ function shuffleArray(arr) {
   return a;
 }
 
-function startNextBlind(nextAnte, nextBlindIdx) {
+// What carries over from the round that was just played (Larva, Azure, Molt).
+function endRoundCarryover() {
   // The round that just ended: state.hand is what was held at the end of it.
   // (Larva/Azure used to rely on a list taken at round start, before the new
   // hand was dealt, so a card sleeved or stamped mid-round never copied.)
@@ -5788,11 +6124,47 @@ function startNextBlind(nextAnte, nextBlindIdx) {
     });
     state.moltTargets = nextTargets;
   }
-  
+}
+
+// The ante's tags (one each for Small and Big) and its boss, rolled when the
+// ante starts so the blind select screen can show them.
+function rollAnte(ante) {
+  if (state.anteRoll && state.anteRoll.ante === ante) return;
+  state.anteRoll = { ante, tags: [rollTag(), rollTag()], boss: ante === FINAL_ANTE ? pickFinalBoss() : pickBossBlind(), skipped: [] };
+}
+function openBlindSelect(ante, idx) {
+  rollAnte(ante);
+  state.selectBlind = { ante, idx };
+  state.overlay = "select";
+  state.selectedPreBlind = true;
+  openPendingPack();
+  saveGame();
+  render();
+}
+function skipBlind() {
+  const sb = state.selectBlind;
+  if (!sb || sb.idx > 1 || state.packOpen) return;
+  const tag = state.anteRoll.tags[sb.idx];
+  state.anteRoll.skipped = [...(state.anteRoll.skipped || []), sb.idx];
+  state.blindsSkippedRun = (state.blindsSkippedRun || 0) + 1;
+  state.charms.filter((c) => c.effect.type === "hopscotchSkipMoney").forEach((c) => { state.money += c.effect.value; });
+  buzz(25);
+  grantTag(tag);
+  openBlindSelect(sb.ante, sb.idx + 1);
+}
+function playSelectedBlind() {
+  const sb = state.selectBlind;
+  if (!sb || state.packOpen) return;
+  state.selectBlind = null;
+  beginBlind(sb.ante, sb.idx);
+}
+
+function beginBlind(nextAnte, nextBlindIdx) {
   state.ante = nextAnte;
   state.blindIdx = nextBlindIdx;
   state.roundScore = 0;
-  state.bossBlind = nextBlindIdx === 2 ? (nextAnte === FINAL_ANTE ? pickFinalBoss() : pickBossBlind()) : null;
+  rollAnte(nextAnte);
+  state.bossBlind = nextBlindIdx === 2 ? state.anteRoll.boss : null;
   if (state.bossBlind && hasCharm("crownDisableBoss")) {
     const b = state.bossBlind;
     state.bossBlind = { id: b.id, name: b.name, isFinal: b.isFinal, disabled: true, desc: "Disabled by the Iron Crown" };
@@ -5815,8 +6187,15 @@ function startNextBlind(nextAnte, nextBlindIdx) {
   state.handsThisRound = 0;
   state.luckyRound = false;
   state.roundHandSizeBonus = 0;
+  while (useTag("juggle")) state.roundHandSizeBonus += 3;
   state.collectorUsedThisRound = false;
-  
+  // first round only: Press Play extras saved at the start of the run
+  if (state.firstRoundBonus) {
+    state.playsLeft += state.firstRoundBonus.plays || 0;
+    state.discardsLeft += state.firstRoundBonus.discards || 0;
+    state.firstRoundBonus = null;
+  }
+
   // Apply starting money bonus from Liquid Assets voucher
   state.money += voucherSum("startingMoneyBonus");
   
@@ -6172,6 +6551,9 @@ function scoreHand(selectedCards, { live = false } = {}) {
     const xMH = (n) => { if (!n || n === 1) return; mult *= n; push({ target: "charm", uid: c.uid, kind: "xmult", text: `X${fmtNum(n)} Mult` }); };
     switch (e.type) {
       case "plumMult": return addMH(e.value);
+      case "rewindSkipX": return xMH(1 + (state.blindsSkippedRun || 0) * e.value);
+      case "tagAlongMult": return addMH((state.tags || []).length * e.value);
+      case "passMarkMult": return addMH(c.passBonus || 0);
       case "ripePlumX": return xMH(e.value);
       case "chalkboardX": return xMH(held.every((h) => h.suit === "spades" || h.suit === "clubs") ? e.value : 1);
       case "leechX": return xMH(1 + (c.leechBonus || 0));
@@ -6607,7 +6989,11 @@ function finishPlay(finalScore, newPlaysLeft) {
         state.overlay = (state.blindIdx === 2 && state.ante === FINAL_ANTE) ? "victory" : "cleared";
         PPHub.event('blind');
         PPHub.best('ante', state.ante);
-        if (state.blindIdx === 2) PPHub.event('boss');
+        if (state.blindIdx === 2) {
+          PPHub.event('boss');
+          while (useTag("investment")) state.money += 25;
+          if (deckIs("twin")) grantTag("double");
+        }
         if (state.overlay === "victory") PPHub.event('win');
         if (state.blindIdx === 2) {
           // Boss Blind cleared - Ratchet's bonus is permanent, so it accumulates
@@ -6792,6 +7178,7 @@ function goToShop() {
     return { ...PACK_DEFS.find((p) => p.id === id) };
   });
 
+  applyShopTags();
   state.overlay = "shop";
   saveGame();
   render();
@@ -6888,6 +7275,7 @@ function takePackChoice(index) {
   } else {
     state.packOpen = null;
     if (note) state.packToast = { text: note, at: Date.now() };
+    if (state.overlay === "select") openPendingPack();
   }
   saveGame();
   render();
@@ -6962,6 +7350,9 @@ function usePackChoiceAnimated(index) {
 function skipPack() {
   if (PACK_BUSY) return;
   state.packOpen = null;
+  // Pass Mark grows every time a pack is skipped
+  state.charms = state.charms.map((c) => (c.effect.type === "passMarkMult" ? { ...c, passBonus: (c.passBonus || 0) + c.effect.value } : c));
+  if (state.overlay === "select") openPendingPack();
   saveGame();
   render();
 }
@@ -7276,10 +7667,12 @@ function PackOverlay() {
 // shop visit doubles the cost of the next one; it resets back to base the
 // next time the player enters a shop.
 function rerollShop() {
-  if (state.money < state.rerollCost) return;
-  state.money -= state.rerollCost;
+  const free = !!state.freeReroll;
+  if (!free && state.money < state.rerollCost) return;
+  if (free) state.freeReroll = false;
+  else state.money -= state.rerollCost;
   state.shopStock = generateShopStock(6 + voucherSum("shopSizeBonus"));
-  state.rerollCost = state.rerollCost * 2;
+  if (!free) state.rerollCost = state.rerollCost * 2;
   state.shopDetail = null;
   saveGame();
   render();
@@ -7356,6 +7749,7 @@ function sellCharm(uid) {
   
   state.lastSoldCharm = { ...charm };
   noteSold();
+  if (charm.effect.type === "sodaDoubleTag") grantTag("double");
   // Check if this charm is Specter and if it has played 3+ blinds
   if (charm.effect.type === "specterDuplicate" && (charm.effect.blindCounter || 0) >= 3) {
     // Duplicate a random charm from current inventory (excluding the one being sold)
@@ -7973,7 +8367,8 @@ function goNextBlind() {
     nextBlindIdx = 0;
     nextAnte = state.ante + 1;
   }
-  startNextBlind(nextAnte, nextBlindIdx);
+  endRoundCarryover();
+  openBlindSelect(nextAnte, nextBlindIdx);
 }
 
 function setSortMode(mode) {
@@ -8660,6 +9055,16 @@ function render() {
     app.appendChild(activation);
   }
 
+  // ===== BLIND SELECT =====
+  if (state.overlay === "select" && state.selectBlind) app.appendChild(BlindSelect());
+  if (state.tagToast && Date.now() - state.tagToast.at < 2400) {
+    const t = document.createElement("div");
+    t.className = "pack-toast tag-toast";
+    t.style.animationDelay = -(Date.now() - state.tagToast.at) + "ms";
+    t.textContent = state.tagToast.text;
+    app.appendChild(t);
+  }
+
   // ===== BOOSTER PACK (pick one) =====
   if (state.packOpen) app.appendChild(PackOverlay());
   if (state.packToast && Date.now() - state.packToast.at < 2400) {
@@ -8692,6 +9097,7 @@ function render() {
   if (hadPack) { const po = app.querySelector(".pack-overlay"); if (po) po.classList.add("stay"); }
   if (hadPause) app.querySelectorAll(".pause-back").forEach((el) => el.classList.add("stay"));
   syncLoopingAnimations();
+  placeBlindSelect();
   fitShop();
   fitSidebar();
   fitBoxText();
@@ -8706,6 +9112,15 @@ function syncLoopingAnimations() {
   for (const a of document.getAnimations()) {
     try { if (a.effect && a.effect.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0; } catch (e) {}
   }
+}
+
+// The blind select screen fills the play area only, so the info panel and
+// the shelf stay in view above (or beside) it.
+function placeBlindSelect() {
+  const bs = document.querySelector(".blind-select");
+  const shelf = document.querySelector("#app > .gear-shelf");
+  if (!bs || !shelf) return;
+  bs.style.top = Math.round(shelf.getBoundingClientRect().bottom + 4) + "px";
 }
 
 // The sidebar's contents are scaled down as a whole until they fit the
@@ -9229,8 +9644,8 @@ function ShopOverlay() {
   nextBtn.onclick = leaveShop;
   const rerollBtn = document.createElement("button");
   rerollBtn.className = "bbtn bbtn-green";
-  rerollBtn.disabled = state.money < state.rerollCost;
-  rerollBtn.innerHTML = `<span class="bbtn-small">Reroll</span><span class="bbtn-big">$${state.rerollCost}</span>`;
+  rerollBtn.disabled = !state.freeReroll && state.money < state.rerollCost;
+  rerollBtn.innerHTML = `<span class="bbtn-small">Reroll</span><span class="bbtn-big">${state.freeReroll ? "Free" : "$" + state.rerollCost}</span>`;
   rerollBtn.onclick = rerollShop;
   actions.append(nextBtn, rerollBtn);
   top.appendChild(actions);
