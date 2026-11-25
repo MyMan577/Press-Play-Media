@@ -10,7 +10,7 @@
  *    themselves.
  *  - NERVE: every flinch gives him a point of Nerve (up to 3, the pips over his head), so does a successful Duck & Cover
  *    and every 6 hits he lands.
- *  - POCKET GADGETS (K / 🎒 + a direction) spend Nerve. They replace the power-up forms: he doesn't wait for crates,
+ *  - POCKET GADGETS (K + a direction, or tap / swipe the 🎒 button) spend Nerve. They replace the power-up forms: he doesn't wait for crates,
  *    he pulls things out of his overalls in a panic.
  *      🎈 K            BALLOON (1 Nerve): floats him up out of trouble for a few seconds; foes that touch it are bonked.
  *      📯 K + ← / →    AIR HORN (2 Nerve): a deafening blast in front: pushes everyone far back and leaves them dazed.
@@ -327,7 +327,7 @@
     if (S.nerve < G.cost) { FK.msg('🎒 ' + G.icon + ' ' + G.name + ' needs ' + G.cost + ' Nerve (you have ' + S.nerve + ')'); FK.tone(200, { dur: 0.1, vol: 0.08, type: 'square' }); return; }
     if (S.seq && which !== 'balloon') return;
     S.nerve -= G.cost;
-    const f = k.right ? 1 : k.left ? -1 : FK.face(p);
+    const f = k.right ? 1 : k.left ? -1 : FK.face(p);   // (a swipe on 🎒 sets the facing first)
     FK.label(S, p, G.icon + ' ' + G.name + '!', which === 'brave' ? C_GOLD : C_NERVE, true); FK.msg(G.icon + ' ' + G.name + '!');
     if (which === 'balloon') {
       S.balloon = { t: 0, life: 3, ph: Math.random() * 6, cool: new Map() }; p.vy = Math.min(p.vy, -4); p.onGround = false;
@@ -651,8 +651,24 @@
       btn = document.createElement('button'); btn.id = 'lbGadgetBtn';
       btn.style.cssText = 'position:absolute;right:16px;top:136px;z-index:100;width:54px;height:54px;border-radius:50%;display:none;flex-direction:column;align-items:center;justify-content:center;font-size:20px;line-height:1;color:#fff;border:2px solid ' + C_NERVE + ';background:radial-gradient(circle at 35% 30%,rgba(60,196,87,.9),rgba(20,60,30,.92));box-shadow:0 3px 10px rgba(0,0,0,.45);touch-action:none;user-select:none;-webkit-user-select:none';
       btn.innerHTML = '🎒<small style="font-size:8px;font-weight:800;margin-top:2px;letter-spacing:.04em">○○○</small>';
-      const go = ev => { ev.preventDefault(); ev.stopPropagation(); pressGadget(); };
-      btn.addEventListener('touchstart', go, { passive: false }); btn.addEventListener('mousedown', go);
+      // tap = Balloon; swipe ↑ = Brave Heart, ↓ = Spring Trap, ← / → = Air Horn that way. The button shows the pick while the finger is down.
+      const sw = { on: false, x0: 0, y0: 0, pick: 'balloon', f: 0 };
+      const ICON = { balloon: '🎈', brave: '💛', trap: '🪤', horn: '📯' };
+      const pickOf = (dx, dy) => { if (dx * dx + dy * dy < 22 * 22) return ['balloon', 0]; return Math.abs(dy) > Math.abs(dx) ? [dy < 0 ? 'brave' : 'trap', 0] : ['horn', dx < 0 ? -1 : 1]; };
+      const show = w => { const ic = btn.firstChild; if (ic && ic.nodeType === 3) ic.textContent = w ? ICON[w] : '🎒'; };
+      const down = (x, y) => { sw.on = true; sw.x0 = x; sw.y0 = y; sw.pick = 'balloon'; sw.f = 0; show('balloon'); };
+      const move = (x, y) => { if (!sw.on) return; const r = pickOf(x - sw.x0, y - sw.y0); sw.pick = r[0]; sw.f = r[1]; show(sw.pick); };
+      const up = () => {
+        if (!sw.on) return; sw.on = false; show(null);
+        const S = myState(), p = window._gamePlayer; if (!S || !p || (window._gameMode && window._gameMode() !== 'play')) return;
+        if (sw.f) { p.dashDir = sw.f; p.lastMoveDir = sw.f; }
+        useGadget(sw.pick, S, p);
+      };
+      btn.addEventListener('touchstart', ev => { ev.preventDefault(); ev.stopPropagation(); const t = ev.changedTouches[0]; down(t.clientX, t.clientY); }, { passive: false });
+      btn.addEventListener('touchmove', ev => { ev.preventDefault(); const t = ev.changedTouches[0]; move(t.clientX, t.clientY); }, { passive: false });
+      btn.addEventListener('touchend', ev => { ev.preventDefault(); up(); }, { passive: false });
+      btn.addEventListener('touchcancel', () => { sw.on = false; show(null); });
+      btn.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); down(ev.clientX, ev.clientY); const mv = e2 => move(e2.clientX, e2.clientY), mu = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', mu); up(); }; window.addEventListener('mousemove', mv); window.addEventListener('mouseup', mu); });
       document.body.appendChild(btn);
     }
     const on = window.selectedCharacter === ID && (!window._gameMode || window._gameMode() === 'play');
