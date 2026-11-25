@@ -8,11 +8,16 @@
  * presses Play, both play it.
  * Each phone keeps its own copy of the course (crumbling blocks, enemies and
  * so on are per phone); only the players are shared.
+ * Everything your character draws (body, pose, slashes, swings, charge rings,
+ * projectiles, helpers, effects) is recorded by netdraw.js a few times a
+ * second and replayed on the other phone, moved to where you are now.
  */
 (function(){
   'use strict';
   var G = function(){ return window.__obby; };
-  var SEND_MS = 50;            // own position, 20 times a second
+  var SEND_MS = 50;            // own position, 20 times a second (and with each drawing recording, about 25 a second)
+  var REC = function(){ return window.__ppRec; };
+  var remoteRec = null, remoteRecAt = 0;   // the other phone's latest drawing recording (netdraw.js)
   var CHUNK = 48 * 1024;       // courses go over in pieces
 
   var conn = null, role = null;
@@ -84,9 +89,13 @@
   var remoteChar = null, smCourse = null;
   var smNet = {
     get role(){ return role; },
-    remotePos: function(){ return remote ? { x: blendX || remote.x, y: blendY || remote.y, w: remote.w, h: remote.h, char: remote.char, vx: remote.vx, vy: remote.vy, onGround: remote.onGround,
+    remotePos: function(){ return remote ? { x: blendX || remote.x, y: blendY || remote.y, w: remote.w, h: remote.h, char: remote.char, vx: remote.vx, vy: remote.vy, onGround: remote.onGround, hd: remote.hd,
       em: remote.em && remote.em.id ? { id: remote.em.id, t: remote.em.t + (performance.now() - (remote._at || performance.now())) / 1000 } : null, fk: remote.fk || null } : null; },
-    sendHit: function(pct, ix, iy, fromX, k){ if (conn) conn.send({ t: 'smHit', pct: pct, ix: ix, iy: iy, fromX: fromX, k: k }); },
+    sendHit: function(pct, ix, iy, fromX, k, stun){ if (conn) conn.send({ t: 'smHit', pct: pct, ix: ix, iy: iy, fromX: fromX, k: k, stun: stun > 0 ? Math.round(stun * 100) / 100 : undefined }); },
+    // one of your moves holds them (a grab, a pull, a lift): where to, in the course's tiles
+    sendHold: function(x, y){ if (conn) conn.send({ t: 'smHold', x: r2(x), y: r2(y) }); },
+    // your poison / burn / beam ticks on them
+    sendChip: function(d){ if (conn && d > 0) conn.send({ t: 'smChip', d: Math.round(d * 1000) / 1000 }); },
     sendKO: function(){ var S = SMK(); if (conn && S) conn.send({ t: 'smKO', stocks: S.me.stocks }); },
     sendOver: function(w){ if (conn && role === 'host') conn.send({ t: 'smOver', w: w === 'me' ? 'foe' : w === 'foe' ? 'me' : 'draw' }); },
     sendStart: function(cfg){ if (conn && role === 'host') conn.send({ t: 'smStart', stage: cfg.stage, stocks: cfg.stocks, time: cfg.time, char: G().char }); },
@@ -128,6 +137,7 @@
   // ---------- session ----------
   function start(c, r){
     conn = c; role = r; remote = null; prev = null; remoteWon = false; lastCourseKey = '';
+    remoteRec = null; if (REC()) REC().reset();
     chip.style.display = 'flex';
     status(role === 'host' ? '🤝 Together · sending your course' : '🤝 Together · getting the course');
     c.on('data', onMessage);
@@ -149,7 +159,7 @@
   }
 
   function leave(byMe){
-    var c = conn; conn = null; remote = null; prev = null; incoming = null; shared = null; pendingEd = []; friendMark = null;
+    var c = conn; conn = null; remote = null; prev = null; incoming = null; shared = null; pendingEd = []; friendMark = null; remoteRec = null;
     chip.style.display = 'none';
     if (byMe && c) { try { c.send({ t: 'smQuit' }); } catch(e){} try { c.close(); } catch(e){} }
     var g = G();
@@ -197,6 +207,7 @@
     if (m.t === 's') {
       prev = remote ? { x: shown().x, y: shown().y } : null;
       remote = m; m._at = performance.now();
+      if (m.rec) { var R0 = REC(); if (R0) R0.receive(m.rec); remoteRec = m.rec; remoteRecAt = m._at; m.rec = null; }
       var now = performance.now();
       if (lastAt) gap = Math.min(200, Math.max(20, gap * 0.85 + (now - lastAt) * 0.15));
       lastAt = now;
@@ -251,7 +262,9 @@
       status('🥊 Smash · vs Host');
       return;
     }
-    if (m.t === 'smHit' && S && S.active) { S.hitMe({ pct: m.pct, ix: m.ix, iy: m.iy, fromX: m.fromX, k: m.k }); return; }
+    if (m.t === 'smHit' && S && S.active) { S.hitMe({ pct: m.pct, ix: m.ix, iy: m.iy, fromX: m.fromX, k: m.k, stun: m.stun }); return; }
+    if (m.t === 'smHold' && S && S.active && S.heldByRemote) { S.heldByRemote(m.x, m.y); return; }
+    if (m.t === 'smChip' && S && S.active && S.chipMe) { S.chipMe(m.d); return; }
     if (m.t === 'smKO' && S && S.active) { S.koFromRemote(m.stocks); if (m.stocks <= 0 && S.remoteOver) S.remoteOver('me'); return; }
     if (m.t === 'smOver' && S && S.active && role === 'guest') { if (S.remoteOver) S.remoteOver(m.w); return; }
     if (m.t === 'smQuit') { leave(false); return; }
@@ -320,14 +333,17 @@
       lastMode = g.mode;
     } else if (role === 'guest') lastMode = g.mode;
 
-    if (now - lastSend >= SEND_MS) {
+    // a drawing recording from the last frame goes with the position; with none (building, menus) every SEND_MS
+    var rec = REC() ? REC().take() : null;
+    if (rec || now - lastSend >= SEND_MS) {
       lastSend = now;
-      conn.send({ t: 's', x: r2(p.x), y: r2(p.y), vx: r2(p.vx), vy: r2(p.vy), w: p.w, h: p.h,
+      var Sm = SMK(), held = kind === 'smash' && Sm && Sm.active && Sm.meFree ? (Sm.meFree() ? 0 : 1) : undefined;
+      conn.send({ t: 's', rec: rec || undefined, hd: held, x: r2(p.x), y: r2(p.y), vx: r2(p.vx), vy: r2(p.vy), w: p.w, h: p.h,
         onGround: p.onGround, dashDir: p.dashDir, isDashing: p.isDashing, gravityFlipped: p.gravityFlipped,
         isWallSliding: p.isWallSliding, onWall: p.onWall, wallSide: p.wallSide, slashTimer: r2(p.slashTimer || 0),
         swordMode: p.swordMode, char: g.char, mode: g.mode, won: !!g.won,
         pct: kind === 'smash' && SMK() && SMK().active ? Math.round(SMK().me.pct * 10) / 10 : undefined, stk: kind === 'smash' && SMK() && SMK().active ? SMK().me.stocks : undefined,
-        em: window.PPEmote ? window.PPEmote.netState() : null, fk: window.FKit && window.FKit.netState ? window.FKit.netState() : undefined });
+        em: window.PPEmote ? window.PPEmote.netState() : null, fk: !rec && window.FKit && window.FKit.netState ? window.FKit.netState() : undefined });
     }
 
     // building together: send this phone's changes, put in any that waited while it was playing
@@ -343,15 +359,28 @@
     var fx = prev ? prev.x : remote.x, fy = prev ? prev.y : remote.y;
     if (Math.abs(remote.x - fx) > 6 || Math.abs(remote.y - fy) > 6) { fx = remote.x; fy = remote.y; } // respawned: jump, don't slide
     blendX = fx + (remote.x - fx) * a; blendY = fy + (remote.y - fy) * a;
+    var label = role === 'host' ? 'Friend' : 'Host';
+    // everything they drew, as their phone drew it, moved to where they are now
+    var R = REC();
+    if (R && remoteRec && now - remoteRecAt < 400 && R.compatible(remoteRec)) {
+      var T = window._TILE || 40;
+      if (R.replay(g.ctx, remoteRec, g.cam, (blendX - remoteRec.px) * T, (blendY - remoteRec.py) * T)) { nameTag(g, blendX, blendY, remote.w, label); return; }
+    }
     var s = {}; for (var k in remote) s[k] = remote[k];
     s.x = blendX; s.y = blendY;
     // their emote, played forward from when it was sent
     s.em = remote.em && remote.em.id ? { id: remote.em.id, t: remote.em.t + (now - (remote._at || now)) / 1000 } : null;
-    g.drawAs(s, role === 'host' ? 'Friend' : 'Host');
+    g.drawAs(s, label);
     // their fighter's moves: projectiles, kites, items, hit sparks (fighter-kit fighters send a copy of them)
     if (window.FKit && FKit.drawRemote && s.fk && s.fk.w) FKit.drawRemote(s.char, s.fk.w, { x: s.x, y: s.y, w: s.w, h: s.h, dashDir: s.dashDir, onGround: s.onGround }, g.ctx, g.cam);
   }
   function r2(v){ return Math.round((v || 0) * 100) / 100; }
+  function nameTag(g, x, y, w, label){
+    var T = window._TILE || 40, ctx = g.ctx, tx = (x + (w || 0.9) / 2) * T - g.cam.x, ty = y * T - g.cam.y - 14;
+    ctx.save(); ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.strokeText(label, tx, ty);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, tx, ty); ctx.restore();
+  }
 
   // role while linked ('host' or 'guest'), so the course autosave can leave a friend's course alone
   window.__obbyNet = { frame: frame, get role(){ return conn ? role : null; }, smash: function(){ openLink('smash'); } };
