@@ -10,6 +10,9 @@
  * THROWS (while holding someone, S + a direction; nothing = forward after a moment):
  *  forward GRIZZLY TOSS (spin and hurl), back BACKBREAKER SUPLEX, up MOUNTAIN PILEDRIVER (leap, flip, drive them
  *  into the floor), down TRIPLE SLAM (front, back, front).
+ * CHARGED (hold S to full), ground / air:
+ *  neutral BEAR TRAP (huge-reach grab, giant swing) / GRIZZLY ROLL, side STAMPEDE (scoops foes into a wall) / AIR RAID,
+ *  up SKY-HIGH TOSS (heave up, leap, clap) / BEAR CLIMB, down EARTHSHAKER (three quakes) / CRATER MAKER (bigger the higher).
  */
 (function () {
   'use strict';
@@ -85,6 +88,105 @@
 
   // ---------------------------------------------------------------- the choreography, run every frame
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full) ----
+    giant(p, dt, S, q) {   // BEAR TRAP: a lunging grab with huge reach; whoever it catches is swung round three times and hurled
+      const f = q.f; p.vx = 0;
+      if (!q.e) {
+        S.target = q.t < 0.1 ? PO.lWind : PO.reach; S.rate = 40;
+        if (q.t >= 0.1 && q.t < 0.25) { const e = catchable(p, f, 3.2); if (e) { q.e = e; q.t0 = q.t; FK.smack(true); FK.label(S, p, 'GOTCHA!', C_GOLD, true); } else FK.moveX(p, f * 8 * dt); }
+        if (q.t > 0.5) S.seq = null;
+        return;
+      }
+      const e = q.e; if (e.dead) { S.rot = 0; S.seq = null; return; }
+      const u = (q.t - q.t0) / 1.0, a = u * Math.PI * 6;
+      S.target = PO.spinOut; S.rate = 50; p._grabInv = 0.1;
+      holdFoe(e, pcx(p) + Math.cos(a) * f * 1.5, pcy(p) - 0.2 + Math.sin(a) * 0.3);
+      p.dashDir = Math.cos(a) >= 0 ? f : -f;
+      if (Math.floor(u * 6) !== q.w) { q.w = Math.floor(u * 6); FK.whoosh(false, true); }
+      for (const o of FK.within(ex(e), ey(e), 1.1)) if (o !== e && !q.hits.has(o)) { q.hits.add(o); FK.hit(S, o, 3, { kx: Math.sign(ex(o) - pcx(p)) * 9, ky: -7, stun: 0.4, c: C_FX, big: true }); }
+      if (u >= 1) { letGo(e); p.dashDir = f; FK.hit(S, e, 8, { kx: f * 20, ky: -10, stun: 0.8, c: C_GOLD, big: true, stop: 0.14, shake: 12 }); FK.thud(true); S.seq = null; }
+    },
+    stampede(p, dt, S, q) {   // STAMPEDE: an armored charge that scoops up everything in front and drives it into the next wall
+      const f = q.f, D = 0.8;
+      if (q.t < 0.18) { S.target = PO.lWind; S.rate = 30; p.vx = 0; p._armorT = 0.15; return; }
+      S.target = PO.lRun; S.rate = 40; p._armorT = 0.1; S.selfMove = true;
+      if (!q.c) { q.c = new Set(); FK.whoosh(false, true); }
+      const stop = !FK.moveX(p, f * 16 * dt); p.vx = f * 5;
+      if (Math.floor(q.t * 12) !== q.d) { q.d = Math.floor(q.t * 12); FK.thud(false); S.fx.push({ k: 'dust', x: pcx(p) - f * 0.4, y: p.y + p.h, vx: -f * 2, t: 0, life: 0.5 }); }
+      for (const e of catchable(p, f, 1.6) ? FK.foes().filter(e => { const al = (ex(e) - pcx(p)) * f; return al > -0.2 && al < 1.6 && Math.abs(ey(e) - pcy(p)) < 1.3; }) : []) q.c.add(e);
+      let i = 0; for (const e of q.c) if (!e.dead) holdFoe(e, pcx(p) + f * (1.0 + 0.35 * i++), pcy(p) - 0.1);
+      if (stop || q.t > D) {
+        const wall = stop;
+        for (const e of q.c) if (!e.dead) { letGo(e); FK.hit(S, e, wall ? 8 : 5, { kx: f * (wall ? 4 : 15), ky: wall ? -14 : -8, stun: 0.7, c: C_GOLD, big: true, stop: 0.12 }); }
+        impact(S, pcx(p) + f * 1.2, p.y + p.h, wall ? 2.6 : 1.6, wall); if (wall && q.c.size) FK.label(S, p, 'WALL CRUSH!', C_GOLD, true);
+        S.seq = null;
+      }
+    },
+    skyhigh(p, dt, S, q) {   // SKY-HIGH TOSS: grabs, heaves them straight up, leaps after them and claps them out of the sky
+      const f = q.f;
+      if (!q.e) {
+        S.target = PO.reach; S.rate = 40; p.vx = 0; if (p.vy < 0) p.vy = 0;
+        if (q.t > 0.08 && q.t < 0.25) { const e = catchable(p, f, 1.9); if (e) { q.e = e; q.t0 = q.t; FK.smack(); } }
+        if (q.t > 0.45) S.seq = null;
+        return;
+      }
+      const e = q.e, u = q.t - q.t0;
+      if (u < 0.2) { S.target = PO.squatUp; S.rate = 40; holdFoe(e, pcx(p), p.y - 0.6); return; }
+      if (!q.up) { q.up = 1; letGo(e); FK.hit(S, e, 3, { kx: 0, ky: -24, stun: 0.9, c: C_FX, big: true }); S.target = PO.lift; FK.whoosh(true, true); }
+      if (u > 0.35 && !q.jump) { q.jump = 1; p.vy = -19; p.onGround = false; S.airUp = true; }
+      if (q.jump) { S.target = PO.clutch; S.rate = 40; if (!q.clap && !e.dead && Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)) < 1.8) { q.clap = 1; FK.hit(S, e, 7, { kx: f * 12, ky: -6, stun: 0.7, c: C_GOLD, big: true, stop: 0.14, shake: 12 }); FK.label(S, p, 'BEAR CLAP!', C_GOLD, true); FK.thud(true); S.seq = null; } }
+      if (u > 1.1) S.seq = null;
+    },
+    shaker(p, dt, S, q) {   // EARTHSHAKER: three pounds of both fists, each quake wider; foes on the floor are bounced up helpless
+      p.vx = 0; p._armorT = 0.1;
+      const i = Math.floor(q.t / 0.28), u = (q.t % 0.28) / 0.28;
+      S.target = u < 0.55 ? PO.squatUp : PO.land; S.rate = 50;
+      if (u >= 0.55 && q.n !== i && i < 3) {
+        q.n = i; const R = 2.2 + i * 1.2;
+        impact(S, pcx(p), p.y + p.h, R, i === 2);
+        for (const e of FK.within(pcx(p), p.y + p.h - 0.4, R)) if (Math.abs(e.y + (e.h || 0.9) - (p.y + p.h)) < 0.8) FK.hit(S, e, i === 2 ? 4 : 2, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * (i === 2 ? 8 : 1), ky: i === 2 ? -15 : -8, stun: 0.6, c: C_FX, big: i === 2 });
+      }
+      if (q.t > 0.9) S.seq = null;
+    },
+    ball(p, dt, S, q) {   // GRIZZLY ROLL (air): curls into a huge furry ball and bowls through the air, bouncing off the floor once
+      const f = q.f; S.target = PO.tuck; S.rate = 40; S.rot = (S.rot || 0) + f * dt * 18; p._armorT = 0.1; S.selfMove = true;
+      if (!FK.moveX(p, f * 13 * dt)) q.t = 9;
+      p.vx = f * 4; if (p.onGround && !q.b) { q.b = 1; p.vy = -11; p.onGround = false; FK.thud(false); }
+      for (const e of FK.within(pcx(p), pcy(p), 1.3)) if (!q.hits.has(e)) { q.hits.add(e); FK.hit(S, e, 5, { kx: f * 12, ky: -8, stun: 0.5, c: C_FX, big: true, stop: 0.07 }); FK.thud(false); }
+      if (q.t > 0.9) { S.rot = 0; S.seq = null; }
+    },
+    airraid(p, dt, S, q) {   // AIR RAID (air): a long flying bear hug; whoever it catches is carried down in a spin and slammed
+      const f = q.f;
+      if (!q.e) {
+        S.target = PO.tackle; S.rate = 50; S.selfMove = true; FK.moveX(p, f * 17 * dt); p.vx = f * 4; p.vy = Math.min(p.vy, 2);
+        const e = catchable(p, f, 1.5); if (e) { q.e = e; FK.smack(true); FK.label(S, p, 'GOTCHA!', C_GOLD); }
+        if (q.t > 0.45) S.seq = null;
+        return;
+      }
+      const e = q.e; if (e.dead) { S.rot = 0; S.seq = null; return; }
+      S.target = PO.hug; S.rate = 40; S.rot = (S.rot || 0) + f * dt * 16; p.vy = 22; p.vx = 0; p._grabInv = 0.1;
+      holdFoe(e, pcx(p), p.y + p.h + 0.2);
+      if (p.onGround || q.t > 1.6) { letGo(e); S.rot = 0; FK.hit(S, e, 8, { kx: f * 5, ky: -15, stun: 0.8, c: C_GOLD, big: true, stop: 0.14, shake: 12 }); impact(S, pcx(p), p.y + p.h, 2.4, true); S.seq = null; }
+    },
+    climb(p, dt, S, q) {   // BEAR CLIMB (air): two mighty pulls up the air, armored, clawing whatever is above
+      const i = Math.floor(q.t / 0.3); S.target = (q.t % 0.3) < 0.12 ? PO.jump : PO.clutch; S.rate = 50; p._armorT = 0.1;
+      if (i !== q.n && i < 2) { q.n = i; p.vy = -15; p.onGround = false; q.hits.clear(); FK.whoosh(true, true); FK.tone(140, { dur: 0.15, vol: 0.2, type: 'sawtooth' }); }
+      for (const e of FK.within(pcx(p), p.y - 0.3, 1.5)) if (!q.hits.has(e)) { q.hits.add(e); FK.hit(S, e, 3, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 3, ky: -14, stun: 0.5, c: C_FX, big: true }); }
+      if (q.t > 0.65) S.seq = null;
+    },
+    crater(p, dt, S, q) {   // CRATER MAKER (air): an armored belly drop; the further he falls, the bigger the crater
+      S.target = PO.splash; S.rate = 30; p._armorT = 0.1;
+      if (q.t < 0.15) { p.vy = -3; q.y0 = p.y; return; }
+      p.vy = 30; p.vx = 0;
+      for (const e of FK.within(pcx(p), pcy(p) + 0.3, 1.4)) if (!q.hits.has(e)) { q.hits.add(e); FK.hit(S, e, 5, { kx: 0, ky: 18, stun: 0.6, c: C_FX, big: true, stop: 0.08 }); }
+      if (p.onGround || q.t > 2) {
+        const fall = Math.max(0, p.y - q.y0), R = Math.min(5, 2 + fall * 0.35), dmg = Math.min(10, 3 + fall * 0.6);
+        impact(S, pcx(p), p.y + p.h, R, true);
+        for (const e of FK.within(pcx(p), p.y + p.h - 0.4, R)) if (!q.hits.has(e)) FK.hit(S, e, dmg, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 9, ky: -14, stun: 0.6, c: C_GOLD, big: true });
+        if (fall > 5) FK.label(S, p, 'CRATER MAKER!', C_GOLD, true);
+        S.land = 0.3; S.seq = null;
+      }
+    },
     // reaching out for the BEAR HUG
     reach(p, dt, S, q) {
       p.vx = 0;
@@ -375,6 +477,12 @@
     fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, rot: 0, run: 0, land: 0, wasGround: true, airUp: false, craters: [] }),
     busy: S => !!S.seq,
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Sky Clutch comes back when you land'; return null; },
+    charged: {
+      neutral: (p, f, S, air) => { startSeq(S, air ? 'ball' : 'giant', { f }); return air ? 'GRIZZLY ROLL' : 'BEAR TRAP'; },
+      side: (p, f, S, air) => { startSeq(S, air ? 'airraid' : 'stampede', { f }); return air ? 'AIR RAID' : 'STAMPEDE'; },
+      up: (p, f, S, air) => { S.airUp = true; startSeq(S, air ? 'climb' : 'skyhigh', { f }); return air ? 'BEAR CLIMB' : 'SKY-HIGH TOSS'; },
+      down: (p, f, S, air) => { startSeq(S, air ? 'crater' : 'shaker', { f }); return air ? 'CRATER MAKER' : 'EARTHSHAKER'; },
+    },
     // while holding someone, S + a direction picks the throw
     pressS(p, S, k) {
       if (!S.seq) return false;
@@ -399,6 +507,7 @@
       if (p.hitstun > 0 && S.seq && !(p._grabInv > 0)) { if (S.seq.e) letGo(S.seq.e); S.seq = null; S.rot = 0; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
+      if (!S.seq && S.rot) S.rot = 0;
       if (!S.seq) {
         if (S.rot) S.rot = 0;
         // locomotion: a heavy stomping run, a crouched breathing stance, tucked jumps, landing squash

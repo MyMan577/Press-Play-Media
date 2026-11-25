@@ -11,6 +11,9 @@
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge)
  *  Ground: neutral RIBBON LASH, side KITE TOSS, up GUST CURTSY (a wind column launcher), down PETAL GUARD (a counter).
  *  Air:    neutral RIBBON TWIRL, side KITE DASH, up KITE LIFT (recovery), down CROWN DIVE.
+ * CHARGED (hold S to full), ground / air:
+ *  neutral ROYAL DECREE (a crown slams the nearest foe) / TIARA FLASH (dazzles everyone close), side KITE SQUADRON / STRING SWING,
+ *  up SKY PALACE (a cloud platform that rains petals) / CAPE GLIDER, down PETAL STORM / FALLING STAR.
  */
 (function () {
   'use strict';
@@ -47,6 +50,66 @@
   function hand(p, q, f) { const u = p.h / U, K = FK.skel(P, q, 0, 0, u), h = K.aF[2]; return [pcx(p) + f * h[0], p.y + p.h + h[1]]; }
 
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full) ----
+    decree(p, dt, S, q) {   // ROYAL DECREE: wand raised; a golden crown of light comes down on the nearest foe and slams them
+      S.target = PO.rise; S.rate = 40; p.vx = 0;
+      if (!q.done && q.t > 0.12) {
+        q.done = 1; let best = null, bd = 7; for (const e of FK.foes()) { const d = Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)); if (d < bd) { bd = d; best = e; } }
+        const x = best ? ex(best) : pcx(p) + q.f * 3; S.crowns.push({ x, y: (best ? best.y : p.y) - 4, e: best, t: 0, fy: best ? best.y : p.y + p.h - 1 }); chime(3);
+      }
+      if (q.t > 0.4) S.seq = null;
+    },
+    squadron(p, dt, S, q) {   // KITE SQUADRON: five kites fly out in a fan, then sweep back together
+      S.target = PO.toss; S.rate = 45;
+      if (!q.done && q.t > 0.1) { q.done = 1; S.kites.length = 0; const h = hand(p, PO.toss, q.f); for (let i = 0; i < 5; i++) S.kites.push({ x: h[0], y: h[1], ox: h[0], oy: h[1] + (i - 2) * 0.9, f: q.f, t: -i * 0.05, D: 1.5, R: 6, hits: new Map(), big: true }); FK.whoosh(false, true); chime(3); }
+      if (q.t > 0.4) S.seq = null;
+    },
+    palace(p, dt, S, q) {   // SKY PALACE: a cloud platform appears up ahead and she floats onto it; petals rain from it on whoever is below
+      S.target = PO.float; S.rate = 30;
+      if (!q.done) { q.done = 1; S.cloud = { x: pcx(p) + q.f * 1.5, top: p.y - 1.8, w: 3, t: 0, life: 7, rain: 0 }; chime(2); }
+      p.vy = Math.min(p.vy, -6 + q.t * 14); p.onGround = false;
+      if (q.t > 0.4) S.seq = null;
+    },
+    storm(p, dt, S, q) {   // PETAL STORM: a whirling column of petals pulls foes in and shreds them, then bursts outward
+      S.target = PO.twirl; S.rate = 50; S.rot = q.t * 25; p.vx = 0; S.storm = q.t;
+      if (Math.floor(q.t / 0.1) !== q.n) { q.n = Math.floor(q.t / 0.1); q.hits.clear(); }
+      for (const e of FK.within(pcx(p), pcy(p), 3)) { if (!e._noKnockback) { e.vx = (pcx(p) - ex(e)) * 3; e.vy = Math.min(e.vy || 0, -1); } if (!q.hits.has(e) && Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)) < 1.7) { q.hits.add(e); hit(S, e, 0.7, { kx: 0, ky: -2, stun: 0.25 }); } }
+      if (q.t > 1.1) { for (const e of FK.within(pcx(p), pcy(p), 2.8)) hit(S, e, 4, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 13, ky: -10, stun: 0.5, big: true }); chime(4); S.rot = 0; S.storm = 0; S.seq = null; }
+    },
+    tiara(p, dt, S, q) {   // TIARA FLASH (air): the jewel in her tiara flashes; everyone close is dazzled and left helpless
+      S.target = PO.float; S.rate = 40; p.vy = Math.min(p.vy, 0.5);
+      if (!q.done && q.t > 0.1) { q.done = 1; S.flash = 0.4; for (const e of FK.within(pcx(p), pcy(p), 3.4)) hit(S, e, 1.5, { kx: 0, ky: -2, stun: 1.4 }); chime(5); FK.tone(2400, { dur: 0.3, vol: 0.1, type: 'sine' }); }
+      if (q.t > 0.35) S.seq = null;
+    },
+    swing(p, dt, S, q) {   // STRING SWING (air): a kite pinned in the sky ahead; she swings beneath it on its string, hitting all along the arc
+      const f = q.f;
+      if (!q.a) { q.a = { x: pcx(p) + f * 2.2, y: p.y - 2.4 }; q.R = Math.hypot(pcx(p) - q.a.x, pcy(p) - q.a.y); q.th = Math.atan2(pcx(p) - q.a.x, pcy(p) - q.a.y); FK.whoosh(false, true); }
+      S.target = PO.dash; S.rate = 40; S.anchor = q.a; S.selfMove = true;
+      q.th -= f * dt * 5.2;
+      const nx = q.a.x + Math.sin(q.th) * q.R - p.w / 2, ny = q.a.y + Math.cos(q.th) * q.R - p.h / 2;
+      if (!FK.blocked(nx, ny, p.w, p.h)) { p.x = nx; p.y = ny; } else q.t = 9;
+      p.vx = f * 8; p.vy = -Math.sin(q.th) * f * 6; p.onGround = false;
+      for (const e of FK.within(pcx(p), pcy(p), 1.3)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 4, { kx: f * 12, ky: -9, stun: 0.5, big: true, stop: 0.06 }); }
+      if (q.t > 0.62) { S.anchor = null; p.vy = -9; S.seq = null; }
+    },
+    glider(p, dt, S, q) {   // CAPE GLIDER (air): the cape opens into a great kite; she soars up, then glides a long way, buffeting foes
+      const k = FK.keys(); S.target = PO.float; S.rate = 30; S.capeOpen = 1; S.glide = 1;
+      if (q.t < 0.45) p.vy = -12 + q.t * 14; else p.vy = Math.min(p.vy, 1.4);
+      p.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 7 || q.f * 5; p.onGround = false;
+      if (Math.floor(q.t / 0.25) !== q.n) { q.n = Math.floor(q.t / 0.25); q.hits.clear(); }
+      for (const e of FK.within(pcx(p), pcy(p), 1.6)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 1.5, { kx: Math.sign(p.vx || 1) * 9, ky: -6, stun: 0.3 }); }
+      if (q.t > 1.6 || (p.onGround && q.t > 0.5)) { S.glide = 0; S.seq = null; }
+    },
+    star(p, dt, S, q) {   // FALLING STAR (air): she becomes a star and plunges at a slant; on landing, star shards burst outward
+      const f = q.f; S.target = PO.dive; S.rate = 40; S.starT = 1; S.rot = q.t * 20;
+      if (q.t < 0.12) { p.vy = -2; p.vx = 0; return; }
+      p.vy = 22; p.vx = f * 9;
+      for (const e of FK.within(pcx(p), pcy(p), 1.2)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 4, { kx: f * 4, ky: 14, stun: 0.5, big: true }); }
+      if (p.onGround || q.t > 1.4) {
+        for (let i = 0; i < 6; i++) { const a = -Math.PI + (i + 0.5) / 6 * Math.PI; S.shards.push({ x: pcx(p), y: p.y + p.h - 0.4, vx: Math.cos(a) * 12, vy: Math.sin(a) * 10, t: 0, hits: new Set() }); }
+        chime(4); FK.thud(false); S.starT = 0; S.rot = 0; S.seq = null;
+      }
+    },
     lash(p, dt, S, q) {   // RIBBON LASH: the ribbon cracks out in front
       const f = q.f, W = 0.1;
       S.target = q.t < W ? PO.lashA : PO.lashB; S.rate = 50; S.ribbon = { f, u: Math.min(1, Math.max(0, (q.t - W) / 0.12)) };
@@ -122,7 +185,29 @@
     },
   };
 
+  function stepSpecials(p, dt, S) {
+    const foes = FK.foes();
+    for (let i = S.crowns.length - 1; i >= 0; i--) {   // decree crowns: hover, then slam down
+      const c = S.crowns[i]; c.t += dt;
+      if (c.e && !c.e.dead && c.t < 0.5) { c.x = ex(c.e); c.fy = c.e.y; }
+      if (c.t > 0.5) { c.y += 30 * dt; if (c.y >= c.fy - 0.2) { for (const e of FK.within(c.x, c.fy + 0.4, 1.3)) hit(S, e, 6, { kx: 0, ky: 10, stun: 1.0, big: true, stop: 0.12, shake: 8 }); S.fx.push({ k: 'ring', x: c.x, y: c.fy + 0.4, R: 1.6, c: C_GOLD, t: 0, life: 0.4 }); FK.thud(true); chime(2); S.crowns.splice(i, 1); } }
+      else c.y = c.fy - 4 + Math.sin(c.t * 10) * 0.1;
+    }
+    if (S.cloud) {   // sky palace: stand on it; it rains petals on foes below
+      const C = S.cloud; C.t += dt; C.rain -= dt;
+      if (FK.stand(p, C.top, C.x - C.w / 2, C.x + C.w / 2)) S.selfMove = true;
+      if (C.rain <= 0) { C.rain = 0.45; for (const e of foes) if (Math.abs(ex(e) - C.x) < C.w / 2 + 0.2 && ey(e) > C.top && ey(e) < C.top + 7) hit(S, e, 1, { kx: 0, ky: 3, stun: 0.3 }); }
+      if (C.t > C.life) S.cloud = null;
+    }
+    for (let i = S.shards.length - 1; i >= 0; i--) {   // falling-star shards
+      const d = S.shards[i]; d.t += dt; d.vy += 20 * dt; d.x += d.vx * dt; d.y += d.vy * dt;
+      for (const e of foes) if (!d.hits.has(e) && Math.abs(ex(e) - d.x) < 0.6 && Math.abs(ey(e) - d.y) < 0.7) { d.hits.add(e); hit(S, e, 2, { kx: Math.sign(d.vx) * 7, ky: -7, stun: 0.35 }); }
+      if (d.t > 0.7 || FK.blocked(d.x - 0.1, d.y - 0.1, 0.2, 0.2)) S.shards.splice(i, 1);
+    }
+    if (S.flash > 0) S.flash -= dt;
+  }
   function stepWorld(p, dt, S, k) {
+    stepSpecials(p, dt, S);
     // ROYAL FLOAT: hold jump while falling (once per jump)
     S.floating = false;
     if (p.onGround) S.floatT = 0;
@@ -159,8 +244,14 @@
       desc: 'The Kite Princess of the sky kingdom: a teal-and-gold gown, a cape cut like a kite and a ribbon wand. Hold jump while falling for ROYAL FLOAT. Kite Toss throws a diamond kite that loops back. Three hits in a row fill her crown (GRACE): the next special is a ROYAL version. Moves: Ribbon Lash, Kite Toss, Gust Curtsy, Petal Guard (counter); in the air Ribbon Twirl, Kite Dash, Kite Lift and Crown Dive.' },
     stats: { speed: 1.05, jump: 1.15, maxJumps: 2, maxDashes: 1, hp: 4 },
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rot: 0, kites: [], ribbon: null, petals: 0, spinT: 0, floatT: 0, floating: false, capeOpen: 0, grace: 0, airUp: false }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rot: 0, kites: [], ribbon: null, petals: 0, spinT: 0, floatT: 0, floating: false, capeOpen: 0, grace: 0, airUp: false, crowns: [], cloud: null, shards: [], storm: 0, flash: 0, anchor: null, glide: 0, starT: 0 }),
     busy: S => !!S.seq,
+    charged: {
+      neutral: (p, f, S, air) => { startSeq(S, air ? 'tiara' : 'decree', { f }); return air ? 'TIARA FLASH' : 'ROYAL DECREE'; },
+      side: (p, f, S, air) => { startSeq(S, air ? 'swing' : 'squadron', { f }); return air ? 'STRING SWING' : 'KITE SQUADRON'; },
+      up: (p, f, S, air) => { S.airUp = true; startSeq(S, air ? 'glider' : 'palace', { f }); return air ? 'CAPE GLIDER' : 'SKY PALACE'; },
+      down: (p, f, S, air) => { startSeq(S, air ? 'star' : 'storm', { f }); return air ? 'FALLING STAR' : 'PETAL STORM'; },
+    },
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Kite Lift comes back when you land'; return null; },
     act: {
       ground_neutral: (p, f, pw, S) => startSeq(S, 'lash', { f, pw }),
@@ -177,6 +268,7 @@
       if (p.hitstun > 0 && S.seq) { S.seq = null; S.ribbon = null; S.rot = 0; S.petals = 0; S.capeOpen = 0; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
+      if (!S.seq && (S.storm || S.anchor || S.glide || S.starT)) { if (S.glide) S.capeOpen = 0; S.storm = 0; S.anchor = null; S.glide = 0; S.starT = 0; S.rot = 0; }
       if (!S.seq) { S.rot = 0; S.ribbon = null; S.petals = 0; S.spinT = 0; }
       stepWorld(p, dt, S, k);
       if (!S.seq) S.target = S.floating ? PO.float : FK.locomotion(S, p, dt, PO, { lean: 0.15, aF: [0.5, 0.6] });
@@ -253,6 +345,13 @@
       }
       if (S.spinT) { const x = V.SX(pcx(p)), y = V.SY(pcy(p)); for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.ellipse(x, y + (i - 0.5) * T * 0.4, T * 1.6, T * 0.45, 0, V.now * 12 + i * 3, V.now * 12 + i * 3 + 4); FK.glow(ctx, C_RIB, 0.8); ctx.lineWidth = 3; ctx.stroke(); } }
       if (S.petals) { const x = V.SX(pcx(p)), y = V.SY(pcy(p)); for (let i = 0; i < 8; i++) { const an = V.now * 4 + i * Math.PI / 4; petal(ctx, x + Math.cos(an) * T * 1.0, y + Math.sin(an) * T * 1.0, T * 0.22, an); } }
+      for (const c of S.crowns) { const x = V.SX(c.x), y = V.SY(c.y), r = T * 0.5; FK.glow(ctx, C_GOLD, 0.35); ctx.beginPath(); ctx.arc(x, y, r * 1.6, 0, Math.PI * 2); ctx.fill(); FK.solid(ctx, C_GOLD, 1); ctx.beginPath(); ctx.moveTo(x - r, y + r * 0.5); ctx.lineTo(x - r, y - r * 0.2); ctx.lineTo(x - r * 0.5, y + r * 0.1); ctx.lineTo(x, y - r * 0.6); ctx.lineTo(x + r * 0.5, y + r * 0.1); ctx.lineTo(x + r, y - r * 0.2); ctx.lineTo(x + r, y + r * 0.5); ctx.closePath(); ctx.fill(); FK.solid(ctx, C_RIB, 1); ctx.beginPath(); ctx.arc(x, y + r * 0.15, r * 0.15, 0, Math.PI * 2); ctx.fill(); }
+      if (S.cloud) { const C = S.cloud, x = V.SX(C.x), y = V.SY(C.top), a = C.life - C.t < 1 ? 0.5 + 0.5 * Math.sin(V.now * 20) : 1; FK.solid(ctx, '#ffffff', 0.9 * a); for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(x + (i - 2) * C.w * T * 0.2, y + T * 0.15 - Math.sin(i * 1.7) * T * 0.15, T * (0.35 + (i % 2) * 0.12), 0, Math.PI * 2); ctx.fill(); } FK.solid(ctx, C_GOLD, a); ctx.fillRect(x - C.w * T * 0.4, y + T * 0.35, C.w * T * 0.8, 2); for (let i = 0; i < 4; i++) { const ph = (V.now * 0.8 + i / 4) % 1; petal(ctx, x + (i - 1.5) * T * 0.6, y + T * 0.4 + ph * T * 4, T * 0.12, V.now * 3 + i); } }
+      if (S.storm) { const x = V.SX(pcx(p)), y = V.SY(pcy(p)); for (let i = 0; i < 18; i++) { const an = V.now * 9 + i * 0.7, r = T * (0.6 + (i % 6) * 0.35); petal(ctx, x + Math.cos(an) * r, y - T * 1.2 + (i % 6) * T * 0.45 + Math.sin(an) * T * 0.2, T * 0.15, an); } }
+      if (S.flash > 0) { ctx.beginPath(); ctx.arc(V.SX(pcx(p)), V.SY(p.y), T * 3.4 * (1 - S.flash / 0.4 * 0.5), 0, Math.PI * 2); FK.glow(ctx, '#ffffff', S.flash * 1.5); ctx.fill(); }
+      if (S.anchor) kite(ctx, V.SX(S.anchor.x), V.SY(S.anchor.y), T * 0.55, Math.sin(V.now * 6) * 0.2, V.SX(pcx(p)), V.SY(pcy(p)));
+      if (S.starT) FK.star(ctx, V.SX(pcx(p)), V.SY(pcy(p)), T * 1.0, V.now * 8, C_GOLD, 0.9, 5);
+      for (const d of S.shards) FK.star(ctx, V.SX(d.x), V.SY(d.y), T * 0.3, d.t * 12, C_GOLD, 1, 5);
       for (const kt of S.kites) kite(ctx, V.SX(kt.x), V.SY(kt.y), T * (kt.big ? 0.55 : 0.42), Math.sin(kt.t * 10) * 0.3, V.SX(pcx(p)), V.SY(pcy(p)));
     },
     drawFx(ctx, V, f, u, a) {
