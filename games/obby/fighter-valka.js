@@ -12,6 +12,8 @@
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge)
  *  Ground: neutral LONG THRUST, side POLE VAULT, up SKY WHEEL (anti-air arc), down LOW SWEEP (both sides).
  *  Air:    neutral SPEAR TWIRL (both ends), side JAVELIN, up SKYWARD LANCE (recovery), down IMPALE DIVE (spike).
+ * CHARGED (hold S to full; the spear must be in her hands), ground / air:
+ *  neutral HUNDRED THRUSTS / CYCLONE TWIRL, side LANCER CHARGE / VALKYRIE DIVE, up SKYPIERCER / WINGED ASCENT, down SPEAR FENCE / COMET LANCE.
  */
 (function () {
   'use strict';
@@ -81,6 +83,78 @@
 
   // ---------------------------------------------------------------- the moves, frame by frame
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full) ----
+    hundred(p, dt, S, q) {   // HUNDRED THRUSTS: a blur of thrusts, then one last lunge that always tips
+      const f = q.f, P1 = 0.07, i = Math.floor(q.t / P1), u = (q.t % P1) / P1;
+      if (i < 8) {
+        S.target = u < 0.4 ? PO.tWind : pose(Object.assign({}, PO.tHit, { sp: 1.57 + (i % 3 - 1) * 0.12 })); S.rate = 80;
+        if (i !== q.n) { q.n = i; S.seq.hits.clear(); FK.whoosh(false, false); }
+        if (u > 0.4) spearHits(S, p, S.pose, f, { dmg: 0.8, kx: 1.5, ky: -1.5, tdmg: 1.2, tky: 0 });
+        p.vx = 0; return;
+      }
+      if (!q.fin) { q.fin = 1; S.seq.hits.clear(); FK.whoosh(false, true); }
+      S.target = PO.tHit; S.rate = 60; if (q.t < 8 * P1 + 0.1) moveX(p, f * 14 * dt);
+      spearHits(S, p, S.pose, f, { dmg: 6, kx: 9, ky: -6, tdmg: 7, tky: -6 }, false);
+      if (q.t > 8 * P1 + 0.35) S.seq = null;
+    },
+    lancer(p, dt, S, q) {   // LANCER CHARGE: spear levelled, a sprint; the first foe is skewered on the tip and carried, then flung
+      const f = q.f, D = 0.6;
+      S.target = PO.tHit; S.rate = 50; S.selfMove = true;
+      if (!q.snd) { q.snd = 1; FK.whoosh(false, true); FK.tone(220, { dur: D, vol: 0.1, type: 'sawtooth', slide: 440 }); }
+      const stop = !moveX(p, f * 17 * dt); p.vx = f * 5;
+      const sg = spearSeg(p, S.pose, f);
+      if (!q.e) for (const e of FK.foes()) if (Math.abs(ex(e) - sg.b[0]) < 0.6 + (e.w || 0.9) / 2 && Math.abs(ey(e) - sg.b[1]) < 0.7) { q.e = e; FK.hit(S, e, 2, { kx: 0, ky: 0, stun: 0.5, c: C_GOLD }); FK.smack(true); break; }
+      if (q.e && !q.e.dead && !q.e._noKnockback) { q.e.x = sg.b[0] - (q.e.w || 0.9) / 2; q.e.y = sg.b[1] - (q.e.h || 0.9) / 2; q.e.vx = 0; q.e.vy = 0; }
+      if (q.t > D || stop) {
+        if (q.e && !q.e.dead) { FK.hit(S, q.e, 6, { kx: f * 16, ky: -9, stun: 0.6, c: C_GOLD, big: true, stop: 0.12, shake: 9 }); S.fx.push({ k: 'tip', x: ex(q.e), y: ey(q.e), t: 0, life: 0.35 }); FK.label(S, p, 'TIPPER!', C_GOLD, true); }
+        S.seq = null;
+      }
+    },
+    skypierce(p, dt, S, q) {   // SKYPIERCER: the spear is hurled straight up and comes down on the nearest foe ahead, then stands as a post
+      S.target = q.t < 0.15 ? PO.wheelA : PO.lance; S.rate = 45;
+      if (q.t >= 0.15 && !q.done) {
+        q.done = 1; S.thrown = true; let tx = pcx(p) + q.f * 3, bd = 8;
+        for (const e of FK.foes()) { const d = Math.abs(ex(e) - pcx(p)); if (d < bd && Math.abs(ey(e) - pcy(p)) < 4) { bd = d; tx = ex(e); } }
+        S.sky = { x: pcx(p), y: p.y - 1, tx, t: 0, st: 'up', hits: new Set() }; FK.whoosh(true, true);
+      }
+      if (q.t > 0.35) S.seq = null;
+    },
+    fence(p, dt, S, q) {   // SPEAR FENCE: a sweep that leaves three ghost spears standing in the floor ahead; their tips launch
+      S.target = FK.keyed([[0, PO.tWind], [0.15, PO.sweep], [0.35, PO.sweep]], q.t); S.rate = 45;
+      for (let i = 0; i < 3; i++) if (q.t >= 0.12 + i * 0.07 && (q.n || 0) <= i) {
+        q.n = i + 1; const x = pcx(p) + q.f * (1.2 + i * 1.1), fy = FK.floorAt(x, p.y + p.h - 0.5, 3);
+        if (fy != null) { S.stakes.push({ x, fy, t: 0, life: 6, cool: new Map() }); while (S.stakes.length > 6) S.stakes.shift(); FK.tone(900 + i * 150, { dur: 0.08, vol: 0.1 }); }
+      }
+      if (q.t > 0.45) S.seq = null;
+    },
+    cyclone(p, dt, S, q) {   // CYCLONE TWIRL (air): the spear spins round her like a saw blade; both ends tip
+      S.target = pose(Object.assign({}, PO.twirl, { sp: q.t * 30 })); S.rate = 90; p.vy = Math.min(p.vy, 1.2);
+      if (Math.floor(q.t / 0.09) !== q.n) { q.n = Math.floor(q.t / 0.09); S.seq.hits.clear(); FK.whoosh(false, false); }
+      spearHits(S, p, S.target, q.f, { dmg: 1, kx: 3, ky: -3, tdmg: 1.6, tky: -2 }, true);
+      if (q.t > 0.9) { S.seq.hits.clear(); spearHits(S, p, S.target, q.f, { dmg: 3, kx: 10, ky: -8, tdmg: 5, tky: -4 }, true); S.seq = null; }
+    },
+    valkyrie(p, dt, S, q) {   // VALKYRIE DIVE (air): spear first, a steep dive down and forward; a tipper bounces her back up
+      const f = q.f; S.target = pose(Object.assign({}, PO.dive, { sp: 0.75, lean: 0.6 })); S.rate = 50;
+      if (q.t < 0.12) { p.vy = -2; p.vx = 0; return; }
+      p.vy = 20; p.vx = f * 15; S.selfMove = true; moveX(p, f * 4 * dt);
+      spearHits(S, p, S.target, f, { dmg: 3, kx: 6, ky: 8, tdmg: 7, tky: 14, onTip: () => { q.bounce = 1; } });
+      if (q.bounce) { p.vy = -14; p.vx = -f * 4; S.airUp = false; S.seq = null; return; }
+      if (p.onGround && q.t > 0.14) { S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 1.8, t: 0, life: 0.35, c: C_GOLD }); FK.thud(true); for (const e of FK.within(pcx(p), p.y + p.h - 0.4, 1.8)) FK.hit(S, e, 2.5, { kx: f * 6, ky: -9, stun: 0.4, c: C_FX }); S.seq = null; }
+      if (q.t > 1.1) S.seq = null;
+    },
+    winged(p, dt, S, q) {   // WINGED ASCENT (air): spectral wings open; she soars up in a long arc, the spear overhead tipping at the top
+      const k = FK.keys(); S.target = PO.lance; S.rate = 40; S.wings = q.t;
+      p.vy = -(15 - 12 * q.t / 0.8); p.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 7 || q.f * 3; p.onGround = false;
+      if (Math.floor(q.t * 8) !== q.d) { q.d = Math.floor(q.t * 8); FK.whoosh(true, false); }
+      if (Math.floor(q.t / 0.2) !== q.n) { q.n = Math.floor(q.t / 0.2); S.seq.hits.clear(); }
+      spearHits(S, p, S.target, q.f, { dmg: 1.5, kx: 2, ky: -8, tdmg: 4, tky: -8 });
+      if (q.t > 0.8) { S.wings = 0; S.seq = null; }
+    },
+    comet(p, dt, S, q) {   // COMET LANCE (air): the spear hurled straight down; it strikes the floor and a ring of spear points bursts out both ways
+      S.target = q.t < 0.12 ? PO.lance : PO.throwB; S.rate = 50; p.vy = Math.min(p.vy, 0.5);
+      if (q.t >= 0.12 && !q.done) { q.done = 1; S.thrown = true; S.cometL = { x: pcx(p), y: p.y + p.h, vy: 34, hits: new Set(), t: 0 }; FK.whoosh(false, true); }
+      if (q.t > 0.35) S.seq = null;
+    },
     thrust(p, dt, S, q) {
       const f = q.f;
       S.target = FK.keyed([[0, PO.idle], [0.09, PO.tWind], [0.15, PO.tHit], [0.32, PO.tHit], [0.46, PO.idle]], q.t); S.rate = 45;
@@ -173,6 +247,37 @@
   };
 
   // ---------------------------------------------------------------- the javelin (out of hand)
+  // the charged specials' own things: a spear from the sky, ghost spears in the floor, a spear like a comet
+  function stepSpecials(p, dt, S) {
+    const foes = FK.foes();
+    if (S.sky) {
+      const J = S.sky; J.t += dt;
+      if (J.st === 'up') { J.y -= 30 * dt; if (J.t > 0.4) { J.st = 'down'; J.x = J.tx; J.y -= 2; FK.tone(1200, { dur: 0.3, vol: 0.1, slide: 300 }); } }
+      else if (J.st === 'down') {
+        J.y += 34 * dt;
+        for (const e of foes) if (!J.hits.has(e) && Math.abs(ex(e) - J.x) < 0.6 + (e.w || 0.9) / 2 && Math.abs(ey(e) - J.y) < 1.4) { J.hits.add(e); FK.hit(S, e, 6, { kx: 0, ky: 17, stun: 0.6, c: C_GOLD, big: true, stop: 0.12, shake: 8 }); S.fx.push({ k: 'tip', x: ex(e), y: ey(e), t: 0, life: 0.35 }); FK.label(S, p, 'TIPPER!', C_GOLD, true); }
+        if (FK.blocked(J.x - 0.1, J.y + L / 2 - 0.2, 0.2, 0.2) || J.t > 2.5) { J.st = 'stuck'; J.t = 0; FK.thud(false); S.fx.push({ k: 'shock', x: J.x, y: J.y + L / 2, R: 1.3, t: 0, life: 0.3, c: C_GOLD }); }
+      } else { if (J.t > 0.7) { S.sky = null; S.thrown = !!S.cometL; FK.tone(900, { dur: 0.08, vol: 0.12 }); } }
+    }
+    if (S.cometL) {
+      const C = S.cometL; C.t += dt;
+      if (!C.land) {
+        C.y += C.vy * dt;
+        for (const e of foes) if (!C.hits.has(e) && Math.abs(ex(e) - C.x) < 0.7 && Math.abs(ey(e) - C.y) < 1.2) { C.hits.add(e); FK.hit(S, e, 4, { kx: 0, ky: 16, stun: 0.5, c: C_GOLD, big: true, stop: 0.08 }); }
+        if (FK.blocked(C.x - 0.1, C.y + 0.2, 0.2, 0.2) || C.t > 2) { C.land = 0.001; C.fy = Math.ceil(C.y); FK.thud(true); FK.shake(8); }
+      } else {
+        C.land += dt;
+        for (const e of foes) if (!C.hits.has(e) && Math.abs(e.y + (e.h || 0.9) - C.fy) < 1 && Math.abs(ex(e) - C.x) < 0.5 + C.land * 12 && Math.abs(ex(e) - C.x) > C.land * 12 - 1) { C.hits.add(e); FK.hit(S, e, 3.5, { kx: (Math.sign(ex(e) - C.x) || 1) * 6, ky: -14, stun: 0.5, c: C_GOLD, big: true }); }
+        if (C.land > 0.6) { S.cometL = null; S.thrown = !!S.sky; FK.tone(900, { dur: 0.08, vol: 0.12 }); }
+      }
+    }
+    for (let i = S.stakes.length - 1; i >= 0; i--) {
+      const k = S.stakes[i]; k.t += dt;
+      for (const [e, c] of k.cool) { if (c - dt <= 0) k.cool.delete(e); else k.cool.set(e, c - dt); }
+      for (const e of foes) if (!k.cool.has(e) && Math.abs(ex(e) - k.x) < 0.45 && e.y + (e.h || 0.9) > k.fy - 1.3 && ey(e) < k.fy) { k.cool.set(e, 1); FK.hit(S, e, 3, { kx: (Math.sign(ex(e) - k.x) || 1) * 4, ky: -15, stun: 0.5, c: C_GOLD, big: true, stop: 0.06 }); S.fx.push({ k: 'tip', x: k.x, y: k.fy - 1.2, t: 0, life: 0.3 }); }
+      if (k.t > k.life) S.stakes.splice(i, 1);
+    }
+  }
   function stepJav(p, dt, S) {
     const J = S.jav; if (!J) return;
     J.t += dt;
@@ -234,8 +339,15 @@
       desc: 'A winged sky-knight with a 3-tile spear. Hit with the very tip for a TIPPER: double knockback. Long Thrust, Pole Vault (plant and vault over), Sky Wheel and Low Sweep on the ground; Spear Twirl, Javelin (throw it: it sticks in walls as a perch you can stand on; S recalls it), Skyward Lance and Impale Dive in the air.' },
     stats: { speed: 1.1, jump: 1.15, maxJumps: 2, maxDashes: 1, hp: 3 },
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, jav: null, airUp: false, plant: null, carry: null, perched: false }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, jav: null, airUp: false, plant: null, carry: null, perched: false, sky: null, cometL: null, stakes: [], thrown: false, wings: 0 }),
     busy: S => !!S.seq,
+    // the spear must be in her hands (not out as a javelin or coming down from a special)
+    charged: {
+      neutral: (p, f, S, air) => { if (S.jav || S.thrown) return null; startSeq(S, air ? 'cyclone' : 'hundred', { f }); return air ? 'CYCLONE TWIRL' : 'HUNDRED THRUSTS'; },
+      side: (p, f, S, air) => { if (S.jav || S.thrown) return null; startSeq(S, air ? 'valkyrie' : 'lancer', { f }); return air ? 'VALKYRIE DIVE' : 'LANCER CHARGE'; },
+      up: (p, f, S, air) => { if (S.jav || S.thrown) return null; if (air) S.airUp = true; startSeq(S, air ? 'winged' : 'skypierce', { f }); return air ? 'WINGED ASCENT' : 'SKYPIERCER'; },
+      down: (p, f, S, air) => { if (S.jav || S.thrown) return null; startSeq(S, air ? 'comet' : 'fence', { f }); return air ? 'COMET LANCE' : 'SPEAR FENCE'; },
+    },
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Skyward Lance comes back when you land'; return null; },
     // with the spear thrown, S calls it back
     pressS(p, S) {
@@ -254,14 +366,14 @@
       air_up: (p, f, pw, S) => { S.airUp = true; startSeq(S, 'lance', { f, pw }); },
       air_down: (p, f, pw, S) => startSeq(S, 'dive', { f, pw }),
     },
-    onTeleport(p, S) { S.seq = null; S.plant = null; if (S.jav && S.jav.st !== 'back') S.jav.st = 'back'; },
+    onTeleport(p, S) { S.sky = null; S.cometL = null; S.thrown = false; S.stakes.length = 0; S.wings = 0; S.seq = null; S.plant = null; if (S.jav && S.jav.st !== 'back') S.jav.st = 'back'; },
     step(p, dt, S, k) {
       if (p.hitstun > 0 && S.seq) { S.seq = null; S.plant = null; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
-      stepJav(p, dt, S);
+      stepJav(p, dt, S); stepSpecials(p, dt, S); if (!S.seq) S.wings = 0;
       if (!S.seq) {
-        const base = S.jav ? PO.bare : null;
+        const base = S.jav || S.thrown ? PO.bare : null;
         if (p.onGround && Math.abs(p.vx || 0) > 0.8) {
           S.run += dt * Math.abs(p.vx) * 1.7; const r = S.run, sw = Math.sin(r);
           S.target = pose({ y: 0.3 - Math.abs(Math.cos(r)) * 0.8, lean: 0.25, aF: [1.1, 0.5], aB: [0.3 - sw * 0.8, 0.8], lF: [0.15 + sw * 0.8, -0.3 - Math.max(0, Math.cos(r)) * 1.2], lB: [0.15 - sw * 0.8, -0.3 - Math.max(0, -Math.cos(r)) * 1.2], sp: 1.85, gr: 1.4, sx: 1 });
@@ -276,7 +388,7 @@
     // ---------------- drawing: a winged-helm sky-knight with a long spear
     drawBody(ctx, px, py, pw, ph, t, S, p) {
       const q = S ? S.pose : PO.idle, s = ph / U, cx = px + pw / 2, fy = py + ph;
-      const K = FK.skel(P, q, cx, fy, s), held = !(S && S.jav);
+      const K = FK.skel(P, q, cx, fy, s), held = !(S && (S.jav || S.thrown));
       const Tpx = ph / (p ? p.h : 0.92);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(127,180,255,0.45)';
@@ -336,6 +448,11 @@
     },
     drawWorld(ctx, V, S) {
       const p = V.p, T = V.T, f = FK.face(p), q = S.seq;
+      const spear = (x, y, dx, dy, glow) => { const len = L * T, ax = x - dx * len / 2, ay = y - dy * len / 2, bx = x + dx * len / 2, by = y + dy * len / 2; if (glow) { ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); FK.glow(ctx, glow, 0.4); ctx.lineWidth = T * 0.25; ctx.stroke(); } FK.solid(ctx, C_SHAFT); ctx.lineWidth = T * 0.07; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); drawBlade(ctx, bx, by, dx, dy, T / 22); };
+      if (S.sky) spear(V.SX(S.sky.x), V.SY(S.sky.y), 0, S.sky.st === 'up' ? -1 : 1, S.sky.st === 'stuck' ? null : C_GOLD);
+      if (S.cometL) { if (!S.cometL.land) spear(V.SX(S.cometL.x), V.SY(S.cometL.y), 0, 1, C_GOLD); else { spear(V.SX(S.cometL.x), V.SY(S.cometL.fy - L / 2 + 0.4), 0, 1, null); const r = S.cometL.land * 12 * T, y = V.SY(S.cometL.fy); for (const d of [-1, 1]) for (let i = 0; i < 3; i++) { const x = V.SX(S.cometL.x) + d * (r - i * T * 0.4); FK.glow(ctx, C_GOLD, 0.8 - i * 0.25); ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.lineTo(x, y - T * (0.9 - i * 0.2)); ctx.lineTo(x + 4, y); ctx.fill(); } } }
+      for (const k of S.stakes) { const a = Math.min(1, k.t / 0.15) * (k.life - k.t < 1 ? k.life - k.t : 1); ctx.save(); ctx.globalAlpha = a; ctx.translate(0, 0); const x = V.SX(k.x), y = V.SY(k.fy); FK.glow(ctx, C_FX, 0.35 * a); ctx.fillRect(x - 3, y - T * 1.3, 6, T * 1.3); ctx.restore(); FK.solid(ctx, C_SHAFT, a); ctx.lineWidth = T * 0.06; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - T * 1.1); ctx.stroke(); drawBlade(ctx, x, y - T * 1.1, 0, -1, T / 26); }
+      if (S.wings) { const x = V.SX(pcx(p)), y = V.SY(pcy(p) - 0.2), fl = Math.sin(V.now * 14) * 0.3; for (const sd of [-1, 1]) { ctx.save(); ctx.translate(x, y); ctx.scale(sd, 1); ctx.rotate(-0.3 + fl); FK.glow(ctx, C_FX, 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(T * 1.2, -T * 1.3, T * 2, -T * 0.4); ctx.quadraticCurveTo(T * 1.2, -T * 0.1, T * 1.5, T * 0.3); ctx.quadraticCurveTo(T * 0.8, T * 0.2, 0, T * 0.2); ctx.fill(); ctx.restore(); } }
       // the javelin in flight, stuck, or flying home
       if (S.jav) {
         const J = S.jav, x = V.SX(J.x), y = V.SY(J.y), dx = Math.sin(J.ang) * J.f, dy = Math.cos(J.ang), len = L * T;
@@ -352,7 +469,7 @@
         FK.star(ctx, x2, y2, T * 0.25, V.now * 6, C_FX, 0.7);
       }
       // swing trails: a crescent behind the spear tip while it's moving fast
-      if (q && S.jav == null && ['thrust', 'wheel', 'sweep', 'twirl', 'lance', 'dive'].includes(q.kind)) {
+      if (q && S.jav == null && !S.thrown && ['thrust', 'wheel', 'sweep', 'twirl', 'lance', 'dive', 'hundred', 'lancer', 'cyclone', 'valkyrie', 'winged'].includes(q.kind)) {
         S.trail = S.trail || []; const sg = spearSeg(p, S.pose, f); S.trail.push([V.SX(sg.b[0]), V.SY(sg.b[1])]); if (S.trail.length > 7) S.trail.shift();
         if (S.trail.length > 2) FK.taper(ctx, S.trail.slice().reverse(), T * 0.2, q.kind === 'sweep' || q.kind === 'twirl' ? C_GOLD : C_FX, 0.75);
         if (q.kind === 'thrust' && q.t > 0.12 && q.t < 0.3) { const pts = []; for (let i = 0; i <= 8; i++) pts.push([V.SX(sg.b[0]) - f * i * T * 0.32, V.SY(sg.b[1]) + Math.sin(i + V.now * 40) * 1.5]); FK.taper(ctx, pts, T * 0.18, '#ffffff', 0.7); }
