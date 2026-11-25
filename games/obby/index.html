@@ -4139,6 +4139,7 @@ let jumpJustPressed = false;
   const MAX_HISTORY = 20;
   
   function saveHistory(action) {
+    if (window._charLockOnEdit) window._charLockOnEdit();
     history.push(action);
     if (history.length > MAX_HISTORY) history.shift();
     redoStack.length = 0;
@@ -4157,6 +4158,7 @@ let jumpJustPressed = false;
     if (action.type === 'add') { world.tiles.delete(action.key); if (action.tile.type === 'mover') { const idx = movers.findIndex(m => m.id === action.key); if (idx >= 0) movers.splice(idx, 1); } if (action.tile.type === 'goal') syncGoalFromTiles(); if (action.tile.type === 'checkpoint') { world.checkpoint = null; claimedCheckpoints.delete(action.key); } } 
     else if (action.type === 'delete') { world.tiles.set(action.key, action.tile); if (action.tile.type === 'mover') movers.push({ id: action.key, x: action.tile.x, x0: action.tile.x, x1: action.tile.x + 5, dir: 1, speed: 1.4 }); if (action.tile.type === 'goal') world.goal = { x: action.tile.x, y: action.tile.y, w: 1, h: 1 }; }
     updateUndoRedoButtons(); setMessage('↶ Undone');
+    if (window._charLockOnEdit) window._charLockOnEdit();
   }
   
   function redo() {
@@ -4166,6 +4168,7 @@ let jumpJustPressed = false;
     if (action.type === 'add') { world.tiles.set(action.key, action.tile); if (action.tile.type === 'mover') movers.push({ id: action.key, x: action.tile.x, x0: action.tile.x, x1: action.tile.x + 5, dir: 1, speed: 1.4 }); if (action.tile.type === 'goal') world.goal = { x: action.tile.x, y: action.tile.y, w: 1, h: 1 }; } 
     else if (action.type === 'delete') { world.tiles.delete(action.key); if (action.tile.type === 'mover') { const idx = movers.findIndex(m => m.id === action.key); if (idx >= 0) movers.splice(idx, 1); } if (action.tile.type === 'goal') syncGoalFromTiles(); if (action.tile.type === 'checkpoint') { world.checkpoint = null; claimedCheckpoints.delete(action.key); } }
     updateUndoRedoButtons(); setMessage('↷ Redone');
+    if (window._charLockOnEdit) window._charLockOnEdit();
   }
 
   let placingSpawn = false;
@@ -4930,6 +4933,34 @@ let srEchoFrames = [];
   }
 
   
+  // Character lock: a level can lend a character the player hasn't unlocked, for that level only.
+  // Only has() answers yes for a lent id; the owned sets never hold it, so nothing lent is saved.
+  const _lentChars = new Set();
+  const _OWNED_SET_KEYS = ['cboxOwnedChars', 'godlyOwnedChars', 'prestigeOwned', '_alleyOwned'];
+  function _patchOwnedSets() {
+    for (const k of _OWNED_SET_KEYS) {
+      const set = window[k];
+      if (!set || set.__lendPatched || typeof set.has !== 'function') continue;
+      const realHas = set.has;
+      set.has = function (id) { return _lentChars.has(id) || realHas.call(this, id); };
+      Object.defineProperty(set, '__lendPatched', { value: true });
+    }
+  }
+  window._lendCharacters = function (ids) {
+    _lentChars.clear();
+    (ids || []).forEach(id => _lentChars.add(id));
+    _patchOwnedSets();
+  };
+  window._isCharLent = (id) => _lentChars.has(id);
+  // The character as the game would play it (stats, name, emoji), owned or not.
+  window._getCharFor = function (id) {
+    const keep = selectedCharacter, wasLent = _lentChars.has(id);
+    _lentChars.add(id); _patchOwnedSets();
+    selectedCharacter = id;
+    try { return getChar(); }
+    finally { selectedCharacter = keep; if (!wasLent) _lentChars.delete(id); }
+  };
+
   window._selectCharacter = function(charId) {
     selectedCharacter = charId;
     
@@ -9490,6 +9521,7 @@ function activateDash() {
     window._levelIsImported = false; 
     
     world.goal = { x: 280, y: 50, w: 1, h: 1 }; world.spawn = { x: 2.5, y: 50 }; world.checkpoint = null; world.xs = {};
+    world.charLock = null; world.charLockBeaten = []; world.charLockChecked = null;
     claimedCheckpoints.clear(); collectedTiles.clear();
     resetPlayer(); won = false; winTimer = 0; particles.length = 0; screenShake = 0;
     setMessage('Build mode: Place blocks AND a Goal flag to finish your course!');
@@ -13345,6 +13377,7 @@ function applyTileEffect(tile) {
 
   function triggerWin() {
     won = true; winTimer = 0.6; player.vy = -10; player.onGround = false;
+    if (window._charLockOnWin) { try { window._charLockOnWin(selectedCharacter); } catch (e) {} }
     
     if (window.cosmeticOnWin) cosmeticOnWin(player.x*TILE, player.y*TILE);
     
@@ -26487,6 +26520,9 @@ function resolveCollisions(axis, dt) {
         goal: { ...world.goal },
         spawn: { ...world.spawn },
         ...(world.xs && (world.xs.p2 || world.xs.s1 || world.xs.s2) && { extraSpawns: JSON.parse(JSON.stringify(world.xs)) }),
+        ...(world.charLock && world.charLock.length && { charLock: [...world.charLock] }),
+        ...(world.charLock && world.charLockBeaten && world.charLockBeaten.length && { charLockBeaten: [...world.charLockBeaten] }),
+        ...(world.charLock && world.charLockChecked && { charLockChecked: world.charLockChecked }),
         checkpoint: world.checkpoint ? { ...world.checkpoint } : null
       },
       movers: movers.map(m => ({
@@ -26538,6 +26574,13 @@ function resolveCollisions(axis, dt) {
       if (data.world.goal) world.goal = { ...data.world.goal };
       if (data.world.spawn) world.spawn = { ...data.world.spawn };
       world.xs = data.world.extraSpawns ? JSON.parse(JSON.stringify(data.world.extraSpawns)) : {};
+      {
+        const ids = (list) => Array.isArray(list) ? [...new Set(list.filter(v => typeof v === 'string' && v.length < 64))].slice(0, 80) : [];
+        const lock = ids(data.world.charLock);
+        world.charLock = lock.length ? lock : null;
+        world.charLockBeaten = world.charLock ? ids(data.world.charLockBeaten).filter(id => lock.includes(id)) : [];
+        world.charLockChecked = world.charLock && data.world.charLockChecked === 'jumps' ? 'jumps' : null;
+      }
       
       world.checkpoint = null;
       claimedCheckpoints.clear(); collectedTiles.clear();
@@ -35331,15 +35374,89 @@ window._claimLBro = function() {
 
   function lerp(a, b, t) { return a + (b - a) * t; }
 
+  // Colosseum line-ups. Every fighter drops a key and the exit door needs them all;
+  // doors only come as 1, 2 and 4 keys, so an arena holds 2 or 4 fighters.
+  const ARENA_ROSTER = {
+    easy:   { count: 2, late: 2, pool: ['enemy_walker', 'enemy_walker', 'enemy_jumper'] },
+    medium: { count: 2, late: 4, pool: ['enemy_walker', 'enemy_jumper', 'enemy_shooter', 'enemy_slasher'] },
+    hard:   { count: 4, late: 4, pool: ['enemy_walker', 'enemy_jumper', 'enemy_charger', 'enemy_shielder', 'enemy_slasher', 'enemy_bomber'] },
+    insane: { count: 4, late: 4, pool: ['enemy_charger', 'enemy_shielder', 'enemy_slasher', 'enemy_vampire', 'enemy_berserker'], champion: 'enemy_boss' },
+  };
+  const ARENAS_PER_LENGTH = { short: 1, medium: 1, long: 2, marathon: 3 };
+
+  // ---- Can a player make this jump? ----
+  // Worked out from the game's own movement: run 9.5 tiles/s x speed, jump 14 tiles/s x jump,
+  // gravity 42, and the character's number of jumps. Run and jump are taken a little under
+  // the real values, so every jump the generator keeps has room to spare.
+  // With no character lock the course is made for a plain character (speed 1, jump 1, 2 jumps).
+  const GRAV = 42;
+  const DEFAULT_PHYS = { run: 9.5, jump: 14, jumps: 2 };
+  const SPRING_LAUNCH = 18;
+  const _reachMemo = new Map();
+  function physKey(ph) { return ph.run.toFixed(2) + '/' + ph.jump.toFixed(2) + '/' + ph.jumps; }
+  // gap: empty columns between the two platforms. climb: rows up (negative = down).
+  // launch: starting upward speed when it is not a normal jump (a spring).
+  function canReach(gap, climb, launch, ph) {
+    ph = ph || DEFAULT_PHYS;
+    const key = physKey(ph) + '|' + gap + '|' + climb + '|' + (launch || 0);
+    if (_reachMemo.has(key)) return _reachMemo.get(key);
+    const need = Math.max(gap, 0.4);
+    const run = ph.run * 0.9, jv = ph.jump * 0.95;
+    // jumps left once in the air: all of them after a spring, otherwise one is the take-off
+    const air = Math.min(3, launch ? ph.jumps : Math.max(0, ph.jumps - 1));
+    const v0 = launch || (ph.jumps > 0 ? jv : 0);
+    const dt = 1 / 120;
+    let ok = false;
+    // full run, part run, or a slow drift (jump first, then steer), for fast characters too
+    const speeds = [run, run * 0.7, run * 0.45, run * 0.25, Math.min(run, 3)];
+    outer:
+    for (const vx of speeds) {
+      for (let d = 0.05; d <= 0.85; d += 0.05) {
+        // the first air jump is timed (d), any more are taken at the top of the one before
+        let x = 0, h = 0, vy = v0, t = 0, left = air, timed = false;
+        while (t < 3) {
+          if (left > 0 && ((!timed && t >= d) || (timed && vy <= 0))) { vy = jv; left--; timed = true; }
+          vy -= GRAV * dt; h += vy * dt; x += vx * dt; t += dt;
+          if (x >= need) { if (h >= climb + 0.05) { ok = true; break outer; } break; }
+          if (left === 0 && vy < 0 && h < climb) break;
+        }
+        if (air === 0) break;
+      }
+    }
+    _reachMemo.set(key, ok);
+    return ok;
+  }
+  // The highest climb every one of these characters can make over a gap of `gap`.
+  function maxClimb(gap, phys) {
+    let c = 0;
+    while (c < 12 && phys.every(ph => canReach(gap, c + 1, 0, ph))) c++;
+    return c;
+  }
+
+  // The kinds of set piece, with how many columns each needs before the lane runs out.
+  const PIECE_ROOM = {
+    hop: 12, stairs: 20, drop: 12, spikeRun: 18, lavaMoat: 20, springLaunch: 14,
+    moverBridge: 20, conveyorRun: 20, crumbleBridge: 22, iceSlide: 22, windLift: 12,
+    rest: 10, arena: 34,
+  };
+
   function generateCourse(opts) {
     const rng = makeRng(opts.seed);
-    const diff = DIFFS[opts.difficulty] || DIFFS.medium;
-    const numSegments = LENGTHS[opts.length] || LENGTHS.medium;
+    // The characters this course must work for (a character lock), else a plain character.
+    const PHYS_LIST = (opts.phys && opts.phys.length) ? opts.phys : [DEFAULT_PHYS];
+    const reach = (g, c, l) => PHYS_LIST.every(ph => canReach(g, c, l, ph));
+    const diffName = DIFFS[opts.difficulty] ? opts.difficulty : 'medium';
+    const diff = DIFFS[diffName];
+    const target = LENGTHS[opts.length] || LENGTHS.medium;
     const WORLD_W = window._WORLD_W || 400;
-    const baseY = 50, minY = 16, maxY = 66;
 
-    
-    
+    // The world is 400 tiles wide, too short for a long course in one line. The course
+    // runs in lanes that snake upward: right along the bottom, up a climbing tower at the
+    // edge, left along the next lane, and so on. Lanes are 15 rows apart and each keeps
+    // to a 10-row band, so no lane can be jumped into from the one below.
+    const LANE_BASE = [58, 43, 28, 13];
+    const X_MIN = 2, X_MAX = WORLD_W - 3, TOWER_ROOM = 10;
+
     const vertMult = VERT_MULT[opts.verticality] || 1;
     const widthAdj = WIDTH_ADJ[opts.platformWidth] || 0;
     const gapAdj = GAP_ADJ[opts.gapSize] || 0;
@@ -35348,129 +35465,483 @@ window._claimLBro = function() {
     const gapMinBase = Math.max(1, diff.gapMin + gapAdj);
     const gapMaxBase = Math.max(gapMinBase + 1, diff.gapMax + gapAdj);
 
-    const maxX = Math.min(WORLD_W - 12, 4 + numSegments * (platMaxBase + gapMaxBase + 4));
-
     const tiles = [];
+    const byKey = new Map();
     const moversOut = [];
-    const seen = new Set();
+    const jumps = [];
+    const pieces = [];
 
     function addTile(px, py, type, extra) {
       px = Math.round(px); py = Math.round(py);
       const k = px + ',' + py;
-      if (seen.has(k)) return null; 
-      seen.add(k);
+      if (byKey.has(k)) return null;
       const t = Object.assign({ x: px, y: py, w: 1, h: 1, type: type, id: k, t: rng() * Math.PI * 2 }, extra || {});
-      tiles.push(t);
+      tiles.push(t); byKey.set(k, t);
       return t;
     }
-    function replaceTile(px, py, type, extra) {
-      px = Math.round(px); py = Math.round(py);
-      const idx = tiles.findIndex(t => t.x === px && t.y === py);
-      if (idx === -1) return addTile(px, py, type, extra);
-      tiles[idx] = Object.assign(tiles[idx], { type: type }, extra || {});
-      return tiles[idx];
+    function setTile(px, py, type, extra) {
+      const k = Math.round(px) + ',' + Math.round(py);
+      const old = byKey.get(k);
+      if (!old) return addTile(px, py, type, extra);
+      delete old.crumbleState; delete old.crumbleTimer; delete old.active;
+      return Object.assign(old, { type: type }, extra || {});
     }
     function pick(arr) { return arr[Math.floor(rng() * arr.length) % arr.length]; }
-    function ramped(base, t) { return opts.ramp ? lerp(base * 0.55, base, t) : base; }
+    function rnd(a, b) { return a + Math.floor(rng() * (b - a + 1)); }
+    function chance(p) { return rng() < p; }
 
-    let x = 0, y = baseY;
-    const startW = 5;
-    for (let i = 0; i < startW; i++) addTile(x + i, y, 'solid');
-    x += startW;
+    // Where the course has got to. x is the first free column ahead of the last platform
+    // (ahead = in the lane's direction); y is the row that platform stands on.
+    const st = { x: 0, y: LANE_BASE[0], dir: 1, lane: 0, last: null, platforms: 0, sinceCP: 0 };
+    function col(f) { return st.x + st.dir * f; }
+    function band() { const b = LANE_BASE[st.lane]; return [b - 5, b + 4]; }
+    function clampY(y) { const b = band(); return Math.max(b[0], Math.min(b[1], y)); }
+    function room() { return st.dir > 0 ? (X_MAX - TOWER_ROOM) - st.x : st.x - (X_MIN + TOWER_ROOM); }
+    function gapCols(gap) { const out = []; for (let i = 0; i < gap; i++) out.push(col(i)); return out; }
 
-    let sinceCheckpoint = 0;
-    let platformCount = 0;
-
-    for (let seg = 0; seg < numSegments && x < maxX; seg++) {
-      const t = numSegments <= 1 ? 1 : seg / (numSegments - 1);
-      const gapMin = Math.round(ramped(gapMinBase, t));
-      const gapMax = Math.max(gapMin + 1, Math.round(ramped(gapMaxBase, t)));
-      const dyMax = Math.max(1, Math.round(ramped(diff.dyMax, t) * vertMult));
-      const hazardChance = ramped(diff.hazardChance, t);
-      const movingChance = ramped(diff.movingChance, t);
-      const enemyChance = ramped(diff.hazardChance, t) * 0.6;
-
-      let gap = gapMin + Math.floor(rng() * (gapMax - gapMin + 1));
-      const prevEndX = x - 1, prevY = y;
-      let usedMover = false;
-
-      if (opts.moving && rng() < movingChance) {
-        usedMover = true;
-        const moverSpan = gap + 3;
-        const mvX = x;
-        addTile(mvX, y, 'mover', { active: true });
-        moversOut.push({ id: mvX + ',' + y, x: mvX, x0: mvX, x1: mvX + moverSpan, dir: 1, speed: +(1.1 + rng() * 0.7).toFixed(2) });
-        x = mvX + moverSpan + 1;
-      } else {
-        
-        
-        
-        if (opts.hazards && gap >= 2 && rng() < hazardChance) {
-          const midX = prevEndX + Math.max(1, Math.floor(gap / 2));
-          const pitY = Math.max(prevY, y) + 1;
-          const hType = pick(['spike', 'spike', 'lava', 'sawH']);
-          if (hType === 'sawH') addTile(midX, Math.max(prevY, y), 'sawH', { sawOffset: rng(), sawDir: rng() < 0.5 ? 1 : -1, sawRange: 2 + Math.floor(rng() * 2) });
-          else addTile(midX, pitY, hType);
-        }
-        x += gap;
+    function params(t) {
+      const r = (b) => opts.ramp ? lerp(b * 0.55, b, t) : b;
+      const gapMin = Math.max(1, Math.round(r(gapMinBase)));
+      const gapMax = Math.max(gapMin + 1, Math.round(r(gapMaxBase)));
+      return {
+        t: t, gapMin: gapMin, gapMax: gapMax,
+        dyMax: Math.max(1, Math.round(r(diff.dyMax) * vertMult)),
+        hazard: r(diff.hazardChance), moving: r(diff.movingChance),
+        platMin: platMinBase, platMax: platMaxBase,
+      };
+    }
+    function nextY(P) {
+      let dy = Math.round((rng() * 2 - 1) * P.dyMax);
+      const b = band();
+      if (st.y + dy < b[0] || st.y + dy > b[1]) dy = -dy;
+      return clampY(st.y + dy);
+    }
+    // Make a jump possible: drop the landing first, then shorten the gap.
+    function fit(gap, y, launch) {
+      y = clampY(y);
+      let g = Math.max(1, gap);
+      for (let guard = 0; guard < 60; guard++) {
+        if (reach(g, st.y - y, launch)) return { gap: g, y: y };
+        if (st.y - y > 0) y++;
+        else if (g > 1) g--;
+        else break;
       }
-
-      let dy = Math.round((rng() * 2 - 1) * dyMax);
-      y = Math.max(minY, Math.min(maxY, y + dy));
-
-      const width = platMinBase + Math.floor(rng() * (platMaxBase - platMinBase + 1));
-      let material = 'solid';
-      if (opts.terrain && rng() < 0.22) material = pick(['ice', 'crumble']);
-
-      for (let i = 0; i < width; i++) {
-        addTile(x + i, y, material, material === 'crumble' ? { crumbleState: 'active', crumbleTimer: 0 } : undefined);
-      }
-      platformCount++;
-
-      if (opts.springs && !usedMover && rng() < movingChance * 0.7) {
-        replaceTile(x + width - 1, y, 'spring');
-      }
-      if (opts.moving && !usedMover && width >= 2 && rng() < movingChance * 0.5) {
-        replaceTile(x + Math.floor(rng() * width), y, rng() < 0.5 ? 'conveyor' : 'conveyor_l', { active: true });
-      }
-      if (opts.wind && rng() < movingChance * 0.4) {
-        addTile(x + Math.floor(width / 2), y - 1, rng() < 0.5 ? 'windUp' : 'windRight', { active: true });
-      }
-      if (opts.coins && rng() < 0.35) {
-        addTile(x + Math.floor(width / 2), y - 1, 'coin');
-      }
-      if (opts.enemies && !usedMover && width >= 2 && rng() < enemyChance) {
-        addTile(x + Math.floor(rng() * width), y - 1, pickEnemyType(opts.difficulty, rng));
-      }
-
-      sinceCheckpoint++;
-      if (opts.checkpoints && sinceCheckpoint >= opts.checkpointEvery) {
-        
-        
-        
-        replaceTile(x + width - 1, y - 1, 'checkpoint');
-        sinceCheckpoint = 0;
-      }
-
-      x += width;
+      return { gap: 1, y: st.y };
     }
 
-    x += 3;
-    addTile(x, y, 'goal');
+    function matExtra(mat) {
+      if (mat === 'crumble') return { crumbleState: 'active', crumbleTimer: 0 };
+      if (mat === 'conveyor' || mat === 'conveyor_l') return { active: true };
+      return undefined;
+    }
+    // Lay a platform `gap` columns ahead. Cells are kept in travel order.
+    function plat(gap, y, width, mat, how) {
+      how = how || {};
+      if (mat === 'forward') mat = st.dir > 0 ? 'conveyor' : 'conveyor_l';
+      const cells = [];
+      for (let i = 0; i < width; i++) {
+        const cx = col(gap + i);
+        addTile(cx, y, mat, matExtra(mat));
+        cells.push(cx);
+      }
+      jumps.push({ gap: gap, climb: st.y - y, launch: how.launch || 0, kind: how.kind || 'jump' });
+      const p = { cells: cells, y: y, mat: mat, used: new Set() };
+      st.x = col(gap + width); st.y = y; st.last = p;
+      st.platforms++; st.sinceCP++;
+      return p;
+    }
+    function slot(p, where) {
+      const free = p.cells.filter(c => !p.used.has(c));
+      if (!free.length) return null;
+      let c;
+      if (where === 'mid') c = free[Math.floor(free.length / 2)];
+      else if (where === 'front') c = free[free.length - 1];
+      else c = free[Math.floor(rng() * free.length)];
+      p.used.add(c);
+      return c;
+    }
+    function decorate(p, P) {
+      if (p.mat !== 'solid' && p.mat !== 'ice') return;
+      if (opts.coins && chance(0.3)) {
+        const c = slot(p, 'mid');
+        if (c != null) addTile(c, p.y - 1, 'coin');
+      }
+      if (opts.enemies && p.mat === 'solid' && p.cells.length >= 4 && chance(P.hazard * 0.7)) {
+        const inner = p.cells.slice(1, -1).filter(c => !p.used.has(c));
+        if (inner.length) {
+          const c = pick(inner); p.used.add(c);
+          addTile(c, p.y - 1, pickEnemyType(diffName, rng));
+        }
+      }
+    }
+    function hop(P, mat) {
+      const f = fit(rnd(P.gapMin, P.gapMax), nextY(P));
+      return plat(f.gap, f.y, rnd(P.platMin, P.platMax), mat || 'solid');
+    }
 
+    // ---------------- Set pieces ----------------
+    const PIECES = {
+      // A plain jump, sometimes over a saw that sweeps through the jump's arc.
+      hop(P) {
+        const y0 = st.y;
+        const f = fit(rnd(P.gapMin, P.gapMax), nextY(P));
+        const gc = gapCols(f.gap);
+        const mat = opts.terrain && chance(0.15) ? pick(['ice', 'crumble']) : 'solid';
+        const p = plat(f.gap, f.y, rnd(P.platMin, P.platMax), mat);
+        let saw = false;
+        if (opts.hazards && f.gap >= 3 && chance(P.hazard * 1.5)) {
+          const x0 = Math.min.apply(null, gc);
+          addTile(x0, Math.min(y0, f.y) - 2, 'sawH', { sawOffset: rng() * (f.gap - 1), sawDir: chance(0.5) ? 1 : -1, sawRange: f.gap - 1 });
+          saw = true;
+        }
+        if (!saw && opts.coins && f.gap >= 2 && chance(0.3)) addTile(gc[Math.floor(gc.length / 2)], Math.min(y0, f.y) - 2, 'coin');
+        decorate(p, P);
+      },
+
+      // Three to five narrow steps, climbing or dropping.
+      stairs(P) {
+        const b = band();
+        const rise = P.dyMax >= 2 && chance(0.5) ? 2 : 1;
+        const upRoom = Math.floor((st.y - b[0]) / rise), downRoom = Math.floor((b[1] - st.y) / rise);
+        const up = upRoom >= 3 && (downRoom < 3 || chance(0.65));
+        const n = Math.min(rnd(3, 5), up ? upRoom : downRoom);
+        if (n < 2) return PIECES.hop(P);
+        for (let i = 0; i < n; i++) {
+          const f = fit(rnd(1, 2), st.y + (up ? -rise : rise));
+          const p = plat(f.gap, f.y, 2, 'solid');
+          if (opts.coins && i === n - 1) { const c = slot(p, 'front'); if (c != null) addTile(c, p.y - 1, 'coin'); }
+        }
+      },
+
+      // A long fall to a lower ledge, with a trail of coins down the drop.
+      drop(P) {
+        const b = band();
+        if (b[1] - st.y < 4) return PIECES.stairs(P);
+        const y0 = st.y;
+        const f = fit(rnd(1, 3), Math.min(b[1], st.y + rnd(4, 7)));
+        const gc = gapCols(f.gap);
+        const p = plat(f.gap, f.y, rnd(Math.max(3, P.platMin), Math.max(4, P.platMax)), 'solid');
+        if (opts.coins) for (let r = y0 + 1; r < f.y - 1; r += 2) addTile(gc[gc.length - 1], r, 'coin');
+        decorate(p, P);
+      },
+
+      // A long platform with spikes standing on it to hop over.
+      spikeRun(P) {
+        const f = fit(rnd(1, P.gapMin + 1), st.y + rnd(-1, 1));
+        const W = rnd(9, 12);
+        const p = plat(f.gap, f.y, W, 'solid');
+        const count = Math.max(1, Math.min(3, Math.round(P.hazard * 8)));
+        const wide = P.hazard > 0.25;
+        let i = 2;
+        for (let k = 0; k < count && i <= W - 4; k++) {
+          const two = wide && chance(0.5) && i + 1 <= W - 4;
+          addTile(p.cells[i], p.y - 1, 'spike'); p.used.add(p.cells[i]);
+          if (two) { addTile(p.cells[i + 1], p.y - 1, 'spike'); p.used.add(p.cells[i + 1]); i++; }
+          i += rnd(3, 4);
+        }
+        if (opts.coins) { const c = slot(p, 'front'); if (c != null) addTile(c, p.y - 1, 'coin'); }
+      },
+
+      // Lava set into the floor: jump it, or hop a stepping stone in the middle.
+      lavaMoat(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        plat(f.gap, f.y, 3, 'solid');
+        const stone = P.hazard > 0.12 && chance(0.6);
+        const pools = stone ? [rnd(2, 3), rnd(2, 3)] : [rnd(2, Math.min(4, 2 + Math.round(P.hazard * 6)))];
+        pools.forEach((len, idx) => {
+          const lf = fit(len, st.y);
+          const cols = gapCols(lf.gap);
+          const last = idx === pools.length - 1;
+          plat(lf.gap, lf.y, last ? 3 : 1, 'solid');
+          cols.forEach(c => addTile(c, lf.y, 'lava'));
+        });
+        if (opts.coins && st.last) { const c = slot(st.last, 'mid'); if (c != null) addTile(c, st.y - 1, 'coin'); }
+      },
+
+      // A spring at the edge of a platform throws you up to a high ledge.
+      springLaunch(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(0, 2));
+        const p = plat(f.gap, f.y, 3, 'solid');
+        const front = p.cells[p.cells.length - 1];
+        setTile(front, p.y, 'spring'); p.used.add(front);
+        const b = band();
+        const want = Math.max(b[0], st.y - rnd(5, 7));
+        if (st.y - want < 4) return; // no headroom here: the spring just gives a bounce
+        const y0 = st.y;
+        const g = rnd(1, 2);
+        const lf = fit(g, want, SPRING_LAUNCH);
+        const gc = gapCols(lf.gap);
+        const top = plat(lf.gap, lf.y, rnd(3, 4), 'solid', { launch: SPRING_LAUNCH, kind: 'spring' });
+        if (opts.coins) for (let r = y0 - 2; r > lf.y; r -= 2) addTile(gc[0], r, 'coin');
+        decorate(top, P);
+      },
+
+      // A two-wide moving platform ferries you over a long gap.
+      moverBridge(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        plat(f.gap, f.y, 3, 'solid');
+        const span = rnd(4, 5 + Math.round(P.moving * 10));
+        const speed = +(1.2 + P.moving * 2 + rng() * 0.5).toFixed(2);
+        const y = st.y;
+        for (let k = 0; k < 2; k++) {
+          const tx = col(k);
+          addTile(tx, y, 'mover', { active: true });
+          if (st.dir > 0) moversOut.push({ id: tx + ',' + y, x: tx, x0: tx, x1: tx + span, dir: 1, speed: speed });
+          else moversOut.push({ id: tx + ',' + y, x: tx, x0: tx - span, x1: tx, dir: -1, speed: speed });
+        }
+        jumps.push({ kind: 'mover', gap: span, climb: 0 });
+        st.x = col(2 + span);
+        st.platforms++; st.sinceCP++;
+        const p = plat(0, y, rnd(3, 4), 'solid', { kind: 'mover-land' });
+        decorate(p, P);
+      },
+
+      // A belt that carries you toward a longer jump.
+      conveyorRun(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        plat(f.gap, f.y, rnd(5, 7), 'forward');
+        const lf = fit(P.gapMax + 1, nextY(P));
+        const p = plat(lf.gap, lf.y, rnd(Math.max(2, P.platMin), Math.max(3, P.platMax)), 'solid');
+        decorate(p, P);
+      },
+
+      // Single crumbling blocks: keep moving or fall.
+      crumbleBridge(P) {
+        const n = rnd(3, 5);
+        for (let i = 0; i < n; i++) {
+          const f = fit(rnd(1, 2), st.y + (P.dyMax > 1 ? rnd(-1, 1) : 0));
+          plat(f.gap, f.y, 1, 'crumble');
+        }
+        const lf = fit(rnd(1, 2), st.y);
+        decorate(plat(lf.gap, lf.y, rnd(3, 4), 'solid'), P);
+      },
+
+      // A long sheet of ice and a jump off the end of it.
+      iceSlide(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(0, 1));
+        const ice = plat(f.gap, f.y, rnd(6, 9), 'ice');
+        if (opts.coins) { const c = slot(ice, 'mid'); if (c != null) addTile(c, ice.y - 1, 'coin'); }
+        const lf = fit(rnd(P.gapMin, P.gapMax + 1), nextY(P));
+        decorate(plat(lf.gap, lf.y, rnd(Math.max(2, P.platMin), Math.max(3, P.platMax)), 'solid'), P);
+      },
+
+      // Wind in the gap lifts you to a higher ledge (or, going right, pushes you across).
+      windLift(P) {
+        const y0 = st.y;
+        if (st.dir > 0 && chance(0.4)) {
+          const lf = fit(rnd(5, 6), st.y);
+          const gc = gapCols(lf.gap);
+          const p = plat(lf.gap, lf.y, rnd(3, 4), 'solid');
+          gc.slice(0, -1).forEach(c => { addTile(c, y0 - 1, 'windRight', { active: true }); addTile(c, y0 - 2, 'windRight', { active: true }); });
+          return decorate(p, P);
+        }
+        const b = band();
+        const lf = fit(rnd(2, 3), Math.max(b[0], st.y - 4));
+        const gc = gapCols(lf.gap);
+        const p = plat(lf.gap, lf.y, rnd(3, 4), 'solid');
+        const wc = gc[Math.floor(gc.length / 2)];
+        for (let r = y0 + 1; r >= lf.y - 2; r--) addTile(wc, r, 'windUp', { active: true });
+        decorate(p, P);
+      },
+
+      // A wide, safe platform. Holds the checkpoint when one is due.
+      rest(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        const p = plat(f.gap, f.y, rnd(4, 5), 'solid');
+        if (opts.checkpoints) {
+          const c = slot(p, 'mid');
+          addTile(c, p.y - 1, 'checkpoint');
+          st.sinceCP = 0;
+        }
+        if (opts.coins) { const c = slot(p, 'front'); if (c != null) addTile(c, p.y - 1, 'coin'); }
+      },
+
+      // The Colosseum: a walled arena. You walk in through a one-way gate, and the only
+      // way out is a door that needs a key from every fighter inside. Spikes line the
+      // roof so it can't be climbed over.
+      arena(P, arenaIdx) {
+        const base = LANE_BASE[st.lane];
+        const b = band();
+        const F = Math.max(base - 1, Math.min(b[1], st.y));
+        for (let guard = 0; guard < 8 && Math.abs(st.y - F) > 2; guard++) {
+          const f = fit(2, st.y + Math.sign(F - st.y) * 2);
+          plat(f.gap, f.y, 2, 'solid');
+        }
+        const APPROACH = 6, INNER = 12, EXIT = 5;
+        const LW = APPROACH, RW = APPROACH + INNER + 1, LEN = RW + 1 + EXIT;
+        const floor = plat(fit(rnd(1, 2), F).gap, F, LEN, 'solid', { kind: 'arena' });
+        const at = (i) => floor.cells[i];
+        const H = 7;
+        // walls and roof
+        for (let r = F - H; r <= F - 1; r++) {
+          if (r >= F - 2) addTile(at(LW), r, st.dir > 0 ? 'oneWayR' : 'oneWayL');
+          else addTile(at(LW), r, 'solid');
+          addTile(at(RW), r, 'solid');
+        }
+        for (let i = LW + 1; i < RW; i++) addTile(at(i), F - H, 'solid');
+        for (let i = LW; i <= RW; i++) addTile(at(i), F - H - 1, 'spike');
+        for (let i = LW; i <= RW; i++) floor.used.add(at(i));
+        // the fighters
+        const late = opts.ramp ? P.t > 0.6 : true;
+        const R = ARENA_ROSTER[diffName];
+        const count = late ? R.late : R.count;
+        const spots = count === 4 ? [LW + 5, LW + 7, LW + 9, LW + 11] : [LW + 7, LW + 10];
+        spots.forEach((i, k) => {
+          let type = pick(R.pool);
+          if (R.champion && k === spots.length - 1 && late) type = R.champion;
+          addTile(at(i), F - 1, type, { dropItem: 'key' });
+        });
+        // the way out
+        const pairId = 'gen_arena_' + arenaIdx + '_' + opts.seed;
+        const door = 'door' + count;
+        addTile(at(RW - 1), F - 1, door, { pairId: pairId });
+        addTile(at(RW + 3), F - 1, door, { pairId: pairId });
+        if (opts.checkpoints) { addTile(at(2), F - 1, 'checkpoint'); st.sinceCP = 0; }
+        if (opts.coins) addTile(at(RW + 5 <= LEN - 1 ? RW + 5 : LEN - 1), F - 1, 'coin');
+        st.platforms += 2;
+        return { fighters: count };
+      },
+    };
+
+    // Turn around at the end of a lane: a zig-zag tower of steps up to the next lane.
+    function tower() {
+      const nextBase = LANE_BASE[st.lane + 1];
+      const X = st.x, d = st.dir;
+      const rise = st.y - nextBase;
+      const stepMax = Math.max(1, Math.min(3, maxClimb(1, PHYS_LIST), maxClimb(2, PHYS_LIST)));
+      // Steps in the same column are two steps apart, so the climbs need to leave room to jump
+      // under the step above. Characters that can't climb 3 rows get a spring on each step
+      // instead: a spring throws everyone the same height, so the steps can sit further apart.
+      const springy = stepMax < 3;
+      let springMax = 2;
+      if (springy) while (springMax < 5 && reach(2, springMax + 1, SPRING_LAUNCH)) springMax++;
+      const climbs = [];
+      if (!springy) {
+        let n = Math.ceil(rise / stepMax);
+        if (n % 2 === 0) n++;
+        for (let i = 0; i < n; i++) climbs.push(Math.floor(rise / n) + (i < rise % n ? 1 : 0));
+      } else {
+        const c0 = Math.min(stepMax, rise), rest = rise - c0;
+        let m = Math.ceil(rest / springMax);
+        if (m % 2 === 1) m++;
+        climbs.push(c0);
+        for (let i = 0; i < m; i++) climbs.push(Math.floor(rest / m) + (i < rest % m ? 1 : 0));
+      }
+      const n = climbs.length;
+      let y = st.y;
+      for (let i = 0; i < n; i++) {
+        const off = i % 2 === 0 ? 1 : 5;
+        const ny = y - climbs[i];
+        const last = i === n - 1;
+        // the last step (always on the near column) doubles as the new lane's first platform
+        const cells = last ? [2, 1, 0, -1] : [off, off + 1];
+        cells.forEach(o => addTile(X + d * o, ny, 'solid'));
+        if (springy && !last) setTile(X + d * (i % 2 === 0 ? off + 1 : off), ny, 'spring');
+        jumps.push({ gap: i === 0 ? 1 : 2, climb: climbs[i], launch: springy && i > 0 ? SPRING_LAUNCH : 0, kind: 'tower' });
+        y = ny;
+        st.platforms++; st.sinceCP++;
+      }
+      pieces.push({ name: 'tower', x: X, y: y });
+      st.lane++;
+      st.dir = -d;
+      st.x = X - d * 2;
+      st.y = y;
+      st.last = { cells: [2, 1, 0, -1].map(o => X + d * o), y: y, mat: 'solid', used: new Set() };
+    }
+
+    // ---------------- Lay the course ----------------
+    const base0 = LANE_BASE[0];
+    for (let i = 0; i < 5; i++) addTile(i, base0, 'solid');
+    st.x = 5; st.y = base0;
+    st.last = { cells: [0, 1, 2, 3, 4], y: base0, mat: 'solid', used: new Set([0, 1, 2, 3, 4]) };
+
+    const arenaMarks = [];
+    if (opts.arena) {
+      const n = ARENAS_PER_LENGTH[opts.length] || 1;
+      for (let i = 0; i < n; i++) arenaMarks.push(Math.round(target * (i + 0.6) / n));
+    }
+    let arenasBuilt = 0, fighters = 0, lastName = '';
+
+    function choosePiece(P) {
+      if (opts.only && PIECES[opts.only]) return lastName === opts.only ? 'hop' : opts.only;
+      const haz = Math.min(1.2, P.hazard * 3 + 0.25);
+      const w = [['hop', 3], ['stairs', 1.3], ['drop', 0.6]];
+      if (opts.hazards) { w.push(['spikeRun', 1.4 * haz]); w.push(['lavaMoat', 1.2 * haz]); }
+      if (opts.springs) w.push(['springLaunch', 1.1]);
+      if (opts.moving) { w.push(['moverBridge', 1.1]); w.push(['conveyorRun', 0.8]); }
+      if (opts.terrain) { w.push(['crumbleBridge', 1]); w.push(['iceSlide', 0.8]); }
+      if (opts.wind) w.push(['windLift', 1.1]);
+      const pool = w.filter(e => e[0] === 'hop' || e[0] !== lastName);
+      let sum = 0; pool.forEach(e => sum += e[1]);
+      let r = rng() * sum;
+      for (const e of pool) { r -= e[1]; if (r <= 0) return e[0]; }
+      return 'hop';
+    }
+
+    let ended = false;
+    for (let guard = 0; guard < 400 && st.platforms < target; guard++) {
+      const t = Math.min(1, st.platforms / target);
+      const P = params(t);
+      let name;
+      if (arenaMarks.length && st.platforms >= arenaMarks[0]) name = 'arena';
+      else if (opts.only === 'arena' && lastName !== 'arena' && lastName !== 'rest') name = 'arena';
+      else if (opts.checkpoints && st.sinceCP >= opts.checkpointEvery) name = 'rest';
+      else name = choosePiece(P);
+      if (room() < PIECE_ROOM[name] + 8) {
+        if (st.lane + 1 < LANE_BASE.length) { tower(); lastName = 'tower'; continue; }
+        if (name !== 'hop' && room() >= PIECE_ROOM.hop + 8) name = 'hop';
+        else { ended = true; break; }
+      }
+      const startX = st.x, startY = st.y;
+      const res = PIECES[name](P, arenasBuilt);
+      if (name === 'arena') { arenaMarks.shift(); arenasBuilt++; fighters += res.fighters; }
+      pieces.push({ name: name, x: startX, y: startY, endX: st.x, endY: st.y, dir: st.dir });
+      lastName = name;
+    }
+
+    // the finish
+    const ff = fit(2, st.y);
+    const fin = plat(ff.gap, ff.y, 5, 'solid');
+    const gx = fin.cells[2];
+    addTile(gx, fin.y - 1, 'goal');
+
+    // Every jump the course relies on is checked again here.
+    const checked = jumps.filter(j => j.kind === 'jump' || j.kind === 'spring' || j.kind === 'tower' || j.kind === 'arena' || j.kind === 'mover-land');
+    const bad = checked.filter(j => !reach(j.gap, j.climb, j.launch));
+
+    let maxX = 0;
+    tiles.forEach(t => { if (t.x > maxX) maxX = t.x; });
     return {
       tiles: tiles,
       movers: moversOut,
-      goal: { x: x, y: y, w: 1, h: 1 },
-      spawn: { x: 2.5, y: baseY },
-      platformCount: platformCount,
-      lengthTiles: x,
+      goal: { x: gx, y: fin.y - 1, w: 1, h: 1 },
+      spawn: { x: 2.5, y: base0 },
+      platformCount: st.platforms,
+      lengthTiles: maxX,
+      lanes: st.lane + 1,
+      arenas: arenasBuilt,
+      fighters: fighters,
+      pieces: pieces,
+      jumps: jumps,
+      verified: bad.length === 0,
+      badJumps: bad,
+      checkedJumps: checked,
+      truncated: ended,
     };
   }
 
   function generateLevelId() {
     return 'genlvl_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
   }
+
+  // Can every jump in this course be made by a character with physics `ph`?
+  function courseWorksFor(course, ph) {
+    return course.checkedJumps.every(j => canReach(j.gap, j.climb, j.launch, ph));
+  }
+  window._obGen = {
+    generateCourse: (o) => generateCourse(o), canReach: canReach, maxClimb: maxClimb,
+    courseWorksFor: courseWorksFor, buildLevelJSON: (c, o) => buildLevelJSON(c, o), DEFAULT_PHYS: DEFAULT_PHYS,
+  };
 
   function buildLevelJSON(course, opts) {
     const levelData = {
@@ -35483,6 +35954,7 @@ window._claimLBro = function() {
         goal: course.goal,
         spawn: course.spawn,
         checkpoint: null,
+        ...(opts.chars && opts.chars.length && { charLock: [...opts.chars], ...(course.verified && { charLockChecked: 'jumps' }) }),
       },
       movers: course.movers,
       meta: {
@@ -35539,6 +36011,7 @@ window._claimLBro = function() {
               <button data-val="coins" class="active">🪙 Coins</button>
               <button data-val="checkpoints" class="active">🚩 Checkpoints</button>
               <button data-val="enemies">👾 Patrol Enemies</button>
+              <button data-val="arena" class="active">⚔️ Colosseum</button>
             </div>
             <div class="spacer"></div>
             <div class="row" id="obGenCPRow">
@@ -35547,6 +36020,7 @@ window._claimLBro = function() {
               <span class="hint" id="obGenCPFreqVal" style="margin:0; min-width:16px; text-align:right;">6</span>
             </div>
             <div class="hint" style="margin-top:8px;">Patrol enemy danger scales with Difficulty - Easy stays mostly harmless, Insane leans deadly.</div>
+            <div class="hint" style="margin-top:6px;">⚔️ Colosseum: walled arenas along the course. Beat every fighter inside to earn the keys for the exit door.</div>
           </div>
 
           <div class="section">
@@ -35576,6 +36050,11 @@ window._claimLBro = function() {
               <button data-val="wide">Wide</button>
             </div>
             <div class="hint">Width, gaps and verticality stack on top of the Difficulty preset above.</div>
+          </div>
+
+          <div class="section">
+            <div class="label">Characters</div>
+            <div id="obGenChars"></div>
           </div>
 
           <div class="section">
@@ -35687,7 +36166,16 @@ window._claimLBro = function() {
     const previewStats = document.getElementById('obGenPreviewStats');
     const pctx = previewCanvas.getContext('2d');
 
-    function openModal() { backdrop.classList.add('open'); }
+    let charPicker = null;
+    function mountChars() {
+      if (charPicker || !window._charLock) return;
+      charPicker = window._charLock.mountPicker(document.getElementById('obGenChars'), {
+        generator: true,
+        anyNote: 'Anyone can play. Jumps are made for a plain character (normal speed and jump, two jumps).',
+        onChange: () => schedulePreview(),
+      });
+    }
+    function openModal() { mountChars(); backdrop.classList.add('open'); }
     function closeModal() { backdrop.classList.remove('open'); }
     openBtn.addEventListener('click', openModal);
     closeBtn.addEventListener('click', closeModal);
@@ -35741,6 +36229,7 @@ window._claimLBro = function() {
       windUp: '#7cdbff', windRight: '#7cdbff', coin: '#ffd166',
       checkpoint: '#9cff9a', goal: '#ff6b6b',
       enemy_patrol_safe: '#22c55e', enemy_patrol_hurt: '#eab308', enemy_patrol_kill: '#dc2626',
+      door2: '#f59e0b', door4: '#f59e0b', oneWayR: '#38bdf8', oneWayL: '#38bdf8',
     };
     let previewOpts = null; 
 
@@ -35758,11 +36247,34 @@ window._claimLBro = function() {
         checkpoints: featureOn('checkpoints'),
         checkpointEvery: parseInt(cpFreq.value, 10) || 6,
         enemies: featureOn('enemies'),
+        arena: featureOn('arena'),
         verticality: currentVal(vertGroup),
         platformWidth: currentVal(widthGroup),
         gapSize: currentVal(gapGroup),
         seed: (seedInput.value || '').trim() || randSeed(),
+        ...charOpts(),
       };
+    }
+    // The character lock chosen in the menu, with each character's movement for the jump checks.
+    function charOpts() {
+      const v = charPicker ? charPicker.value() : { mode: 'any', ids: [] };
+      const chars = v.mode === 'any' ? [] : v.ids;
+      return {
+        chars: chars,
+        phys: chars.map(id => window._charLock.physFor(id)),
+        needsPick: v.mode !== 'any' && !chars.length,
+      };
+    }
+    // How many characters could beat this course (shown when there is no lock).
+    function worksForCount(course) {
+      if (!window._charLock) return null;
+      const cat = window._charLock.catalog();
+      let n = 0;
+      for (const c of cat) {
+        const ph = window._charLock.physFor(c.id);
+        if (ph.jumps > 0 && window._obGen.courseWorksFor(course, ph)) n++;
+      }
+      return { n: n, of: cat.length };
     }
 
     function drawPreview() {
@@ -35780,11 +36292,13 @@ window._claimLBro = function() {
       }
 
       
-      let minX = 0, maxX = course.goal.x + 1, minY = 16, maxY = 66;
+      let minX = 0, maxX = 1, minY = 999, maxY = 0;
+      for (const t of course.tiles) { if (t.x + 1 > maxX) maxX = t.x + 1; if (t.y < minY) minY = t.y; if (t.y > maxY) maxY = t.y; }
+      minY -= 1; maxY += 1;
       const PAD = 2;
       const spanX = (maxX - minX) + PAD * 2;
       const spanY = (maxY - minY) + PAD * 2;
-      const scale = 8; 
+      const scale = course.lanes > 1 ? 3 : 8;
       previewCanvas.width = Math.max(previewWrap.clientWidth || 400, Math.round(spanX * scale));
       previewCanvas.height = 130;
       const px = previewCanvas.width / spanX;
@@ -35798,7 +36312,7 @@ window._claimLBro = function() {
 
       const tileW = Math.max(1, px), tileH = Math.max(1, py);
       for (const t of course.tiles) {
-        const color = PREVIEW_COLORS[t.type] || '#6b7280';
+        const color = PREVIEW_COLORS[t.type] || (t.type && t.type.startsWith('enemy_') ? '#f43f5e' : '#6b7280');
         pctx.fillStyle = color;
         if (t.type === 'coin') {
           pctx.beginPath();
@@ -35831,7 +36345,22 @@ window._claimLBro = function() {
       previewWrap.classList.add('has-preview');
       
       previewWrap.scrollLeft = 0;
-      previewStats.textContent = course.platformCount + ' platforms · ' + Math.round(course.lengthTiles) + ' tiles long · seed ' + opts.seed;
+      let who;
+      if (opts.needsPick) who = ' · 🔒 pick a character';
+      else if (opts.chars.length) {
+        who = ' · 🔒 ' + window._charLock.labels(opts.chars)
+          + (course.verified ? ' · ✓ every jump checked for ' + (opts.chars.length === 1 ? 'it' : 'each of them')
+            : ' · ⚠️ ' + course.badJumps.length + ' jump(s) may be too far');
+      } else {
+        const w = worksForCount(course);
+        who = (course.verified ? ' · ✓ every jump checked' : ' · ⚠️ ' + course.badJumps.length + ' jump(s) may be too far')
+          + (w ? ' · works for ' + w.n + ' of ' + w.of + ' characters' : '');
+      }
+      previewStats.textContent = course.platformCount + ' platforms'
+        + (course.lanes > 1 ? ' · ' + course.lanes + ' levels' : '')
+        + (course.arenas ? ' · ' + course.arenas + ' colosseum' + (course.arenas > 1 ? 's' : '') + ' (' + course.fighters + ' fighters)' : '')
+        + who
+        + ' · seed ' + opts.seed;
     }
 
     let previewTimer = null;
@@ -35853,6 +36382,10 @@ window._claimLBro = function() {
       
       
       const opts = previewOpts || readOpts();
+      if (opts.needsPick) {
+        if (status) status.textContent = '🔒 Pick at least one character, or choose Any character.';
+        return;
+      }
 
       let course;
       try {
@@ -35863,6 +36396,10 @@ window._claimLBro = function() {
         return;
       }
 
+      if (opts.chars.length && !course.verified) {
+        if (status) status.textContent = '⚠️ Couldn\'t make every jump work for ' + window._charLock.labels(opts.chars) + '. Try a different seed or easier settings.';
+        return;
+      }
       const json = buildLevelJSON(course, opts);
       if (window._fullDestroyWorld) window._fullDestroyWorld();
       const ok = window._importLevel ? window._importLevel(json) : false;
@@ -35885,12 +36422,444 @@ window._claimLBro = function() {
       }
 
       setTimeout(() => {
-        if (window._setMessage) window._setMessage('🎲 ' + opts.length[0].toUpperCase() + opts.length.slice(1) + ' ' + opts.difficulty + ' obby generated - reach the flag! (seed: ' + opts.seed + ')');
+        if (window._setMessage) window._setMessage('🎲 ' + opts.length[0].toUpperCase() + opts.length.slice(1) + ' ' + opts.difficulty + ' obby generated - reach the flag! (seed: ' + opts.seed + ')'
+          + (opts.chars.length ? ' 🔒 ' + window._charLock.labels(opts.chars) : ''));
       }, 350);
     });
   }
 
   initUI();
+})();
+</script>
+<script>
+// ===================== Character Lock =====================
+// A level can force one character, or a choice of characters. The lock is saved with the
+// level (world.charLock), shown in the Play tab, and enforced in Play mode. Characters the
+// player hasn't unlocked are lent for that level only. A lock counts as confirmed when the
+// level has been beaten with each locked character since its last edit
+// (world.charLockBeaten), or, for generated courses, when every jump was checked against
+// each character's own movement (world.charLockChecked = 'jumps').
+(function () {
+  'use strict';
+
+  const W = () => window._gameWorld;
+  const msg = (t) => { if (window._setMessage) window._setMessage(t); };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---------- Every character in the game ----------
+  // Starters are the picker's own buttons. Unlockable families are listed when the game
+  // defines them and keeps an owned-set the lock can lend through.
+  const FAMILIES = [
+    ['CBOX_CHARS_DEF', 'cboxOwnedChars', 'Crate Box'],
+    ['GODLY_CHARS_DEF', 'godlyOwnedChars', 'Godly'],
+    ['PRESTIGE_PRISMATIC_CHARS', 'prestigeOwned', 'Prestige'],
+    ['PRESTIGE_GODLY_CHARS', 'prestigeOwned', 'Prestige'],
+    ['SINGULARITY_GODLY_CHARS', 'prestigeOwned', 'Singularity'],
+    ['SINGULARITY_EXOTIC_CHARS', 'prestigeOwned', 'Singularity'],
+    ['ALLEY_PRISMATIC_CHARS', '_alleyOwned', 'Alley'],
+    ['ALLEY_GODLY_CHARS', '_alleyOwned', 'Alley'],
+    ['ALLEY_EXOTIC_CHARS', '_alleyOwned', 'Alley'],
+  ];
+  const TIER_RANK = { base: 0, retro: 1, silver: 2, gold: 3, prismatic: 4, godly: 5, exotic: 6 };
+  let catCache = null, catAt = 0;
+  function catalog() {
+    const now = Date.now();
+    if (catCache && now - catAt < 1000) return catCache;
+    const out = [], seen = new Set();
+    const add = (c) => { if (c.id && !seen.has(c.id)) { seen.add(c.id); out.push(c); } };
+    const base = window._BASE_CHARACTERS || {};
+    document.querySelectorAll('.char-select .char-btn').forEach(b => {
+      const c = base[b.dataset.char];
+      if (c) add({ id: b.dataset.char, name: c.name, emoji: c.emoji, group: 'Starters', tier: 'base', owned: true });
+    });
+    for (const [defKey, ownKey, group] of FAMILIES) {
+      const defs = window[defKey], owned = window[ownKey];
+      if (!Array.isArray(defs) || !(owned instanceof Set)) continue;
+      defs.slice().sort((a, b) => (TIER_RANK[a.tier] ?? 9) - (TIER_RANK[b.tier] ?? 9)).forEach(c => add({
+        id: c.id, name: c.name, emoji: c.icon || '❔', group: group, tier: c.tier || '',
+        owned: Set.prototype.has.call(owned, c.id),
+      }));
+    }
+    catCache = out; catAt = now;
+    return out;
+  }
+  const byId = (id) => catalog().find(c => c.id === id);
+  const label = (id) => { const c = byId(id); return c ? c.emoji + ' ' + c.name : id; };
+  const labels = (ids) => {
+    const l = ids.map(label);
+    return l.length <= 3 ? l.join(l.length === 2 ? ' or ' : ', ') : l.slice(0, 3).join(', ') + ' +' + (l.length - 3) + ' more';
+  };
+
+  // ---------- Movement physics per character (for the generator) ----------
+  const physCache = new Map();
+  function physFor(id) {
+    if (physCache.has(id)) return physCache.get(id);
+    let st = {};
+    try { const c = window._getCharFor ? window._getCharFor(id) : null; st = (c && c.stats) || {}; } catch (e) {}
+    const speed = typeof st.speed === 'number' ? st.speed : 1;
+    const jump = typeof st.jump === 'number' ? st.jump : 1;
+    const jumps = jump <= 0 ? 0 : (typeof st.maxJumps === 'number' ? st.maxJumps : 2);
+    const ph = { run: 9.5 * speed, jump: 14 * jump, jumps: jumps };
+    physCache.set(id, ph);
+    return ph;
+  }
+  // Generated courses need a character that can climb at least one row.
+  function canGenerateFor(id) {
+    const ph = physFor(id);
+    return ph.jumps > 0 && ph.jump > 0 && !!window._obGen && window._obGen.maxClimb(2, [ph]) >= 1;
+  }
+
+  // ---------- The lock on the current level ----------
+  function lock() { const w = W(); return w && Array.isArray(w.charLock) && w.charLock.length ? w.charLock : null; }
+  const mode = () => (window._gameMode ? window._gameMode() : 'build');
+  const selected = () => window.selectedCharacter;
+  const smashOn = () => !!(window.__smash && window.__smash.active);
+  function playable(id) { const c = byId(id); return !!c; }
+  function isOwned(id) { const c = byId(id); return !!(c && c.owned); }
+
+  function pick(id) {
+    const btn = document.querySelector('.char-select .char-btn[data-char="' + CSS.escape(id) + '"]');
+    if (btn) { btn.click(); }
+    else {
+      if (window._selectCharacter) window._selectCharacter(id);
+      document.querySelectorAll('.char-btn').forEach(b => b.classList.remove('active'));
+      if (mode() === 'play' && window._resetPlayer) window._resetPlayer();
+    }
+    renderBanner();
+  }
+
+  // Block picking a character the lock doesn't allow.
+  document.addEventListener('click', (e) => {
+    const l = lock();
+    if (!l || smashOn()) return;
+    const btn = e.target.closest && e.target.closest('.char-btn');
+    if (btn && btn.dataset.char && !l.includes(btn.dataset.char)) {
+      e.stopPropagation(); e.preventDefault();
+      msg('🔒 This level is locked to ' + labels(l) + '.');
+    }
+  }, true);
+  const _origSelect = window._selectCharacter;
+  window._selectCharacter = function (id) {
+    const l = lock();
+    if (l && !smashOn() && !l.includes(id)) { msg('🔒 This level is locked to ' + labels(l) + '.'); return; }
+    return _origSelect ? _origSelect(id) : undefined;
+  };
+
+  // Beating the level with a locked character confirms the lock for that character.
+  window._charLockOnWin = function (id) {
+    const w = W(), l = lock();
+    if (!l || !l.includes(id)) return;
+    w.charLockBeaten = Array.isArray(w.charLockBeaten) ? w.charLockBeaten : [];
+    if (w.charLockBeaten.includes(id)) return;
+    w.charLockBeaten.push(id);
+    const n = w.charLockBeaten.length;
+    setTimeout(() => msg('✅ Beaten as ' + label(id) + ' - ' + n + ' of ' + l.length + ' locked character' + (l.length > 1 ? 's' : '') + ' confirmed.'), 1400);
+    refreshAll();
+  };
+  // Any edit means the level has to be beaten again before the lock counts as confirmed.
+  window._charLockOnEdit = function () {
+    const w = W();
+    if (!w) return;
+    if ((w.charLockBeaten && w.charLockBeaten.length) || w.charLockChecked) {
+      w.charLockBeaten = []; w.charLockChecked = null;
+      refreshAll();
+    }
+  };
+
+  function setLock(ids) {
+    const w = W();
+    if (!w) return;
+    const prev = (lock() || []).join(',');
+    w.charLock = ids && ids.length ? [...new Set(ids)] : null;
+    if ((w.charLock || []).join(',') !== prev) { w.charLockBeaten = []; w.charLockChecked = null; }
+    if (window._srNotifyEdit) window._srNotifyEdit('charlock');
+    lastSig = null;
+    tick();
+    refreshAll();
+  }
+  function status(l) {
+    const w = W();
+    const beaten = (w && w.charLockBeaten) || [];
+    return { beaten: l.filter(id => beaten.includes(id)), checked: !!(w && w.charLockChecked === 'jumps') };
+  }
+
+  // ---------- Enforcement (checked a few times a second) ----------
+  let lastSig = null, preLockChar = null, warnedUnknown = '';
+  function tick() {
+    const l = lock();
+    const sig = l ? l.join(',') : '';
+    if (sig !== lastSig) {
+      lastSig = sig;
+      if (window._lendCharacters) window._lendCharacters(l ? l.filter(id => playable(id) && !isOwned(id)) : []);
+      if (l) {
+        if (preLockChar === null) preLockChar = selected();
+        msg('🔒 This level is for ' + labels(l) + '.');
+      } else if (preLockChar !== null) {
+        const back = isOwned(preLockChar) ? preLockChar : 'chicken';
+        preLockChar = null;
+        if (!isOwned(selected())) pick(back);
+      }
+      renderBanner();
+    }
+    if (l && !smashOn() && mode() === 'play' && !l.includes(selected())) {
+      const target = l.find(isOwned) || l.find(playable);
+      if (target) {
+        pick(target);
+        msg('🔒 This level is for ' + labels(l) + ' - you are playing as ' + label(target) + '.');
+      } else if (warnedUnknown !== sig) {
+        warnedUnknown = sig;
+        msg('🔒 This level needs a character this version of the game doesn\'t have.');
+      }
+    }
+    markPicker(l);
+  }
+  function markPicker(l) {
+    const sel = document.querySelector('.char-select');
+    if (!sel) return;
+    sel.classList.toggle('cl-locked', !!l);
+    sel.querySelectorAll('.char-btn').forEach(b => b.classList.toggle('cl-out', !!l && !l.includes(b.dataset.char)));
+  }
+  setInterval(tick, 250);
+
+  // ---------- Styles ----------
+  const style = document.createElement('style');
+  style.textContent = `
+    .char-select.cl-locked .char-btn.cl-out { opacity: 0.28; filter: grayscale(1); cursor: not-allowed; }
+    #clBanner { margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.35); }
+    #clBanner .cl-title { font-weight: 800; font-size: 13px; margin-bottom: 8px; }
+    #clBanner .cl-sub { font-size: 12px; color: var(--muted, #9aa3c7); margin-top: 8px; line-height: 1.4; }
+    .cl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cl-chip { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border-radius: 999px; font-size: 13px; cursor: pointer;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: inherit; user-select: none; touch-action: manipulation; }
+    .cl-chip.on { background: rgba(124,219,255,0.18); border-color: rgba(124,219,255,0.7); }
+    .cl-chip.off { opacity: 0.35; cursor: not-allowed; }
+    .cl-chip .cl-tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.1); }
+    .cl-picker .cl-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+    .cl-picker .cl-modes button { padding: 9px 6px; font-size: 13px; }
+    .cl-picker .cl-modes button.active { border-color: var(--accent, #7cdbff); background: rgba(124,219,255,0.15); }
+    .cl-picker input.cl-search { width: 100%; box-sizing: border-box; margin-bottom: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px; padding: 9px 12px; color: var(--text, #fff); font-size: 14px; }
+    .cl-picker .cl-grid { max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
+    .cl-picker .cl-group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted, #9aa3c7); margin: 10px 0 6px; }
+    .cl-picker .cl-note { font-size: 12px; color: var(--muted, #9aa3c7); margin-top: 8px; line-height: 1.4; }
+    #clBackdrop { position: fixed; inset: 0; z-index: 99985; background: rgba(5,6,14,0.72); backdrop-filter: blur(6px); display: none;
+      align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+    #clBackdrop.open { display: flex; }
+    #clModal { width: min(460px, 100%); max-height: min(88vh, 720px); display: flex; flex-direction: column; overflow: hidden;
+      background: linear-gradient(180deg, rgba(16,19,34,0.99), rgba(19,23,39,0.98)); border: 1px solid rgba(255,255,255,0.1); border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    #clModal .cl-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; font-size: 17px; font-weight: 800; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    #clModal .cl-x { width: 32px; height: 32px; border-radius: 10px; cursor: pointer; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; }
+    #clModal .cl-body { overflow-y: auto; padding: 14px; -webkit-overflow-scrolling: touch; }
+    #clModal .cl-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+    #clModal .cl-foot button { padding: 13px; font-size: 15px; }
+    #clModal .cl-confirm { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.04); font-size: 12.5px; line-height: 1.5; }
+  `;
+  document.head.appendChild(style);
+
+  // ---------- A character picker (used by the Build lock and the generator) ----------
+  // state: { mode: 'any' | 'one' | 'set', ids: [] }
+  function mountPicker(el, opt) {
+    opt = opt || {};
+    const state = { mode: (opt.initial && opt.initial.mode) || 'any', ids: ((opt.initial && opt.initial.ids) || []).slice() };
+    let query = '';
+    el.classList.add('cl-picker');
+    el.innerHTML = `
+      <div class="cl-modes">
+        <button data-m="any">${esc(opt.anyLabel || 'Any character')}</button>
+        <button data-m="one">One character</button>
+        <button data-m="set">A choice of</button>
+      </div>
+      <div class="cl-pickarea">
+        <input class="cl-search" type="text" placeholder="Search characters" autocomplete="off">
+        <div class="cl-grid"></div>
+      </div>
+      <div class="cl-note"></div>`;
+    const area = el.querySelector('.cl-pickarea'), grid = el.querySelector('.cl-grid'), note = el.querySelector('.cl-note');
+    el.querySelectorAll('.cl-modes button').forEach(b => b.addEventListener('click', () => {
+      state.mode = b.dataset.m;
+      if (state.mode === 'one' && state.ids.length > 1) state.ids = state.ids.slice(0, 1);
+      render(); changed();
+    }));
+    el.querySelector('.cl-search').addEventListener('input', (e) => { query = e.target.value.trim().toLowerCase(); renderGrid(); });
+    grid.addEventListener('click', (e) => {
+      const chip = e.target.closest('.cl-chip');
+      if (!chip || chip.classList.contains('off')) return;
+      const id = chip.dataset.id;
+      if (state.mode === 'one') state.ids = [id];
+      else state.ids = state.ids.includes(id) ? state.ids.filter(x => x !== id) : state.ids.concat(id);
+      renderGrid(); changed();
+    });
+    function usable(c) { return !opt.generator || canGenerateFor(c.id); }
+    function renderGrid() {
+      const cat = catalog();
+      // a generated course can't be made for a character that can't jump
+      state.ids = state.ids.filter(id => cat.some(c => c.id === id && usable(c)));
+      const groups = [];
+      for (const c of cat) {
+        if (query && !(c.name + ' ' + c.id).toLowerCase().includes(query)) continue;
+        let g = groups.find(x => x.name === c.group);
+        if (!g) { g = { name: c.group, list: [] }; groups.push(g); }
+        g.list.push(c);
+      }
+      grid.innerHTML = groups.map(g => `<div class="cl-group">${esc(g.name)}</div><div class="cl-chips">` + g.list.map(c => {
+        const ok = usable(c), on = state.ids.includes(c.id);
+        const tag = !ok ? '<span class="cl-tag">can\'t jump</span>' : (!c.owned ? '<span class="cl-tag">lent</span>' : '');
+        return `<span class="cl-chip${on ? ' on' : ''}${ok ? '' : ' off'}" data-id="${esc(c.id)}" title="${esc(c.name)}">${esc(c.emoji)} ${esc(c.name)} ${tag}</span>`;
+      }).join('') + '</div>').join('') || '<div class="cl-note">No characters match.</div>';
+      renderNote();
+    }
+    function renderNote() {
+      let t = '';
+      if (state.mode === 'any') t = opt.anyNote || '';
+      else if (!state.ids.length) t = state.mode === 'one' ? 'Tap the character this level is for.' : 'Tap every character players may choose from.';
+      else t = (state.mode === 'one' ? 'Locked to ' : 'Players choose from ') + labels(state.ids) + '.';
+      if (state.mode !== 'any' && state.ids.some(id => !isOwned(id))) t += ' Characters marked "lent" are lent to players who haven\'t unlocked them, for this level only.';
+      note.textContent = t;
+    }
+    function render() {
+      el.querySelectorAll('.cl-modes button').forEach(b => b.classList.toggle('active', b.dataset.m === state.mode));
+      area.style.display = state.mode === 'any' ? 'none' : '';
+      renderGrid();
+    }
+    function changed() { if (opt.onChange) opt.onChange(api.value()); }
+    const api = {
+      value: () => ({ mode: state.mode, ids: state.mode === 'any' ? [] : state.ids.slice() }),
+      set: (v) => { state.mode = v.mode; state.ids = (v.ids || []).slice(); render(); },
+      refresh: render,
+    };
+    render();
+    return api;
+  }
+
+  // ---------- Build tab: set the lock on the level being built ----------
+  function injectBuildSection() {
+    if (document.getElementById('clBuildSection')) return true;
+    const genBtn = document.getElementById('obGenOpenBtn');
+    const anchor = genBtn && genBtn.closest('.section');
+    if (!anchor) return false;
+    const sec = document.createElement('div');
+    sec.className = 'section' + (anchor.classList.contains('tab-visible') ? ' tab-visible' : '');
+    sec.dataset.tab = 'build';
+    sec.id = 'clBuildSection';
+    sec.style.display = anchor.style.display;
+    sec.innerHTML = `
+      <div class="label">Character Lock</div>
+      <button id="clOpenBtn" style="width:100%; padding:13px; font-size:15px;">🔒 Character Lock: Off</button>
+      <div class="spacer"></div>
+      <div class="hint" id="clBuildHint">Make players use one character, or choose from a set, on this level.</div>`;
+    anchor.after(sec);
+    document.getElementById('clOpenBtn').addEventListener('click', openLockModal);
+    return true;
+  }
+  function renderBuildSection() {
+    const btn = document.getElementById('clOpenBtn'), hint = document.getElementById('clBuildHint');
+    if (!btn) return;
+    const l = lock();
+    if (!l) {
+      btn.textContent = '🔒 Character Lock: Off';
+      hint.textContent = 'Make players use one character, or choose from a set, on this level.';
+      return;
+    }
+    btn.textContent = '🔒 ' + (l.length === 1 ? 'Locked to ' + label(l[0]) : l.length + ' characters allowed');
+    const s = status(l);
+    if (s.checked) hint.textContent = '✓ Generated course: every jump was checked for ' + (l.length === 1 ? 'this character' : 'each of these characters') + '.';
+    else if (s.beaten.length === l.length) hint.textContent = '✅ Confirmed: you beat this level with ' + (l.length === 1 ? 'it' : 'all of them') + '.';
+    else hint.textContent = '⏳ Confirmed with ' + s.beaten.length + ' of ' + l.length + '. Beat the level as each locked character to confirm it can be done.';
+  }
+
+  function ensureModal() {
+    if (document.getElementById('clBackdrop')) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div id="clBackdrop"><div id="clModal">
+        <div class="cl-head"><div>🔒 Character Lock</div><div class="cl-x" id="clClose">✕</div></div>
+        <div class="cl-body">
+          <div id="clPicker"></div>
+          <div class="cl-confirm" id="clConfirm"></div>
+        </div>
+        <div class="cl-foot"><button id="clCancel">Cancel</button><button id="clSave" style="background:linear-gradient(135deg, rgba(124,219,255,0.35), rgba(156,255,154,0.3));">Save</button></div>
+      </div></div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    const close = () => document.getElementById('clBackdrop').classList.remove('open');
+    document.getElementById('clClose').addEventListener('click', close);
+    document.getElementById('clCancel').addEventListener('click', close);
+    document.getElementById('clBackdrop').addEventListener('click', (e) => { if (e.target.id === 'clBackdrop') close(); });
+    document.getElementById('clSave').addEventListener('click', () => {
+      const v = modalPicker.value();
+      if (v.mode !== 'any' && !v.ids.length) { msg('Pick at least one character, or choose Any character.'); return; }
+      setLock(v.mode === 'any' ? null : v.ids);
+      close();
+      const l = lock();
+      msg(l ? '🔒 Level locked to ' + labels(l) + '. Beat it as ' + (l.length === 1 ? 'that character' : 'each of them') + ' to confirm it can be done.' : '🔓 Character lock removed.');
+    });
+  }
+  let modalPicker = null;
+  function openLockModal() {
+    ensureModal();
+    physCache.clear();
+    const l = lock();
+    const initial = l ? { mode: l.length === 1 ? 'one' : 'set', ids: l } : { mode: 'any', ids: [] };
+    modalPicker = mountPicker(document.getElementById('clPicker'), {
+      initial: initial, anyLabel: 'No lock',
+      anyNote: 'Players can use any character on this level.',
+      onChange: renderConfirm,
+    });
+    renderConfirm();
+    document.getElementById('clBackdrop').classList.add('open');
+  }
+  function renderConfirm() {
+    const box = document.getElementById('clConfirm');
+    if (!box || !modalPicker) return;
+    const v = modalPicker.value();
+    if (v.mode === 'any' || !v.ids.length) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    const cur = lock() || [];
+    const same = cur.length === v.ids.length && cur.every(id => v.ids.includes(id));
+    const s = same ? status(cur) : { beaten: [], checked: false };
+    const rows = v.ids.map(id => (s.checked || s.beaten.includes(id) ? '✅ ' : '⏳ ') + esc(label(id)));
+    box.innerHTML = '<b>Beatable check</b><br>' + rows.join('<br>') +
+      (s.checked ? '<br>Every jump was checked for these characters when the course was generated.'
+        : '<br>Play the level and reach the 🏁 as each character to confirm it. Editing the level clears the checks.');
+  }
+
+  // ---------- Play tab: what this level allows ----------
+  function renderBanner() {
+    const sel = document.querySelector('.char-select');
+    if (!sel) return;
+    let b = document.getElementById('clBanner');
+    const l = lock();
+    if (!l) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('div'); b.id = 'clBanner'; sel.before(b); }
+    const s = status(l);
+    const cur = selected();
+    b.innerHTML = `<div class="cl-title">🔒 This level is for ${l.length === 1 ? 'one character' : 'these characters'}</div>
+      <div class="cl-chips">` + l.map(id => {
+        const c = byId(id);
+        if (!c) return `<span class="cl-chip off" title="Not in this version">❔ ${esc(id)}</span>`;
+        return `<span class="cl-chip${id === cur ? ' on' : ''}" data-id="${esc(id)}">${esc(c.emoji)} ${esc(c.name)}${c.owned ? '' : ' <span class="cl-tag">lent</span>'}${s.beaten.includes(id) ? ' ✅' : ''}</span>`;
+      }).join('') + `</div>
+      <div class="cl-sub">${s.checked ? '✓ Every jump was checked for ' + (l.length === 1 ? 'this character' : 'each of these') + '.'
+        : s.beaten.length ? '✅ Beaten with ' + s.beaten.length + ' of ' + l.length + '.' : '⏳ Not confirmed yet - reach the 🏁 to confirm it can be done.'}</div>`;
+    b.querySelectorAll('.cl-chip[data-id]').forEach(ch => ch.addEventListener('click', () => {
+      const id = ch.dataset.id;
+      if (id !== selected()) { pick(id); msg('Playing as ' + label(id) + '.'); }
+    }));
+  }
+
+  function refreshAll() { renderBanner(); renderBuildSection(); renderConfirm(); }
+  // keep the banner's highlighted chip in step with picker clicks
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('.char-btn, .cl-chip')) setTimeout(renderBanner, 60); });
+
+  (function boot() {
+    if (!injectBuildSection()) { setTimeout(boot, 200); return; }
+    refreshAll();
+  })();
+  setInterval(renderBuildSection, 1000);
+
+  window._charLock = {
+    catalog: catalog, physFor: physFor, canGenerateFor: canGenerateFor, mountPicker: mountPicker,
+    label: label, labels: labels, lock: lock, setLock: setLock, status: status,
+  };
 })();
 </script>
 <script src="../qrlink/qrlink.js"></script>
@@ -39265,6 +40234,19 @@ window._claimLBro = function() {
   let lastPX = null, lastPY = null, prevJump = false, ff = null, aim = null;
   let dash = null, stomp = null, cast = null, rope = null, fling = null, held = null, spinT = 0, reel = null;
   const HOLD_MAX = 4, THROW_SPEED = 17;
+  // Smash: the ribbon is a recovery, not a place to live. Two latches (blocks or ledge reels) per trip
+  // through the air, a shared budget of hanging time that burns faster under the stage, and a short hold.
+  const SM_LATCHES = 2, SM_HANG = 2.5, SM_UNDER_BURN = 3, SM_HOLD_MAX = 1.5;
+  let latches = 0, hangT = 0;
+  // Smash: the fighter this turn is for (you, or the CPU while it plays the Mixtape) and the stage
+  function smInfo() {
+    const SM = window.__smash; if (!SM || !SM.active || !SM.__state) return null;
+    const s = SM.__state(), F = window._fighterPass;
+    const m = F ? (s.foe && s.foe.F === F ? s.foe : null) : s.me;
+    return m ? { m, stage: s.stage } : null;
+  }
+  // launched, grabbed, on a ledge or waiting to respawn: the ribbon can't hold you up
+  function smBusy(si) { const m = si && si.m; return !!m && (m.hitstun > 0 || m.heldT > 0 || m.liftHold > 0 || !!m.ledge || m.respawnHold > 0); }
   const yanks = [], fx = [];
   if (window.UNIVERSAL_PUNCH_EXCLUDED_CHARS) window.UNIVERSAL_PUNCH_EXCLUDED_CHARS.add(ID);
 
@@ -39389,7 +40371,7 @@ window._claimLBro = function() {
   function resetKit() {
     freeFoes(); fx.length = 0;
     dash = stomp = cast = rope = fling = ff = aim = reel = null;
-    atkCD = 0; formCD = 0; airUpUsed = false; spinT = 0;
+    atkCD = 0; formCD = 0; airUpUsed = false; spinT = 0; latches = 0; hangT = 0;
     lastPX = lastPY = null;
   }
   function dropRope(silent) {
@@ -39482,7 +40464,7 @@ window._claimLBro = function() {
     const e = held.e;
     if (!e || e.dead) { held = null; return; }
     held.t += dt;
-    if (held.t > HOLD_MAX) {
+    if (held.t > (smInfo() ? SM_HOLD_MAX : HOLD_MAX)) {
       e._held = false; e.stunTimer = Math.max(e.stunTimer || 0, 0.6);
       held = null; msg('🎀 It wriggled free'); return;
     }
@@ -39495,6 +40477,12 @@ window._claimLBro = function() {
     }
     e.vx = 0; e.vy = 0; e._held = true;
   }
+  // Smash, in the air: count the latch, or refuse it once this trip's are used up
+  function latchOK(p) {
+    if (!smInfo() || p.onGround) return true;
+    if (latches >= SM_LATCHES || hangT >= SM_HANG) { msg('🎀 The ribbon needs you to land (or grab a ledge) first'); return false; }
+    latches++; return true;
+  }
   function stepCast(p, dt) {
     if (!cast) return;
     if (cast.back > 0) { cast.back -= dt; if (cast.back <= 0) cast = null; return; }
@@ -39504,6 +40492,7 @@ window._claimLBro = function() {
       const x = cast.ox + cast.dx * cast.dist, y = cast.oy + cast.dy * cast.dist;
       cast.x = x; cast.y = y;
       if (cast.ledge && (cast.dist >= cast.max - 0.25 || tileAt(x, y))) {   // the clip bites the ledge: reel in
+        if (!latchOK(p)) { cast.back = 0.12; return; }
         reel = { L: cast.ledge, t: 0 }; cast = null; if (rope) dropRope(true);
         fx.push({ k: 'clip', x: reel.L.x, y: reel.L.top, t: 0, life: 0.35 });
         fx.push({ k: 'label', x: pcx(p), y: p.y - 0.3, t: 0, life: 0.7, text: 'LEDGE REEL!' });
@@ -39521,6 +40510,7 @@ window._claimLBro = function() {
       }
       const tl = tileAt(x, y);
       if (tl && cast.purpose !== 'zip' && ANCHOR.has(tl.type)) {
+        if (!latchOK(p)) { cast.back = 0.12; tone(300, { type: 'square', dur: 0.05, vol: 0.08 }); return; }
         // latch on the near edge of the block, not inside it
         attach(p, x - cast.dx * 0.12, y - cast.dy * 0.12, Math.floor(x) + ',' + Math.floor(y));
         cast = null; return;
@@ -39596,7 +40586,7 @@ window._claimLBro = function() {
   window.performSlash = function () {
     if (window.selectedCharacter !== ID) { if (_prevSlash) return _prevSlash.apply(this, arguments); return; }
     const p = window._gamePlayer;
-    if (!p || atkCD > 0) return;
+    if (!p || atkCD > 0 || smBusy(smInfo())) return;
     const fm = curForm(), cdM = ff ? 0.5 : 1;
     if (fm.id === 'r') {
       if (held) { const a = throwAim(p); throwHeld(p, a.dx, a.dy); atkCD = 0.3 * cdM; return; }
@@ -39788,6 +40778,13 @@ window._claimLBro = function() {
     // the block it was clipped to is gone (crumbled, broken): the ribbon lets go
     const wd = window._gameWorld, clip = wd && wd.tiles && wd.tiles.get(rope.key);
     if (!clip || !ANCHOR.has(clip.type)) { dropRope(); msg('🎀 The ribbon lost its grip'); return; }
+    // Smash: hanging in the air uses up the budget, three times as fast below the stage
+    const si = smInfo();
+    if (si && !p.onGround) {
+      const st = si.stage, under = st && pcy(p) > st.bottom + 0.5;
+      hangT += dt * (under ? SM_UNDER_BURN : 1);
+      if (hangT >= SM_HANG) { dropRope(); msg('🎀 The ribbon slipped! Land or grab a ledge to use it again'); return; }
+    }
     // jump lets go with a fling; a dash breaks free too
     const jumpEdge = k.jump && !prevJump;
     if ((jumpEdge && rope.t > 0.1) || p.isDashing) {
@@ -39894,6 +40891,12 @@ window._claimLBro = function() {
     if (atkCD > 0) atkCD = Math.max(0, atkCD - dt);
     if (formCD > 0) formCD = Math.max(0, formCD - dt);
     if (p.onGround) airUpUsed = false;
+    // Smash: a hit's launch (or a grab, a ledge, a respawn) beats the ribbon: let go so the launch carries you
+    const si = smInfo();
+    if (si) {
+      if (p.onGround || (si.m && si.m.ledge)) { latches = 0; hangT = 0; }
+      if (smBusy(si)) { if (rope) dropRope(); cast = null; reel = null; fling = null; if (held || yanks.length) freeFoes(); }
+    }
     if (spinT > 0) spinT -= dt;
     if (!ff) addTape(0.12 * dt);   // a trickle while you play
     if (ff) { ff.t -= dt; if (ff.t <= 0) { ff = null; applyForm(); msg('⏩ Back to normal speed'); click(0.2); } }
@@ -40101,7 +41104,7 @@ window._claimLBro = function() {
       // ribbon wrapped round it, and a ring that shrinks as it gets ready to wriggle free
       ctx.globalCompositeOperation = 'lighter';
       for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(x2, y2 - T * 0.15 + i * T * 0.15, T * 0.5, T * 0.12, 0.25, 0, Math.PI * 2); neon(ctx, PALETTE[i % 3], 1.3, 0.75); }
-      const left = 1 - held.t / HOLD_MAX;
+      const left = 1 - held.t / (smInfo() ? SM_HOLD_MAX : HOLD_MAX);
       ctx.beginPath(); ctx.arc(x2, y2, T * 0.75, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left); neon(ctx, left < 0.3 ? '#ff4d6d' : '#ffffff', 1.2, 0.6);
     }
     // a ribbon in flight
@@ -40200,12 +41203,12 @@ window._claimLBro = function() {
   // whoever it's holding and its yanks. Your buttons stay yours.
   (window._fighterPlugins = window._fighterPlugins || []).push({ name: 'mixtape', char: ID,
     swap(s) {
-      const out = { formIdx, PALETTE, active, atkCD, formCD, tape, tapeFullSaid, airUpUsed, lastPX, lastPY, prevJump, ff, aim, dash, stomp, cast, rope, fling, held, spinT, reel,
+      const out = { formIdx, PALETTE, active, atkCD, formCD, tape, tapeFullSaid, airUpUsed, lastPX, lastPY, prevJump, ff, aim, dash, stomp, cast, rope, fling, held, spinT, reel, latches, hangT,
         yanks: yanks.splice(0), fx: fx.splice(0) };
       if (!s) { const fi = Math.floor(Math.random() * FORMS.length); s = { formIdx: fi, PALETTE: FORMS[fi].pal.slice(), active: true }; }
       formIdx = s.formIdx || 0; PALETTE = s.PALETTE || FORMS[formIdx].pal.slice(); active = !!s.active; atkCD = s.atkCD || 0; formCD = s.formCD || 0;
       tape = s.tape || 0; tapeFullSaid = !!s.tapeFullSaid; airUpUsed = !!s.airUpUsed; lastPX = s.lastPX != null ? s.lastPX : null; lastPY = s.lastPY != null ? s.lastPY : null;
-      prevJump = !!s.prevJump; ff = s.ff || null; aim = s.aim || null; dash = s.dash || null; stomp = s.stomp || null; cast = s.cast || null; rope = s.rope || null; fling = s.fling || null; held = s.held || null; spinT = s.spinT || 0; reel = s.reel || null;
+      prevJump = !!s.prevJump; ff = s.ff || null; aim = s.aim || null; dash = s.dash || null; stomp = s.stomp || null; cast = s.cast || null; rope = s.rope || null; fling = s.fling || null; held = s.held || null; spinT = s.spinT || 0; reel = s.reel || null; latches = s.latches || 0; hangT = s.hangT || 0;
       if (s.yanks) yanks.push(...s.yanks); if (s.fx) fx.push(...s.fx);
       if (window._gtCharStatCache && window._gtCharStatCache[ID]) window._gtCharStatCache[ID] = formStats();   // speed / jump follow whoever's turn it is
       return out;
