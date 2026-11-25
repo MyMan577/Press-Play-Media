@@ -15,6 +15,8 @@
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge)
  *  Ground: neutral HAMMER SMASH (QUAKE charged), side HOME RUN, up PILLAR (ELEVATOR charged), down RIPPLE (two ground waves).
  *  Air:    neutral WHIRL (spins, slows the fall), side COMET SWING, up HAMMER HOP (recovery), down METEOR HAMMER (spike).
+ * CHARGED (hold S to full), ground / air: neutral QUAKE SMASH / HAMMER THROW (a boomerang hammer), side MOLTEN SWING /
+ *  IRON COMET (shatters pillars into rock), up ELEVATOR / ROCKET HAMMER, down FAULT LINE (three pillars) / GROUND ZERO.
  */
 (function () {
   'use strict';
@@ -98,6 +100,55 @@
   function wave(S, x, fy, dir, pw) { S.waves.push({ x, fy, dir, t: 0, life: 0.5 + 0.15 * pw, sp: 11, hits: new Set(), dmg: 4 + 2 * pw }); }
 
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full; ground neutral and up keep their own charged QUAKE and ELEVATOR) ----
+    molten(p, dt, S, q) {   // MOLTEN SWING: the head white-hot; the swing flings a spray of molten slag that burns
+      const f = q.f; S.heat = 1; p._armorT = Math.max(p._armorT || 0, 0.1);
+      S.target = FK.keyed([[0, PO.hrA], [0.22, PO.hrA], [0.3, PO.hrB], [0.42, PO.hrC]], q.t); S.rate = 50; p.vx = 0;
+      if (q.t > 0.24 && q.t < 0.36) headHits(S, p, f, { dmg: 6, kx: 12, ky: -8, stop: 0.1 });
+      if (q.t >= 0.3 && !q.done) { q.done = 1; const h = head(p, PO.hrB, f); for (let i = 0; i < 6; i++) S.embers.push({ x: h[0], y: h[1], vx: f * (8 + i * 1.6), vy: -5 - (i % 3) * 2.5, t: 0, hits: new Set() }); FK.noise({ dur: 0.3, cut: 1800, cutEnd: 600, q: 1, vol: 0.25 }); }
+      if (q.t > 0.6) { S.heat = 0; S.seq = null; }
+    },
+    fault(p, dt, S, q) {   // FAULT LINE: the hammer driven straight down; a crack runs ahead and three pillars burst up along it
+      const f = q.f; p.vx = 0; p._armorT = Math.max(p._armorT || 0, 0.1);
+      S.target = q.t < 0.25 ? PO.piA : PO.piB; S.rate = q.t < 0.25 ? 25 : 60;
+      if (q.t >= 0.25 && !q.go) { q.go = 1; FK.thud(true); FK.shake(8); q.fy = p.y + p.h; S.crack = { x0: pcx(p), y: q.fy, f, t: 0 }; }
+      if (q.go) for (let i = 0; i < 3; i++) if (q.t >= 0.32 + i * 0.12 && (q.n || 0) <= i) {
+        q.n = i + 1; const x = pcx(p) + f * (1.8 + i * 1.7), fy = FK.floorAt(x, q.fy - 0.5, 3);
+        if (fy != null) { const P2 = raise(S, x, fy, 0.3, false); P2.life = 5; if (S.pillars.length > 3) crumble(S, S.pillars[0]); }
+      }
+      if (q.t > 0.75) { S.crack = null; S.seq = null; }
+    },
+    boomer(p, dt, S, q) {   // HAMMER THROW (air): the hammer spun out like a boomerang; it shreds on the way out and on the way back
+      S.target = q.t < 0.1 ? PO.cmA : PO.cmB; S.rate = 50; p.vy = Math.min(p.vy, 1);
+      if (!q.done && q.t >= 0.1) { q.done = 1; S.flung = { x: pcx(p), y: pcy(p), ox: pcx(p), f: q.f, t: 0, cool: new Map() }; FK.whoosh(false, true); }
+      if (q.t > 0.3) S.seq = null;
+    },
+    iron(p, dt, S, q) {   // IRON COMET (air): hammer first, a spinning bolt straight across; pillars in the way shatter into rock
+      const f = q.f; S.target = PO.cmB; S.rate = 50; S.spin = q.t * 30 * f; S.selfMove = true; p._armorT = Math.max(p._armorT || 0, 0.1);
+      if (q.t < 0.1) { p.vy = 0; p.vx = 0; return; }
+      if (!FK.moveX(p, f * 19 * dt)) q.t = 9;
+      p.vx = f * 5; p.vy = 0;
+      for (const e of FK.within(pcx(p) + f * 0.6, pcy(p), 1.1)) if (!q.hits.has(e)) { q.hits.add(e); FK.hit(S, e, 6, { kx: f * 14, ky: -7, stun: 0.5, c: C_FX, big: true, stop: 0.1 }); clang(true); }
+      for (const P2 of S.pillars.slice()) if (Math.abs(P2.x - pcx(p)) < 0.9 && pcy(p) > P2.fy - P2.h) { for (let i = 0; i < 6; i++) S.rocks.push({ x: P2.x, y: P2.fy - P2.h / 2, vx: f * (8 + Math.random() * 6), vy: -3 - Math.random() * 4, t: 0, life: 1.2, r: 0.2, rot: 0, dmg: 3 }); crumble(S, P2); FK.label(S, p, 'SHATTER!', C_HOT, true); }
+      if (q.t > 0.55) { S.spin = 0; S.seq = null; }
+    },
+    rocket(p, dt, S, q) {   // ROCKET HAMMER (air): the hammer head goes off like a charge under her feet; she is blasted skyward
+      S.target = q.t < 0.12 ? PO.riB : PO.hopB; S.rate = 50; S.airUp = true;
+      if (q.t < 0.12) { p.vy = Math.min(p.vy, 0); S.heat = 1; return; }
+      if (!q.done) { q.done = 1; S.heat = 0; p.vy = -24; p.onGround = false; FK.thud(true); FK.noise({ dur: 0.3, cut: 700, q: 1, vol: 0.35 }); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h + 0.3, R: 2, t: 0, life: 0.4, c: C_HOT }); for (const e of FK.within(pcx(p), p.y + p.h + 0.8, 2)) FK.hit(S, e, 5, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 7, ky: 14, stun: 0.6, c: C_HOT, big: true }); }
+      if (q.t > 0.4) S.seq = null;
+    },
+    zero(p, dt, S, q) {   // GROUND ZERO (air): front-flips with the hammer out, faster and faster, then lands it: a ring of pillars bursts up round her
+      S.target = PO.whirl; S.rate = 50; S.spin = q.t * 26 * q.f; p.vx = 0; p._armorT = Math.max(p._armorT || 0, 0.1);
+      if (q.t < 0.15) { p.vy = -2; return; }
+      p.vy = 24;
+      for (const e of FK.within(pcx(p), pcy(p) + 0.4, 1.3)) if (!q.hits.has(e)) { q.hits.add(e); FK.hit(S, e, 5, { kx: 0, ky: 16, stun: 0.5, c: C_FX, big: true, stop: 0.08 }); }
+      if (p.onGround || q.t > 1.5) {
+        S.spin = 0; FK.thud(true); FK.shake(10); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 2.4, t: 0, life: 0.5, c: C_FX });
+        if (p.onGround) { while (S.pillars.length) crumble(S, S.pillars[0]); for (const d of [-1.6, 1.6]) { const fy = FK.floorAt(pcx(p) + d, p.y + p.h - 0.5, 3); if (fy != null) { const P2 = raise(S, pcx(p) + d, fy, 0, false); P2.life = 5; } } }
+        S.seq = null;
+      }
+    },
     smash(p, dt, S, q) {
       const f = q.f, H = 0.2 + 0.3 * q.pw;
       if (coil(S, q, PO.smA, H)) return;
@@ -204,6 +255,17 @@
 
   function stepWorld(p, dt, S) {
     const foes = FK.foes();
+    for (let i = S.embers.length - 1; i >= 0; i--) {   // molten slag: arcs, burns what it touches, sizzles out on the floor
+      const m = S.embers[i]; m.t += dt; m.vy += 22 * dt; m.x += m.vx * dt; m.y += m.vy * dt;
+      for (const e of foes) if (!m.hits.has(e) && Math.abs(ex(e) - m.x) < 0.6 && Math.abs(ey(e) - m.y) < 0.7) { m.hits.add(e); FK.hit(S, e, 2.5, { kx: Math.sign(m.vx) * 6, ky: -6, stun: 0.4, c: C_HOT }); e._ppBurn = Math.max(e._ppBurn || 0, 2); }
+      if (m.t > 1.4 || FK.blocked(m.x - 0.1, m.y - 0.1, 0.2, 0.2)) { S.fx.push({ k: 'dust', x: m.x, y: m.y, t: 0, life: 0.3, c: C_HOT }); S.embers.splice(i, 1); }
+    }
+    if (S.flung) {   // the thrown hammer: out, then back to her hand
+      const H = S.flung; H.t += dt;
+      if (H.t < 0.45) H.x = H.ox + H.f * 6 * FK.easeOut(H.t / 0.45); else { const dx = pcx(p) - H.x, dy = pcy(p) - H.y, d = Math.hypot(dx, dy) || 1; H.x += dx / d * 20 * dt; H.y += dy / d * 20 * dt; if (d < 0.7 || H.t > 2) { S.flung = null; clang(false); } }
+      if (S.flung) { for (const [e, c] of H.cool) { if (c - dt <= 0) H.cool.delete(e); else H.cool.set(e, c - dt); } for (const e of foes) if (!H.cool.has(e) && Math.hypot(ex(e) - H.x, ey(e) - H.y) < 1.1) { H.cool.set(e, 0.15); FK.hit(S, e, 1.5, { kx: H.f * (H.t < 0.45 ? 4 : -4), ky: -4, stun: 0.3, c: C_FX }); FK.smack(false); } }
+    }
+    if (S.crack) S.crack.t += 1 / 60;
     S.onPillar = false;
     for (const P2 of S.pillars.slice()) {
       P2.t += dt;
@@ -251,9 +313,15 @@
       desc: 'A blacksmith with a hammer as big as she is: heavy, hard to launch, and armored through every swing so nothing interrupts her. Every swing coils back first (hold S to stay coiled and hit harder): Hammer Smash, Home Run and Ripple on the ground, Whirl, Comet Swing, Hammer Hop and Meteor Hammer in the air. PILLAR (↑) raises a stone pillar that launches foes and stays as a platform; charged it lifts her instead. Home Run a pillar to shatter it into flying rocks, or Meteor Hammer onto one to drive it in as a shockwave.' },
     stats: { speed: 0.98, jump: 1.05, maxJumps: 2, maxDashes: 1, hp: 6 },
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, heat: 0, pillars: [], waves: [], rocks: [], airUp: false, onPillar: false, land: 0 }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, heat: 0, pillars: [], waves: [], rocks: [], embers: [], flung: null, crack: null, spin: 0, airUp: false, onPillar: false, land: 0 }),
     busy: S => !!S.seq,
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Hammer Hop comes back when you land'; return null; },
+    charged: {
+      side: (p, f, S, air) => { startSeq(S, air ? 'iron' : 'molten', { f }); return air ? 'IRON COMET' : 'MOLTEN SWING'; },
+      down: (p, f, S, air) => { startSeq(S, air ? 'zero' : 'fault', { f }); return air ? 'GROUND ZERO' : 'FAULT LINE'; },
+      neutral: (p, f, S, air) => { if (!air) return null; startSeq(S, 'boomer', { f }); return 'HAMMER THROW'; },
+      up: (p, f, S, air) => { if (!air) return null; startSeq(S, 'rocket', { f }); return 'ROCKET HAMMER'; },
+    },
     act: {
       ground_neutral: (p, f, pw, S) => startSeq(S, 'smash', { f, pw }),
       ground_side: (p, f, pw, S) => startSeq(S, 'homer', { f, pw }),
@@ -268,6 +336,7 @@
     step(p, dt, S, k) {
       S.rate = 18; S.heat = Math.max(0, S.heat - dt * 2.5);
       if (S.seq) { p._armorT = Math.max(p._armorT || 0, 0.18); S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }   // SUPER ARMOR: nothing knocks her out of a swing
+      if (!S.seq) { S.spin = 0; S.crack = null; }
       stepWorld(p, dt, S);
       if (!S.seq) {
         if (S.land > 0) { S.land -= dt; S.target = PO.riB; S.rate = 40; }
@@ -281,6 +350,7 @@
     drawBody(ctx, px, py, pw, ph, t, S, p) {
       const q = S ? S.pose : PO.idle, s = ph / U, cx = px + pw / 2, fy = py + ph, sq = q.sq == null ? 1 : q.sq;
       // squash and stretch about her feet
+      if (S && S.spin) { ctx.translate(cx, fy - ph * 0.45); ctx.rotate(S.spin); ctx.translate(-cx, -(fy - ph * 0.45)); }   // IRON COMET / GROUND ZERO
       ctx.translate(cx, fy); ctx.scale(2 - sq, sq); ctx.translate(-cx, -fy);
       const K = FK.skel(P, q, cx, fy, s), heat = S ? (S.heat || 0) : 0;
       const Tpx = ph / (p ? p.h : 0.92);
@@ -335,6 +405,9 @@
       FK.mitt(ctx, hx, hy, 3 * s, '#4a3a33');
     },
     drawWorld(ctx, V, S) {
+      for (const m of S.embers) { const x = V.SX(m.x), y = V.SY(m.y); ctx.beginPath(); ctx.arc(x, y, V.T * 0.2, 0, Math.PI * 2); FK.glow(ctx, C_HOT, 0.5); ctx.fill(); FK.solid(ctx, '#fff2b0', 1); ctx.beginPath(); ctx.arc(x, y, V.T * 0.09, 0, Math.PI * 2); ctx.fill(); }
+      if (S.flung) { const x = V.SX(S.flung.x), y = V.SY(S.flung.y), a = S.flung.t * 25; ctx.save(); ctx.translate(x, y); ctx.rotate(a); FK.solid(ctx, '#5a3a24', 1); ctx.fillRect(-V.T * 0.05, -V.T * 0.6, V.T * 0.1, V.T * 1.1); FK.solid(ctx, C_IRON, 1); ctx.fillRect(-V.T * 0.32, -V.T * 0.75, V.T * 0.64, V.T * 0.36); ctx.restore(); ctx.beginPath(); ctx.arc(x, y, V.T * 0.9, 0, Math.PI * 2); FK.glow(ctx, C_FX, 0.25); ctx.lineWidth = 3; ctx.stroke(); }
+      if (S.crack) { const c = S.crack, x0 = V.SX(c.x0), y = V.SY(c.y), L = Math.min(1, c.t / 0.4) * V.T * 5.5; FK.solid(ctx, '#1b1410', 1); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y); for (let i = 1; i <= 10; i++) ctx.lineTo(x0 + c.f * L * i / 10, y - 1 - (i % 2) * 3); ctx.stroke(); FK.glow(ctx, C_HOT, 0.6); ctx.lineWidth = 1.5; ctx.stroke(); }
       const p = V.p, T = V.T, f = FK.face(p), q = S.seq;
       for (const P2 of S.pillars) {
         const x = V.SX(P2.x), y0 = V.SY(P2.fy), h = P2.h * T, w = P2.w * T, left = P2.life - P2.t;
