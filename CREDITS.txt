@@ -405,6 +405,12 @@ Games
     Licence: Apache 2.0
     https://github.com/cozmo/jsQR
 
+* Lucide icons
+    By: Lucide Contributors; some icons from Feather by Cole Bemis
+    Why: Card symbols in Last Card (Shield, Insurance, Freeze, Truth Syringe, Spy Glass and others).
+    Licence: ISC (Lucide), MIT (Feather)
+    https://lucide.dev
+
 * Game music
     By: Press Play (the Game-audio collection on GitHub)
     Why: Music and sounds for the games.
@@ -449,7 +455,8 @@ Corporation), EfficientAT
 Duponchel, Franz Buchinger, Antonio Afonso), mp4-muxer (Copyright (c) 2023
 Vanilagy), three.js (Copyright (c) 2010-2023 three.js authors), PeerJS
 (Copyright (c) 2015 Michelle Bu and Eric Zhang), qrcode-generator (Copyright
-(c) 2009 Kazuhiko Arase), Node.js and npm (their authors).
+(c) 2009 Kazuhiko Arase), Feather (Copyright (c) 2013-2023 Cole Bemis),
+Node.js and npm (their authors).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -468,6 +475,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+===========================================================================
+ISC License
+===========================================================================
+
+Used by: Lucide (Copyright (c) for portions of Lucide are held by Cole Bemis
+2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are
+held by Lucide Contributors 2022).
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ===========================================================================
 BSD 3-Clause License
