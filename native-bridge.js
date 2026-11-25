@@ -50,10 +50,11 @@
   function norm(u) { try { return decodeURIComponent(String(u)); } catch (e) { return String(u); } }
   function sameUri(a, b) { return !!a && !!b && (String(a) === String(b) || norm(a) === norm(b)); }
   function now() { return performance.now(); }
-  function emit(S, type) {
+  function emit(S, type, extra) {
     try {
       var ev = new Event(type);
       Object.defineProperty(ev, 'target', { value: S.proxy });   // app code compares e.target with media()
+      if (extra) for (var k in extra) ev[k] = extra[k];
       S.raw.dispatchEvent(ev);
     } catch (e) {}
   }
@@ -479,7 +480,7 @@
       S.advancedUri = s.uri; S.adopting = true;
       setTimeout(function () { if (S.adopting) { S.adopting = false; N.resync(); } }, 2500);
       S.ended = true; S.pwr = false;
-      emit(S, 'timeupdate'); emit(S, 'pause'); emit(S, 'ended');
+      emit(S, 'timeupdate'); emit(S, 'pause'); emit(S, 'ended', { ppSkip: s.why === 'skip' });   // a background Next: not a finished song
     });
     Player.addListener('error', function (e) {
       var S = cur; if (!S || !S.active) return;
