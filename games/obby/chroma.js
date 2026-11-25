@@ -25,6 +25,9 @@
  *            Sanctuary ♥ (a circle that mends him while he stands in it and burns foes; recharges).
  *    Air:    Halo Spin (many hits) / Dove Dash ♥ (dash through foes) / Ascension / Benediction ♥ (dive burst).
  *
+ * A FULL charge (any form) is a PRISM special that uses all five colours (ground / air): neutral PRISM BEAM / PRISM ORBIT,
+ *  side SPECTRUM RUSH / REFRACTION, up RAINBOW GEYSER / AURORA RISE, down CHROMATIC NOVA (cashes in every mark) / SPECTRUM CRASH.
+ *
  * Works for a second fighter (Smash CPU) through window._fighterPlugins, like Gale and the Ace.
  */
 (function () {
@@ -600,8 +603,78 @@
     push({ k: 'bite', x: ex(e), y: ey(e), life: 0.22 }); FK.label(S, p, 'CHOMP!', FORMS[2].g, false);
   }
   const NOEV = [];
-  function endMove(p) { S.mv = null; S.tongue = null; S.invis = 0; }
+  function endMove(p) { S.mv = null; S.tongue = null; S.invis = 0; S.cs = null; }
+  // ---- CHARGED SPECIALS (hold S to full): PRISM moves that use all five colours at once, whatever form he is in ----
+  const ELS = [['burn', 'ember'], ['chill', 'frost'], ['poison', 'venom'], ['static', 'volt'], ['light', 'lumen']];
+  const CHARGED = { neutral: ['beam', 'orbit'], side: ['rush', 'refract'], up: ['geyser', 'aurora'], down: ['nova', 'crash'] };
+  const CS_NAME = { beam: 'PRISM BEAM', orbit: 'PRISM ORBIT', rush: 'SPECTRUM RUSH', refract: 'REFRACTION', geyser: 'RAINBOW GEYSER', aurora: 'AURORA RISE', nova: 'CHROMATIC NOVA', crash: 'SPECTRUM CRASH' };
+  const elHit = (e, dmg, i, o) => hit(e, dmg, Object.assign({ el: ELS[i % 5][0], form: ELS[i % 5][1], n: 1 }, o));
+  function stepCS(p, m, dt) {
+    const f = m.f; S.cs = m;
+    if (m.cs === 'beam') {   // PRISM BEAM: a rainbow beam straight ahead; every tick paints the next colour's mark on whoever it touches
+      p.vx = 0; if (!p.onGround) p.vy = Math.min(p.vy, 0.5);
+      let L = 0; while (L < 8 && !FK.blocked(pcx(p) + f * (L + 0.3) - 0.1, pcy(p) - 0.1, 0.2, 0.2)) L += 0.25; m.L = L;
+      if (Math.floor(m.t / 0.08) !== m.n) { m.n = Math.floor(m.t / 0.08); for (const e of box(p, f, 0, L, 0.6)) elHit(e, 0.5, m.n, { kx: f * 1.5, ky: -1, stun: 0.25 }); }
+      if (m.t > 0.6) { for (const e of box(p, f, 0, L, 0.7)) hit(e, 3, { kx: f * 11, ky: -7, stun: 0.5, big: true, form: 'lumen' }); endMove(p); }
+    } else if (m.cs === 'rush') {   // SPECTRUM RUSH: five passes back and forth through everything in front, each a different colour
+      const i = Math.floor(m.t / 0.12); S.selfMove = true;
+      if (i !== m.n && i < 5) { m.n = i; m.hs.clear(); m.dir = i % 2 ? -f : f; }
+      if (i < 5) { FK.moveX(p, m.dir * 26 * dt); p.vy = Math.min(p.vy, 0); for (const e of circ(pcx(p), pcy(p), 0.9)) if (!m.hs.has(e)) { m.hs.add(e); elHit(e, 1.2, i, { kx: m.dir * 3, ky: -3, stun: 0.35 }); } push({ k: 'ghost', x: p.x, y: p.y, w: p.w, h: p.h, c: FORMS[i].c, life: 0.2 }); }
+      else { for (const e of circ(pcx(p), pcy(p), 2)) hit(e, 3, { kx: f * 12, ky: -9, stun: 0.5, big: true }); endMove(p); }
+    } else if (m.cs === 'geyser') {   // RAINBOW GEYSER: five bands of colour burst up ahead, one after another; each throws and marks
+      p.vx = 0; m.x = m.x || pcx(p) + f * 2;
+      const i = Math.floor((m.t - 0.1) / 0.09);
+      if (m.t > 0.1 && i !== m.n && i < 5) { m.n = i; for (const e of FK.foes()) if (Math.abs(ex(e) - m.x) < 0.9 && ey(e) < m.fy + 0.3 && ey(e) > m.fy - 4.5) elHit(e, 1.5, i, { kx: 0, ky: -10 - i * 2, stun: 0.4, big: i === 4 }); }
+      if (m.t > 0.65) endMove(p);
+    } else if (m.cs === 'nova') {   // CHROMATIC NOVA: every mark on every foe close by is cashed in at once: the more marks, the bigger the blast
+      p.vx = 0;
+      if (m.t > 0.25 && !m.done) {
+        m.done = 1;
+        for (const e of circ(pcx(p), pcy(p), 4)) {
+          const n = (e._chBurn > 0 ? 1 : 0) + (e._chChill > 0 || e._ppFrozen > 0 ? 1 : 0) + (e._chPoisN > 0 ? 1 : 0) + (e._chStatic > 0 ? 1 : 0) + (e._chLight > 0 ? 1 : 0);
+          e._chBurn = 0; e._chChill = 0; e._ppFrozen = 0; e._chPoisN = 0; e._chPois = 0; e._chStatic = 0; e._chLight = 0;
+          hit(e, 2 + n * 1.6, { kx: (Math.sign(ex(e) - pcx(p)) || f) * (6 + n * 2), ky: -8 - n * 1.5, stun: 0.5 + n * 0.1, big: true });
+          if (n >= 2) lbl(e, n + ' COLOURS!', GOLD);
+        }
+        push({ k: 'ring', x: pcx(p), y: pcy(p), R: 4, c: GOLD, life: 0.45 }); chime(); FK.shake(8);
+      }
+      if (m.t > 0.5) endMove(p);
+    } else if (m.cs === 'orbit') {   // PRISM ORBIT (air): five coloured orbs circle him, then each flies at the nearest foe with its colour
+      p.vy = Math.min(p.vy, 1);
+      if (!m.orbs) m.orbs = ELS.map((el, i) => ({ i, a: i / 5 * Math.PI * 2, x: pcx(p), y: pcy(p), go: false, done: false }));
+      for (const o of m.orbs) {
+        if (o.done) continue;
+        if (m.t < 0.45) { o.a += dt * 8; o.x = pcx(p) + Math.cos(o.a) * 1.3; o.y = pcy(p) + Math.sin(o.a) * 1.1; continue; }
+        let b = null, bd = 9; for (const e of FK.foes()) { const d = Math.hypot(ex(e) - o.x, ey(e) - o.y); if (d < bd) { bd = d; b = e; } }
+        if (!b) { o.done = true; continue; }
+        const dx = ex(b) - o.x, dy = ey(b) - o.y, d = Math.hypot(dx, dy) || 1; o.x += dx / d * 22 * dt; o.y += dy / d * 22 * dt;
+        if (d < 0.6) { elHit(b, 2, o.i, { kx: Math.sign(dx || 1) * 6, ky: -6, stun: 0.4, big: o.i === 4 }); o.done = true; }
+      }
+      if (m.t > 1.6 || m.orbs.every(o => o.done)) endMove(p);
+    } else if (m.cs === 'refract') {   // REFRACTION (air): he splits into three coloured copies that dash out in a fan
+      if (!m.cp) { m.cp = [-0.5, 0, 0.5].map((a, i) => ({ x: pcx(p), y: pcy(p), vx: Math.cos(a) * f * 20, vy: Math.sin(a) * 20, i: [0, 3, 1][i], hs: new Set() })); FK.whoosh(false, true); S.invis = 0.3; }
+      p.vx = 0; p.vy = Math.min(p.vy, 0.3);
+      for (const c of m.cp) { c.x += c.vx * dt; c.y += c.vy * dt; push({ k: 'ghost', x: c.x - p.w / 2, y: c.y - p.h / 2, w: p.w, h: p.h, c: FORMS[c.i].c, life: 0.18 }); for (const e of circ(c.x, c.y, 0.8)) if (!c.hs.has(e)) { c.hs.add(e); elHit(e, 2.5, c.i, { kx: Math.sign(c.vx) * 9, ky: -6, stun: 0.45, big: true }); } }
+      if (m.t > 0.35) { S.invis = 0; S.airSide = true; endMove(p); }
+    } else if (m.cs === 'aurora') {   // AURORA RISE (air): he rises on a curtain of aurora light that mends him and chills what is below
+      p.vy = -11 + m.t * 8; p.onGround = false; S.airUp = true;
+      if (Math.floor(m.t / 0.15) !== m.n) { m.n = Math.floor(m.t / 0.15); heal(p, 0.6); for (const e of FK.foes()) if (Math.abs(ex(e) - pcx(p)) < 1.2 && ey(e) > pcy(p) && ey(e) < pcy(p) + 4) elHit(e, 1, 1, { kx: 0, ky: -4, stun: 0.3 }); }
+      if (m.t > 0.8) endMove(p);
+    } else if (m.cs === 'crash') {   // SPECTRUM CRASH (air): a plunge; on impact five coloured shockwaves ring out, each wider than the last
+      if (m.t < 0.12) { p.vy = -1; p.vx = 0; return; }
+      if (!m.landed) {
+        p.vy = 25; p.vx = 0;
+        for (const e of circ(pcx(p), pcy(p) + 0.4, 1)) if (!m.hs.has(e)) { m.hs.add(e); hit(e, 3, { kx: 0, ky: 15, stun: 0.5, big: true }); }
+        if (p.onGround || m.t > 1.5) { m.landed = m.t; FK.thud(true); }
+        return;
+      }
+      const i = Math.floor((m.t - m.landed) / 0.08);
+      if (i !== m.n && i < 5) { m.n = i; const R = 1.2 + i * 0.7; push({ k: 'ring', x: pcx(p), y: p.y + p.h - 0.2, R, c: FORMS[i].c, life: 0.35 }); for (const e of circ(pcx(p), p.y + p.h - 0.4, R)) if (Math.hypot(ex(e) - pcx(p), ey(e) - (p.y + p.h - 0.4)) > R - 0.8) elHit(e, 1.5, i, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 5, ky: -8, stun: 0.4 }); }
+      if (m.t - m.landed > 0.45) endMove(p);
+    }
+  }
   function stepMove(p, dt) {
+    if (S.mv && S.mv.cs) { S.mv.t += dt; return stepCS(p, S.mv, dt); }
     const m = S.mv, sp = m.spec; m.t += dt;
     if (sp.move && sp.move(p, m, dt) === true) return endMove(p);
     const ev = sp.ev || NOEV;
@@ -631,6 +704,12 @@
       const prism = S.prism > 0; if (prism) { pw = Math.max(pw, 0.5); S.prism = 0; }
       const sp = sel.sp, big = pw > 0.3;
       q.dashDir = sel.f; q.lastMoveDir = sel.f;
+      if (pw >= 0.95 && !prism) {   // a full charge: a PRISM special for that direction
+        const kind = CHARGED[sel.key.split('_')[1]][sel.air ? 1 : 0];
+        S.mv = { cs: kind, key: sel.key, spec: {}, t: 0, f: sel.f, pw, n: -1, hs: new Set(), fy: q.y + q.h };
+        S.atkCD = 0.5; FK.label(S, q, '🌈 ' + CS_NAME[kind], GOLD, true); FK.msg('🌈 ' + CS_NAME[kind] + '!');
+        return;
+      }
       const m = S.mv = { key: sel.key, spec: sp, pose: sp.pose, t: 0, f: sel.f, pw, i: 0, hs: new Set(), prism };
       S.atkCD = sp.cd;
       if (sp.once === 'up') S.airUp = true; if (sp.once === 'side') S.airSide = true;
@@ -932,6 +1011,13 @@
     for (const z of S.zones) { ctx.save(); try { drawZone(ctx, V, z); } catch (e) { oops(e); } ctx.restore(); }
     for (const s of S.shots) { ctx.save(); try { drawShot(ctx, V, s); } catch (e) { oops(e); } ctx.restore(); }
     drawMarks(ctx, V);
+    if (S.cs) { const m = S.cs, cx = V.SX(pcx(p)), cy = V.SY(pcy(p)), T2 = V.T;
+      if (m.cs === 'beam' && m.L) for (let i = 0; i < 5; i++) { FK.glow(ctx, FORMS[i].c, 0.75); ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy - 8 + i * 4); ctx.lineTo(cx + m.f * m.L * T2, cy - 8 + i * 4 + Math.sin(V.now * 30 + i) * 2); ctx.stroke(); }
+      if (m.cs === 'geyser' && m.x) for (let i = 0; i <= Math.min(4, m.n); i++) { const x = V.SX(m.x) + (i - 2) * T2 * 0.3, fy = V.SY(m.fy); FK.glow(ctx, FORMS[i].c, 0.6); ctx.fillRect(x - T2 * 0.15, fy - T2 * 4.2, T2 * 0.3, T2 * 4.2); }
+      if (m.cs === 'orbit' && m.orbs) for (const o of m.orbs) if (!o.done) { ctx.beginPath(); ctx.arc(V.SX(o.x), V.SY(o.y), T2 * 0.25, 0, Math.PI * 2); FK.glow(ctx, FORMS[o.i].c, 0.9); ctx.fill(); }
+      if (m.cs === 'aurora') for (let i = 0; i < 5; i++) { const x = cx + (i - 2) * T2 * 0.35; FK.glow(ctx, FORMS[(i + Math.floor(V.now * 6)) % 5].c, 0.35); ctx.fillRect(x - T2 * 0.15, cy, T2 * 0.3, T2 * 4 * (0.7 + 0.3 * Math.sin(V.now * 9 + i))); }
+      if (m.cs === 'nova' && !m.done) { ctx.beginPath(); ctx.arc(cx, cy, T2 * 4 * (m.t / 0.25), 0, Math.PI * 2); FK.glow(ctx, FORMS[Math.floor(V.now * 20) % 5].c, 0.4); ctx.lineWidth = 3; ctx.stroke(); }
+    }
     if (S.tongue) drawTongue(ctx, V, S.tongue);
     const x = V.SX(pcx(p)), y = V.SY(pcy(p));
     // a PRISM move is waiting: a rainbow ring round him

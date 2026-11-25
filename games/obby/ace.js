@@ -7,6 +7,8 @@
  * 8 MOVES (S / ⚔️ + a direction). Hold S to charge any of them: more cuts and a harder last hit.
  *  Ground: neutral PHANTOM FLURRY (5 cuts), side PHANTOM BLITZ (dash through, 4 cuts land behind him),
  *          up ASCENDING STAR (6 cuts, carries them up with him), down STAR CIRCLE (8 blades all round him).
+ * A FULL charge is his own special instead (ground / air): neutral DEAD MAN'S HAND / ACE OF SPADES, side PHANTOM ARMY /
+ *  THOUSAND CUTS, up BLOOD MOON RISE / STARFALL, down SOUL HARVEST / GUILLOTINE.
  *  Air:    neutral CRESCENT WHEEL (6 cuts, he hangs), side PHANTOM PIERCE (air dash, 3 cuts, comes back on a hit),
  *          up RISING ACE (4 cuts, lifts him, once per jump), down CARD DROP (drills down, 3+ hits, spikes or slams).
  *
@@ -154,8 +156,69 @@
   function finDmg(m) { return 2 + Math.round(2 * m.pw); }
   function endMove(p, m, spec) { if (spec.done) spec.done(p, m); S.mv = null; }
 
+  // ---- CHARGED SPECIALS (hold S to full) ----
+  const CHARGED = { neutral: ['hand', 'spade'], side: ['army', 'thousand'], up: ['moon', 'starfall'], down: ['harvest', 'guillotine'] };
+  const CS_NAME = { hand: "DEAD MAN'S HAND", spade: 'ACE OF SPADES', army: 'PHANTOM ARMY', thousand: 'THOUSAND CUTS', moon: 'BLOOD MOON RISE', starfall: 'STARFALL', harvest: 'SOUL HARVEST', guillotine: 'GUILLOTINE' };
+  const nearest = (x, y, R, not) => { let b = null, bd = R; for (const e of FK.foes()) { if (not && not.has(e)) continue; const d = Math.hypot(ex(e) - x, ey(e) - y); if (d < bd) { bd = d; b = e; } } return b; };
+  function stepCS(p, m, dt) {
+    const f = m.f;
+    if (m.cs === 'hand') {   // DEAD MAN'S HAND: five phantom cards dealt to the foes around him, then they all go off
+      p.vx = 0;
+      while (m.t >= 0.08 + m.n * 0.08 && m.n < 5) { m.n++; const e = nearest(pcx(p), pcy(p), 7, m.got.size < FK.foes().length ? m.got : null) || nearest(pcx(p), pcy(p), 7); if (e) { m.got.add(e); m.cards.push(e); hit(p, e, TICK, { kx: 0, ky: -1, stun: 0.5 }); cut(ex(e), ey(e), m.n * 1.3, 1.4, C_RED); } snick(m.n); }
+      if (m.t >= 0.65) { for (const e of m.cards) if (!e.dead) hit(p, e, 3, { kx: side(e, p, f) * 8, ky: -9, stun: 0.5, big: true }); FK.smack(true); FK.shake(6); chime(); S.mv = null; }
+    } else if (m.cs === 'spade') {   // ACE OF SPADES: one huge spade-shaped blade swept all the way round him
+      p.vy = Math.min(p.vy, 1); const a = m.t / 0.4 * Math.PI * 2 * f; S.spade = a;
+      for (const e of circ(pcx(p), pcy(p), 2.6)) if (!m.got.has(e)) { const ea = Math.atan2(ey(e) - pcy(p), ex(e) - pcx(p)), d = Math.abs(((ea - a) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI); if (d < 0.6) { m.got.add(e); hit(p, e, 5, { kx: side(e, p, f) * 12, ky: -10, stun: 0.6, big: true }); FK.smack(true); FK.hitstop(0.06); } }
+      if (m.t >= 0.4) { S.spade = null; S.mv = null; }
+    } else if (m.cs === 'army') {   // PHANTOM ARMY: four phantoms of him dash out one after another along a line, each cutting
+      p.vx = 0;
+      while (m.t >= 0.06 + m.n * 0.1 && m.n < 4) { m.n++; m.ph.push({ x: pcx(p), y: p.y, t: 0, hit: new Set() }); FK.whoosh(false, false); }
+      for (const g of m.ph) { g.t += dt; g.x += f * 22 * dt; S.fx.push({ k: 'ghost', x: g.x - p.w / 2, y: g.y, w: p.w, h: p.h, t: 0, life: 0.12 }); for (const e of FK.foes()) if (!g.hit.has(e) && Math.abs(ex(e) - g.x) < 0.7 && Math.abs(ey(e) - (g.y + p.h / 2)) < 1.1) { g.hit.add(e); hit(p, e, 1.5, { kx: f * 4, ky: -4, stun: 0.4 }); cut(ex(e), ey(e), 0.6 * f, 1.6, C_CYAN); snick(m.n); } }
+      if (m.t >= 0.75) { for (const e of FK.foes()) if (m.ph.some(g => g.hit.has(e))) hit(p, e, 2.5, { kx: f * 10, ky: -8, stun: 0.5, big: true }); S.mv = null; }
+    } else if (m.cs === 'thousand') {   // THOUSAND CUTS: he blinks through up to three foes ahead, one after another
+      p.vy = Math.min(p.vy, 0.5);
+      if (m.t >= m.next) {
+        m.next = m.t + 0.14;
+        const e = nearest(pcx(p) + f * 2, pcy(p), 6, m.got);
+        if (!e || m.got.size >= 3) { S.mv = null; S.airSide = true; return; }
+        m.got.add(e); ghost(p); const nx = ex(e) + f * ((e.w || 0.9) / 2 + 0.4) - p.w / 2;
+        if (!FK.blocked(nx, e.y + (e.h || 0.9) - p.h, p.w, p.h)) { p.x = nx; p.y = e.y + (e.h || 0.9) - p.h; S.selfMove = true; }
+        hit(p, e, 3, { kx: f * 6, ky: -7, stun: 0.6, big: true }); cut(ex(e), ey(e), 0.4 * f, 2.4, C_GOLD); FK.smack(true);
+      }
+      if (m.t > 0.6) { S.mv = null; S.airSide = true; }
+    } else if (m.cs === 'moon') {   // BLOOD MOON RISE: a column of red blades rises from the floor ahead, lifting and cutting whoever stands in it
+      p.vx = 0; const x = pcx(p) + f * 1.8;
+      S.moon = { x, fy: m.fy, u: Math.min(1, m.t / 0.6) };
+      for (const e of FK.foes()) if (Math.abs(ex(e) - x) < 0.9 && ey(e) < m.fy + 0.2 && ey(e) > m.fy - 4) { drag(e, x, m.fy - 0.6 - 3.5 * Math.min(1, m.t / 0.6), 16, dt); if (Math.floor(m.t / 0.09) !== m.n) hit(p, e, TICK, { kx: 0, ky: -6, stun: 0.3 }); }
+      if (Math.floor(m.t / 0.09) !== m.n) { m.n = Math.floor(m.t / 0.09); snick(m.n); }
+      if (m.t >= 0.65) { for (const e of FK.foes()) if (Math.abs(ex(e) - x) < 1.1 && ey(e) > m.fy - 5 && ey(e) < m.fy + 0.3) hit(p, e, 4, { kx: f * 3, ky: -15, stun: 0.6, big: true }); S.moon = null; chime(); S.mv = null; }
+    } else if (m.cs === 'starfall') {   // STARFALL (air): three blinks straight up, a cutting star left at each spot
+      if (m.t >= m.next && m.n < 3) {
+        m.next = m.t + 0.15; m.n++; ghost(p);
+        let dy = 0; while (dy < 2.2 && !FK.blocked(p.x, p.y - dy - 0.25, p.w, p.h)) dy += 0.25;
+        for (const e of circ(pcx(p), pcy(p), 1.4)) hit(p, e, 2, { kx: side(e, p, f) * 4, ky: -8, stun: 0.4 });
+        S.fx.push({ k: 'shock', x: pcx(p), y: pcy(p), R: 1.2, c: C_GOLD, t: 0, life: 0.3 });
+        p.y -= dy; p.vy = -3; p.onGround = false; S.selfMove = true; FK.tone(1200 + m.n * 300, { dur: 0.08, vol: 0.08 });
+      }
+      if (m.t > 0.5) { S.airUp = true; S.mv = null; }
+    } else if (m.cs === 'harvest') {   // SOUL HARVEST: a sigil under him drains everyone close, healing him twice as fast, then bursts
+      p.vx = 0; S.sigil = m.t;
+      if (Math.floor(m.t / 0.15) !== m.n) { m.n = Math.floor(m.t / 0.15); for (const e of circ(pcx(p), pcy(p), 3)) { hit(p, e, TICK, { kx: (pcx(p) - ex(e)) * 1.2, ky: -1, stun: 0.3 }); hit(p, e, TICK * 0.5, { kx: 0, ky: -1 }); S.fx.push({ k: 'leech', x: ex(e), y: ey(e), t: 0, life: 0.34 }); } }
+      if (m.t >= 1.2) { for (const e of circ(pcx(p), pcy(p), 3)) hit(p, e, 4, { kx: side(e, p, f) * 11, ky: -10, stun: 0.5, big: true }); S.sigil = 0; chime(); FK.shake(6); S.mv = null; }
+    } else if (m.cs === 'guillotine') {   // GUILLOTINE (air): a giant blade drops from above onto the foe nearest below him
+      p.vy = Math.min(p.vy, 0.5);
+      if (!m.e) { m.e = nearest(pcx(p), pcy(p) + 3, 7) || { x: pcx(p) - 0.45, y: p.y + 3, w: 0.9, h: 0.9, dead: true }; m.bx = ex(m.e); m.by = m.e.y - 5; }
+      if (!m.e.dead) m.bx = ex(m.e);
+      if (m.t >= 0.35) { m.by += 40 * dt; S.blade = { x: m.bx, y: m.by }; for (const e of FK.foes()) if (!m.got.has(e) && Math.abs(ex(e) - m.bx) < 0.9 && Math.abs(ey(e) - m.by) < 0.8) { m.got.add(e); hit(p, e, 6, { kx: 0, ky: 18, stun: 0.7, big: true }); FK.smack(true); FK.hitstop(0.08); FK.shake(8); } }
+      else S.blade = { x: m.bx, y: m.by - (0.35 - m.t) * 4 };
+      if (m.t > 0.75) { S.blade = null; S.mv = null; }
+    }
+  }
+
   function stepMove(p, dt) {
-    const m = S.mv, spec = MV[m.key];
+    const m = S.mv;
+    if (m.cs) { m.t += dt; return stepCS(p, m, dt); }
+    const spec = MV[m.key];
     m.t += dt;
     if (spec.own) return stepDrop(p, m, dt);
     if (spec.move) spec.move(p, m, dt);
@@ -217,6 +280,12 @@
       pw = pw || 0;
       const spec = MV[sel.key], big = pw > 0.3;
       q.dashDir = sel.f; q.lastMoveDir = sel.f;
+      if (pw >= 0.95) {   // a full charge: his own special for that direction
+        const dk = sel.key.split('_')[1], kind = CHARGED[dk][sel.key.indexOf('air') === 0 ? 1 : 0];
+        S.mv = { cs: kind, key: sel.key, t: 0, f: sel.f, pw, n: 0, next: 0, got: new Set(), cards: [], ph: [], fy: q.y + q.h };
+        S.atkCD = 0.5; FK.label(S, q, CS_NAME[kind], C_GOLD, true); FK.msg('🌟 ' + CS_NAME[kind] + '!');
+        return;
+      }
       const m = S.mv = { key: sel.key, t: 0, f: sel.f, pw, n: 0, N: spec.N[big ? 1 : 0], iv: spec.iv, delay: 0, next: 0 };
       S.atkCD = spec.cd;
       if (spec.start) spec.start(q, m);
@@ -247,6 +316,7 @@
     S.airT = p.onGround ? 0 : S.airT + dt;
     if (p.onGround) { S.airUp = false; S.airSide = false; }
     if (S.mv && p.hitstun > 0) S.mv = null;
+    if (!S.mv) { S.spade = null; S.moon = null; S.sigil = 0; S.blade = null; }
     if (S.mv) stepMove(p, dt);
     for (let i = S.fx.length - 1; i >= 0; i--) { S.fx[i].t += dt; if (S.fx[i].t >= S.fx[i].life) S.fx.splice(i, 1); }
     if (S.fx.length > 90) S.fx.splice(0, S.fx.length - 90);
@@ -310,6 +380,10 @@
     }
     // the dive: a spear of light behind him
     if (S.mv && S.mv.key === 'air_down') { const pts = []; for (let j = 0; j <= 8; j++) pts.push([x - S.mv.f * j * T * 0.06, y - j * T * 0.4]); FK.taper(ctx, pts, T * 0.35, C_GOLD, 0.8); FK.star(ctx, x, V.SY(p.y + p.h), T * 0.28, V.now * 12, C_WHITE, 0.9); }
+    if (S.spade != null) { ctx.save(); ctx.translate(x, y); ctx.rotate(S.spade); FK.glow(ctx, C_GOLD, 0.35); ctx.beginPath(); ctx.arc(0, 0, T * 2.6, -0.5, 0.5); ctx.lineTo(0, 0); ctx.fill(); FK.solid(ctx, '#1b1026', 0.9); ctx.beginPath(); ctx.moveTo(T * 2.6, 0); ctx.quadraticCurveTo(T * 2.0, -T * 0.6, T * 1.6, 0); ctx.quadraticCurveTo(T * 2.0, T * 0.6, T * 2.6, 0); ctx.fill(); ctx.restore(); }
+    if (S.moon) { const mx = V.SX(S.moon.x), fy = V.SY(S.moon.fy), H = T * 4 * S.moon.u; for (let i = 0; i < 8; i++) { const yy = fy - (i / 8) * H, a = V.now * 14 + i; FK.glow(ctx, i % 2 ? C_RED : C_GOLD, 0.7); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(mx + Math.cos(a) * T * 0.7, yy); ctx.lineTo(mx - Math.cos(a) * T * 0.7, yy - T * 0.3); ctx.stroke(); } ctx.beginPath(); ctx.arc(mx, fy - H - T * 0.4, T * 0.5, 0, Math.PI * 2); FK.glow(ctx, C_RED, 0.5); ctx.fill(); }
+    if (S.sigil) { const fy = V.SY(p.y + p.h); ctx.beginPath(); ctx.ellipse(x, fy, T * 3, T * 0.5, 0, 0, Math.PI * 2); FK.glow(ctx, C_LEECH, 0.5 + 0.3 * Math.sin(V.now * 12)); ctx.lineWidth = 3; ctx.stroke(); FK.star(ctx, x, fy, T * 0.9, V.now * 2, C_LEECH, 0.6); }
+    if (S.blade) { const bx = V.SX(S.blade.x), by = V.SY(S.blade.y); FK.solid(ctx, '#d6dde8', 1); ctx.beginPath(); ctx.moveTo(bx - T * 1, by - T * 0.6); ctx.lineTo(bx + T * 1, by - T * 0.6); ctx.lineTo(bx + T * 1, by + T * 0.1); ctx.lineTo(bx - T * 1, by + T * 0.5); ctx.closePath(); ctx.fill(); FK.solid(ctx, '#3a2a40', 1); ctx.fillRect(bx - T * 1.1, by - T * 1.0, T * 2.2, T * 0.4); }
     FK.drawFx(ctx, V, S.fx, drawFx);
     ctx.restore();
   }
