@@ -88,6 +88,89 @@
   function nearestFoe(p, R) { let best = null, bd = R; for (const e of FK.foes()) { const d = Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)); if (d < bd) { bd = d; best = e; } } return best; }
 
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full) ----
+    volley(p, dt, S, q) {   // PLUNGER VOLLEY: three plungers fanned out; each sticks to a foe and holds it dazed
+      S.target = PO.aim; S.rate = 50;
+      if (!q.done && q.t > 0.08) { q.done = 1; for (const a of [-0.28, 0, 0.28]) { const h = hand(p, PO.aim, q.f); S.darts.push({ x: h[0], y: h[1], vx: q.f * Math.cos(a) * 20, vy: Math.sin(a) * 20, t: 0, e: null }); } pop(); FK.whoosh(false, true); }
+      if (q.t > 0.3) S.seq = null;
+    },
+    sling(p, dt, S, q) {   // SLINGSHOT: plunger stuck to the floor behind, the cord stretched... and he lets go across the stage
+      const f = q.f;
+      if (q.t < 0.35) { S.target = PO.cower; S.rate = 30; p.vx = 0; S.slingT = q.t / 0.35; if (!q.snd) { q.snd = 1; q.ax = pcx(p) - f * 1.2; q.ay = p.y + p.h; } S.slingA = [q.ax, q.ay]; if (Math.floor(q.t * 20) !== q.d) { q.d = Math.floor(q.t * 20); FK.tone(200 + q.t * 900, { dur: 0.04, vol: 0.05, type: 'triangle' }); } return; }
+      if (!q.go) { q.go = 1; S.slingA = null; FK.tone(900, { dur: 0.15, vol: 0.14, type: 'square', slide: 200 }); FK.whoosh(false, true); }
+      S.target = PO.longL; S.rate = 60; S.selfMove = true;
+      if (!FK.moveX(p, f * 30 * dt)) q.t = 9;
+      p.vx = f * 6; p.vy = Math.min(p.vy, 0);
+      for (const e of box(p, f, -0.5, 1.6, 1.4)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 4, { kx: f * 13, ky: -8, stun: 0.5, big: true, stop: 0.06 }); FK.smack(true); }
+      if (q.t > 0.62) { S.slingT = 0; S.seq = null; }
+    },
+    stilts(p, dt, S, q) {   // SKYSCRAPER: his legs telescope out, longer and longer, lifting him high; then he springs off the top
+      S.target = PO.idle; S.rate = 30; S.legK = 1 + Math.min(1, q.t / 0.45) * 2.2; p.vx = 0;
+      if (q.t < 0.45) { p.vy = -9; p.onGround = false; for (const e of FK.within(pcx(p), p.y - 0.3, 1.3)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 2, { kx: 0, ky: -14, stun: 0.4 }); } return; }
+      if (!q.done) { q.done = 1; p.vy = -19; S.airUp = false; FK.tone(300, { dur: 0.3, vol: 0.14, type: 'square', slide: 1200 }); for (const e of FK.within(pcx(p), p.y - 0.5, 1.8)) hit(S, e, 4, { kx: 0, ky: -20, stun: 0.5, big: true, stop: 0.07 }); }
+      S.legK = Math.max(1, S.legK - dt * 8);
+      if (q.t > 0.65) { S.legK = 1; S.seq = null; }
+    },
+    panic(p, dt, S, q) {   // PANIC ATTACK: he completely loses it: arms and legs everywhere, then a scream that blasts everyone away
+      S.target = Math.floor(q.t * 26) % 2 ? PO.pinA : PO.eep; S.rate = 70; p.vx = 0; if (!p.onGround) p.vy = Math.min(p.vy, 1);
+      S.panic = 1;
+      if (Math.floor(q.t / 0.07) !== q.n) { q.n = Math.floor(q.t / 0.07); q.hits.clear(); if (q.n % 3 === 0) yelp(); }
+      if (q.t < 0.8) for (const e of FK.within(pcx(p), pcy(p), 1.7)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 0.6, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 1.5, ky: -2, stun: 0.25 }); }
+      if (q.t >= 0.8 && !q.done) {
+        q.done = 1; S.hornT = 0.5; S.hornF = 0;
+        FK.tone(1100, { dur: 0.5, vol: 0.18, type: 'sawtooth', slide: 1600 }); FK.shake(10);
+        for (const e of FK.within(pcx(p), pcy(p), 3.4)) hit(S, e, 3, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 14, ky: -9, stun: 0.9, big: true });
+        nerve(S, p, 1, 'PANIC');
+      }
+      if (q.t > 1.0) { S.panic = 0; S.seq = null; }
+    },
+    whirl(p, dt, S, q) {   // SCARF WHIRLWIND (air): the scarf lashes out long and whips round him twice
+      S.target = PO.copter; S.rate = 50; S.whirl = q.t * 14 * q.f; p.vy = Math.min(p.vy, 1.5);
+      if (Math.floor(q.t / 0.1) !== q.n) { q.n = Math.floor(q.t / 0.1); q.hits.clear(); FK.whoosh(false, false); }
+      const a = S.whirl, tx = pcx(p) + Math.cos(a) * 2.2, ty = pcy(p) - 0.4 + Math.sin(a) * 1.4;
+      for (const e of FK.foes()) if (!q.hits.has(e) && Math.hypot(ex(e) - (pcx(p) + tx) / 2, ey(e) - (pcy(p) + ty) / 2) < 1.4) { q.hits.add(e); hit(S, e, 1.2, { kx: Math.cos(a + Math.PI / 2) * 6 * q.f, ky: -5, stun: 0.3 }); }
+      if (q.t > 0.9) { for (const e of FK.within(pcx(p), pcy(p), 2.4)) hit(S, e, 2.5, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 11, ky: -9, stun: 0.45, big: true }); S.whirl = 0; S.seq = null; }
+    },
+    zipline(p, dt, S, q) {   // ZIPLINE (air): the plunger shoots down and ahead, sticks, and he zips along the cord feet first
+      const f = q.f;
+      if (!q.c) {
+        let x = pcx(p), y = pcy(p), hitWall = false;
+        for (let i = 0; i < 40; i++) { x += f * 0.22; y += 0.16; if (FK.blocked(x - 0.1, y - 0.1, 0.2, 0.2)) { hitWall = true; break; } }
+        q.c = { x, y, ok: hitWall }; S.cup = { x, y, state: 'wall' }; pop();
+        if (!hitWall) { S.cup = null; S.seq = null; FK.msg('🪠 Nothing to stick to'); return; }
+      }
+      S.target = PO.longL; S.rate = 60; S.selfMove = true;
+      const dx = q.c.x - pcx(p), dy = q.c.y - pcy(p) - 0.4, d = Math.hypot(dx, dy) || 1;
+      p.vx = dx / d * 24; p.vy = dy / d * 24; p.onGround = false;
+      for (const e of FK.within(pcx(p) + f * 0.4, pcy(p) + 0.3, 1.1)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 3.5, { kx: f * 11, ky: 6, stun: 0.5, big: true }); FK.smack(true); }
+      if (d < 0.9 || q.t > 0.8) { S.cup = null; p.vy = -10; p.vx = f * 3; S.airUp = false; S.seq = null; }
+    },
+    turbo(p, dt, S, q) {   // TURBO FLUTTER (air): legs a blur, he runs straight up the air; whatever is below gets kicked down
+      S.target = Math.floor(q.t * 30) % 2 ? PO.flutA : PO.flutB; S.rate = 70; S.airUp = true;
+      p.vy = -12 + 6 * (q.t / 0.8); const k = FK.keys(); p.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 4; p.onGround = false;
+      if (Math.floor(q.t * 18) !== q.d) { q.d = Math.floor(q.t * 18); FK.tone(300 + q.t * 600, { dur: 0.04, vol: 0.06, type: 'square' }); S.fx.push({ k: 'drops', x: pcx(p), y: p.y + p.h, t: 0, life: 0.3 }); }
+      if (Math.floor(q.t / 0.09) !== q.n) { q.n = Math.floor(q.t / 0.09); q.hits.clear(); }
+      for (const e of box(p, 1, -0.8, 1.6, 1.6, -1.0)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 0.8, { kx: 0, ky: 9, stun: 0.3 }); }
+      if (q.t > 0.8) S.seq = null;
+    },
+    piledriver(p, dt, S, q) {   // PLUNGER PILEDRIVER (air): plunger onto the foe below, flips them over his head and drives them into the floor
+      if (q.e) {
+        const e = q.e; S.target = PO.backK; S.rate = 40; p.vy = 18; p.vx = 0; p._grabInv = 0.1;
+        if (!e.dead) { e.x = pcx(p) - (e.w || 0.9) / 2; e.y = p.y - (e.h || 0.9) * 0.3; e.vx = 0; e.vy = 0; e.stunTimer = Math.max(e.stunTimer || 0, 0.3); }
+        if (p.onGround || q.t - q.grabT > 0.8) {
+          if (!e.dead) hit(S, e, 7, { kx: FK.face(p) * 4, ky: -14, stun: 0.7, big: true, stop: 0.14, shake: 14 });
+          FK.thud(true); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 2.4, c: C_NERVE, t: 0, life: 0.5 });
+          for (const o of FK.within(pcx(p), p.y + p.h - 0.4, 2.4)) if (o !== e) hit(S, o, 2, { kx: (Math.sign(ex(o) - pcx(p)) || 1) * 6, ky: -9, stun: 0.4 });
+          FK.label(S, p, 'PILEDRIVER!', C_NERVE, true); p.vy = -8; p.onGround = false; S.pogo = 0; S.seq = null;
+        }
+        return;
+      }
+      S.target = PO.pogo; S.rate = 50; S.pogo = 1;
+      if (q.t < 0.12) { p.vy = 0; p.vx = 0; return; }
+      p.vy = 24;
+      for (const e of box(p, 1, -0.6, 1.2, 1.4, -0.75)) { q.e = e; q.grabT = q.t; pop(); p.vy = -6; S.pogo = 0; FK.tone(200, { dur: 0.2, vol: 0.14, type: 'square', slide: 500 }); return; }
+      if (p.onGround || q.t > 1.4) { p.vy = -24; p.onGround = false; S.airUp = false; FK.label(S, p, 'SUPER SPROING!', C_NERVE, true); FK.tone(200, { dur: 0.4, vol: 0.2, type: 'square', slide: 1400 }); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 1.8, c: C_NERVE, t: 0, life: 0.4 }); S.pogo = 0; S.seq = null; }
+    },
     jab(p, dt, S, q) {   // JITTER JAB: a nervous flurry of long plunger pokes; the last one pops (BRAVE: more, ending in a SUCTION POP)
       const f = q.f, n = 3 + Math.round(q.pw) + (brave(S) ? 2 : 0), P1 = 0.085;
       const ph = (q.t / P1) % 1, on = ph > 0.35, i = Math.floor(q.t / P1);
@@ -323,6 +406,15 @@
       }
     }
     if (S.hornT > 0) S.hornT -= dt;
+    // VOLLEY plungers: fly, stick to a foe and hold it dazed for a moment
+    for (let i = S.darts.length - 1; i >= 0; i--) {
+      const d = S.darts[i]; d.t += dt;
+      if (d.e) { if (d.e.dead || d.t > 1.4) { S.darts.splice(i, 1); continue; } d.x = ex(d.e); d.y = ey(d.e); d.e.vx = 0; d.e.stunTimer = Math.max(d.e.stunTimer || 0, 0.2); continue; }
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      let gone = d.t > 0.5 || FK.blocked(d.x - 0.1, d.y - 0.1, 0.2, 0.2);
+      if (!gone) for (const e of foes) if (Math.abs(ex(e) - d.x) < 0.6 && Math.abs(ey(e) - d.y) < 0.7) { d.e = e; d.t = 0; hit(S, e, 2.5, { kx: 0, ky: -2, stun: 1.2 }); pop(); break; }
+      if (gone) S.darts.splice(i, 1);
+    }
     if (S.pipFlash > 0) S.pipFlash -= dt;
     // scared of anything close (he trembles)
     S.scared = !brave(S) && FK.foes().some(e => Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)) < 3.2);
@@ -345,8 +437,14 @@
     statMod: S => brave(S) ? { speed: 1.2, jump: 1.3 } : {},
     moves: MOVES, mfd: MFD,
     fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rotor: 0, rot: 0, pogo: 0, cup: null, flutT: 0, airUp: false,
-      nerve: 0, hitN: 0, flinchCD: 0, braveT: 0, eepT: 0, balloon: null, trap: null, hornT: 0, hornF: 1, scared: false, parrySeen: false, pipFlash: 0 }),
+      darts: [], legK: 1, slingT: 0, slingA: null, panic: 0, whirl: 0, nerve: 0, hitN: 0, flinchCD: 0, braveT: 0, eepT: 0, balloon: null, trap: null, hornT: 0, hornF: 1, scared: false, parrySeen: false, pipFlash: 0 }),
     busy: S => !!S.seq,
+    charged: {
+      neutral: (p, f, S, air) => { startSeq(S, air ? 'whirl' : 'volley', { f }); return air ? 'SCARF WHIRLWIND' : 'PLUNGER VOLLEY'; },
+      side: (p, f, S, air) => { startSeq(S, air ? 'zipline' : 'sling', { f }); return air ? 'ZIPLINE' : 'SLINGSHOT'; },
+      up: (p, f, S, air) => { S.airUp = true; startSeq(S, air ? 'turbo' : 'stilts', { f }); return air ? 'TURBO FLUTTER' : 'SKYSCRAPER'; },
+      down: (p, f, S, air) => { startSeq(S, air ? 'piledriver' : 'panic', { f }); return air ? 'PLUNGER PILEDRIVER' : 'PANIC ATTACK'; },
+    },
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Scarf Copter comes back when you land'; return null; },
     act: {
       ground_neutral: (p, f, pw, S) => { startSeq(S, 'jab', { f, pw }); return named(S, 'JITTER JAB'); },
@@ -358,12 +456,12 @@
       air_up: (p, f, pw, S) => { S.airUp = true; startSeq(S, 'copter', { f, pw }); },
       air_down: (p, f, pw, S) => { startSeq(S, 'pogo', { f, pw }); return named(S, 'PLUNGER POGO'); },
     },
-    onTeleport(p, S) { S.seq = null; S.cup = null; S.rotor = 0; S.rot = 0; S.pogo = 0; S.balloon = null; S.trap = null; },
+    onTeleport(p, S) { S.darts.length = 0; S.seq = null; S.cup = null; S.rotor = 0; S.rot = 0; S.pogo = 0; S.balloon = null; S.trap = null; },
     step(p, dt, S, k) {
       if (p.hitstun > 0 && S.seq) { S.seq = null; S.cup = null; S.rotor = 0; S.rot = 0; S.pogo = 0; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
-      if (!S.seq) { S.rotor = 0; S.rot = 0; S.pogo = 0; S.cup = null; }
+      if (!S.seq) { S.rotor = 0; S.rot = 0; S.pogo = 0; S.cup = null; S.legK = 1; S.slingT = 0; S.slingA = null; S.panic = 0; S.whirl = 0; }
       stepWorld(p, dt, S, k);
       if (!S.seq) {
         if (S.eepT > 0) S.target = PO.eep;
@@ -386,7 +484,8 @@
       if (S && S.scared && !S.seq) ctx.translate(Math.sin(t * 55) * 0.5 * s, 0);
       if (S && S.rot) { ctx.translate(cx, fy - ph * 0.45); ctx.rotate(S.rot); ctx.translate(-cx, -(fy - ph * 0.45)); }
       if (S && S.pogo) { ctx.translate(cx, fy - ph * 0.5); ctx.rotate(Math.PI); ctx.translate(-cx, -(fy - ph * 0.5)); }   // upside down, plunger first
-      const K = FK.skel(P, q, cx, fy, s);
+      const lk = S && S.legK > 1 ? S.legK : 1;   // SKYSCRAPER: telescoping legs
+      const K = FK.skel(lk > 1 ? Object.assign({}, P, { th: P.th * lk, sh: P.sh * lk, hip: P.hip * lk }) : P, q, cx, fy, s);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (B) { const ag = ctx.createRadialGradient(cx, fy - ph * 0.45, ph * 0.1, cx, fy - ph * 0.45, ph * 0.66); ag.addColorStop(0, 'rgba(255,207,58,0.38)'); ag.addColorStop(1, 'rgba(255,207,58,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, fy - ph * 0.45, ph * 0.66, 0, Math.PI * 2); ctx.fill(); }
       // the scarf trails behind (a blazing gold cape when brave, a rotor in the copter)
@@ -472,7 +571,21 @@
         ctx.stroke();
         FK.solid(ctx, '#ff5a6e', a); ctx.beginPath(); ctx.roundRect(x - T * 0.42, y - T * 0.5 - up, T * 0.84, T * 0.1, 2); ctx.fill();
       }
-      if (S.hornT > 0) {   // AIR HORN: sound rings fanning out
+      for (const d of S.darts) { ctx.save(); ctx.translate(V.SX(d.x), V.SY(d.y)); ctx.rotate(d.e ? 0 : Math.atan2(d.vy, d.vx) - Math.PI / 2); plunger(ctx, T / U, brave(S)); ctx.restore(); }
+      if (S.slingA) {   // SLINGSHOT: the cord stretched from the plunger in the floor
+        const ax = V.SX(S.slingA[0]), ay = V.SY(S.slingA[1]), h = FK.local(V, p, FK.face(p), 0.3, p.h * 0.5);
+        FK.solid(ctx, '#d8d2c4', 1); ctx.lineWidth = 2 + S.slingT * 2; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(h[0], h[1]); ctx.stroke();
+        ctx.save(); ctx.translate(ax, ay); plunger(ctx, T / U, brave(S)); ctx.restore();
+      }
+      if (S.whirl) {   // SCARF WHIRLWIND: the long scarf lashing round
+        const cx = V.SX(pcx(p)), cy = V.SY(pcy(p) - 0.4), a = S.whirl;
+        for (let i = 0; i < 6; i++) { const aa = a - i * 0.18; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(aa) * T * 2.2, cy + Math.sin(aa) * T * 1.4); FK.solid(ctx, i % 2 ? C_SCARF2 : C_SCARF, 0.9 - i * 0.14); ctx.lineWidth = 6 - i * 0.7; ctx.stroke(); }
+      }
+      if (S.hornT > 0 && S.hornF === 0) {   // PANIC ATTACK's scream: rings all round
+        const u = 1 - S.hornT / 0.5, x0 = V.SX(pcx(p)), y0 = V.SY(pcy(p));
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x0, y0, T * (0.5 + (u * 3.4 + i) % 3.4), 0, Math.PI * 2); FK.glow(ctx, C_SWEAT, 0.6 * (1 - u)); ctx.lineWidth = 3; ctx.stroke(); }
+      }
+      if (S.hornT > 0 && S.hornF) {   // AIR HORN: sound rings fanning out
         const f = S.hornF, u = 1 - S.hornT / 0.5, x0 = V.SX(pcx(p) + f * 0.8), y0 = V.SY(pcy(p) - 0.2);
         for (let i = 0; i < 4; i++) { const r = T * (0.6 + (u * 4.5 + i * 0.9) % 4.5); ctx.beginPath(); ctx.arc(x0, y0, r, f > 0 ? -0.55 : Math.PI - 0.55, f > 0 ? 0.55 : Math.PI + 0.55); FK.glow(ctx, i % 2 ? C_NERVE : '#ffffff', 0.7 * (1 - r / (T * 5.2))); ctx.lineWidth = 3; ctx.stroke(); }
       }
