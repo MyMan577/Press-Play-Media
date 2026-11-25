@@ -490,6 +490,7 @@
 
   // ---------------------------------------------------------------- define a fighter
   // spec: { id, plug, def, stats, statMod(S), moves, mfd, fresh(), can(key,S,p), pressS(p,S,k), busy(S),
+  //         charged: { neutral|side|up|down: (p, f, S, air) -> title } (a full charge's own special, ground or air),
   //         act: { ground_neutral(p,f,pw,S) -> optional title, ... }, step(p,dt,S,k,jumpEdge), onTeleport(p,S),
   //         drawBody(ctx,px,py,pw,ph,t,S,p), drawWorld(ctx,V,S), drawFx(ctx,V,f,u,a) -> true if handled, ai(info), keys }
   FK.define = function (C) {
@@ -535,7 +536,9 @@
         const q = window._gamePlayer; if (!q) return;
         pw = pw || 0; S.atkCD = sel.mv.cd;
         q.dashDir = sel.f; q.lastMoveDir = sel.f;
-        const own = C.act[sel.key](q, sel.f, pw, S);
+        // a full charge lets loose the fighter's own charged special for that direction, if it has one
+        const dk = sel.key.split('_')[1], cs = pw >= 0.95 && C.charged && C.charged[dk];
+        const own = cs ? C.charged[dk](q, sel.f, S, sel.key.indexOf('air') === 0) : C.act[sel.key](q, sel.f, pw, S);
         const name = own || (pw > 0.3 && sel.mv.big ? sel.mv.big : sel.mv.name.toUpperCase());
         FK.label(S, q, name, pw > 0.3 || own ? C.def.color2 || '#ffd166' : C.def.color, pw > 0.3);
         FK.msg(C.def.icon + ' ' + name + '!');
