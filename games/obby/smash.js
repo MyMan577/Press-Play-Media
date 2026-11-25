@@ -119,7 +119,7 @@
     cb_maul:        { w: 1.50, d: 1.25, k: 1.30 },                        // hammer smith: the heaviest (hardest to launch), armored swings that hit hardest
     cb_masque:      { w: 0.95, d: 0.95, k: 1.00 },                        // mask dancer: five forms, heals through SM.__heal
     cb_mario_ref:   { w: 1.10, d: 1.00, k: 1.00 },                        // M-Man: sturdy stomper; power-up forms come from tasks (fighter-mman.js)
-    cb_luigi_ref:   { w: 0.88, d: 0.95, k: 1.00 },                        // L-Brother: light, floaty, a grapple; power-up forms too (fighter-lbro.js)
+    cb_luigi_ref:   { w: 0.88, d: 0.95, k: 1.00 },                        // L-Brother: light, floaty, a grapple; flinches out of hits, Nerve gadgets (fighter-lbro.js)
     cb_peach_ref:   { w: 0.90, d: 0.95, k: 1.00 },                        // K-Princess: floats, kites that loop back, a counter
     pl_grand_pebble: { w: 1.40, d: 1.10, k: 1.10 }                        // Grand Pebble: a heavy stone, armour and quakes
     }
@@ -587,6 +587,7 @@
   //  _parryT > 0 (or the Protagonist's Guardian's Counter): a hit from close is PARRIED, the attacker takes a
   //    counter hit; a hit from range (a projectile) is REFLECTED back as a homing bolt. _parried is then set
   //    for a moment so the fighter can follow up (the grappler turns a parry into a grab).
+  //    With _dodgeT > 0 as well it is a pure dodge (L-Brother's flinch): the hit misses, nothing comes back.
   //  _armorT > 0: super armor, the hit's percent counts but there is no launch or hitstun (up to 30% hits).
   //  _grabInv > 0: mid-throw, nothing touches it.
   var refl = [];
@@ -600,6 +601,7 @@
       var far = Math.hypot(ax - vx, ay - vy) > 2.6, d = sgn(ax - vx) || 1;
       st._parryT = 0; st._protagRetaliateTimer = 0; st._parried = 0.45; st._parryFar = far; st._parryDir = d;
       side.invuln = Math.max(side.invuln || 0, 0.45); side.hitstun = 0;
+      if (st._dodgeT > 0) { st._dodgeT = 0; addFx('ring', vx, vy, '#8fd8ff'); showBanner('FLINCH!', 0.45); return true; }   // a pure dodge (L-Brother): no counter, no reflect
       window._ppHitstop = Math.max(window._ppHitstop || 0, 0.1); g.shake(7);
       addFx('ring', vx, vy, '#ffffff'); addFx('burst', vx, vy, far ? '#7cdbff' : '#ffd166', 18);
       showBanner(far ? 'REFLECT!' : 'PARRY!', 0.55);

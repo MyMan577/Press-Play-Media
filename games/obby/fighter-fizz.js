@@ -7,11 +7,15 @@
  *  - LIFT BUBBLE (ground ↑ + S): a big bubble at your feet that floats upward. Stand on it and it carries you up
  *    (↓ drops through). It bumps foes upward. Two at a time; it pops under a ceiling or after a few seconds.
  *  - FOAM PAD (ground ↓ + S): a patch of foam on the floor. Anyone who lands on it is bounced sky-high: you, and foes.
- *  - Shooting down in the air (↓ + S) holds you up on the recoil, so a long stream is also a hover.
+ *  - SOAP ORBIT (air S): bubbles circle her for a while, soaking anyone they touch, while she keeps moving and attacking.
+ *  - FIZZ JET (air → + S): she shakes the wand like a soda bottle and the spray rockets her forward (once per jump),
+ *    leaving a trail of foam that pops on anyone who walks into it.
+ *  - SPLASHDOWN (air ↓ + S): a heavy water bubble that plummets, spikes whoever it passes and bursts on the floor
+ *    into two splash waves that run along the ground; she bounces back up out of the splash.
  *
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge: more bubbles)
  *  Ground: neutral BUBBLE STREAM (SODA BLAST charged), side SUDS SLIDE, up LIFT BUBBLE, down FOAM PAD.
- *  Air:    neutral BUBBLE BURST (a ring), side SIDE STREAM (pushes you back), up BUBBLE RIDE (recovery), down POP DROP (hover).
+ *  Air:    neutral SOAP ORBIT (SOAP STORM charged), side FIZZ JET, up BUBBLE RIDE (recovery), down SPLASHDOWN (TIDAL SPLASH charged).
  */
 (function () {
   'use strict';
@@ -33,7 +37,10 @@
     pat:   pose({ y: 4.5, lean: 0.5, aF: [0.7, 0.2], aB: [0.9, 0.3], lF: [1.1, -1.7], lB: [-0.8, -0.8] }),
     spin:  pose({ lean: 0.1, aF: [1.6, 0.1], aB: [-1.6, 0.1], lF: [0.7, -1.1], lB: [-0.5, -0.9] }),
     ride:  pose({ y: -1, lean: 0.0, aF: [2.6, 0.4], aB: [-2.6, 0.4], lF: [0.9, -1.6], lB: [0.5, -1.5] }),                    // curled up inside the bubble
-    drop:  pose({ y: -1.5, lean: 0.25, aF: [0.3, 0.05], aB: [-2.4, 0.5], lF: [0.9, -1.4], lB: [-0.2, -1.2] }),               // wand pointed straight down
+    shake: pose({ y: 0.5, lean: -0.25, aF: [2.4, 1.6], aB: [2.2, 1.7], lF: [0.9, -1.2], lB: [-0.3, -0.8] }),                  // wand held up, shaken like a soda
+    jet:   pose({ y: -0.5, lean: 1.15, head: -0.6, aF: [-1.7, 0.1], aB: [-1.9, 0.2], lF: [-0.5, -0.4], lB: [-0.9, -0.2] }),     // flat out forward, the spray behind her
+    twirl: pose({ y: 0.5, lean: 0.0, aF: [2.9, 0.3], aB: [-2.7, 0.3], lF: [0.6, -1.0], lB: [-0.4, -0.7] }),                   // wand over the head, stirring the orbit
+    dive:  pose({ y: -2, lean: 0.0, aF: [2.9, 0.5], aB: [-2.9, 0.5], lF: [0.8, -2.0], lB: [-0.8, -2.0] }),                    // cannonball inside the bubble
   };
 
   function startSeq(S, kind, o) { S.seq = Object.assign({ kind, t: 0, hits: new Set(), n: 0 }, o || {}); }
@@ -50,13 +57,18 @@
   }
   // a bubble landed on a foe: small hit, and the fourth one seals it
   function soak(S, p, e, b) {
-    const now = performance.now() / 1000, dir = Math.sign(b.vx) || 1;
+    const dir = Math.sign(b.vx) || 1;
     const tr = S.traps.find(t => t.e === e);
     if (tr) { burst(S, p, tr, dir); return; }
     FK.hit(S, e, b.dmg, { kx: dir * 2.2, ky: -1.5, stun: 0.18, c: C_FX });
+    soakCount(S, p, e, 1, dir);
+  }
+  // n more soaks on a foe: the fourth in a short time seals it (or, in Smash, pops it for a launch)
+  function soakCount(S, p, e, n, dir) {
+    const now = performance.now() / 1000;
     if (now - (e._fizzT || 0) > 1.6) e._fizzN = 0;
-    e._fizzT = now; e._fizzN = (e._fizzN || 0) + 1;
-    if (e._fizzN >= 4 && !e.dead) {
+    e._fizzT = now; e._fizzN = (e._fizzN || 0) + n;
+    if (e._fizzN >= 4 && !e.dead && !S.traps.some(t => t.e === e)) {
       e._fizzN = 0;
       if (FK.inSmash() || e._noKnockback) { FK.hit(S, e, 2, { kx: dir * 3, ky: -12, stun: 0.5, c: C_PINK, big: true }); pop(true); FK.label(S, p, 'POP!', C_PINK, true); }
       else { S.traps.push({ e, t: 0 }); FK.label(S, p, 'SEALED!', C_FX, true); FK.tone(660, { dur: 0.25, vol: 0.1, type: 'sine', slide: 1320 }); }
@@ -68,6 +80,12 @@
     FK.hit(S, tr.e, 3, { kx: dir * 6, ky: -11, stun: 0.6, c: C_PINK, big: true, stop: 0.07 });
     S.fx.push({ k: 'ring', x: ex(tr.e), y: ey(tr.e), R: 1.4, c: C_PINK, t: 0, life: 0.35 });
     pop(true); FK.label(S, p, 'POP!', C_PINK, true);
+  }
+
+  // the orbit ends: its bubbles fly straight out
+  function releaseOrbit(S, p) {
+    const O = S.orbit; if (!O) return; S.orbit = null;
+    for (let i = 0; i < O.n; i++) { const an = O.ang + i / O.n * Math.PI * 2; shoot(S, pcx(p) + Math.cos(an) * O.R, pcy(p) + Math.sin(an) * O.R, Math.cos(an) * 12, Math.sin(an) * 12, { life: 0.4, dmg: 1 }); }
   }
 
   const SEQ = {
@@ -114,26 +132,63 @@
       }
       if (q.t > 0.42) S.seq = null;
     },
-    ring(p, dt, S, q) {
-      S.target = pose(Object.assign({}, PO.spin, { lean: Math.sin(q.t * 30) * 0.3 })); S.rate = 50;
-      p.vy = Math.min(p.vy, 1.5);
+    orbit(p, dt, S, q) {   // SOAP ORBIT: a twirl of the wand and the bubbles start circling; she is free again almost at once
+      S.target = PO.twirl; S.rate = 50;
       if (!q.done) {
-        q.done = 1; const n = 8 + Math.round(4 * q.pw);
-        for (let i = 0; i < n; i++) { const an = i / n * Math.PI * 2; shoot(S, pcx(p) + Math.cos(an) * 0.5, pcy(p) + Math.sin(an) * 0.5, Math.cos(an) * 10, Math.sin(an) * 10, { life: 0.42, dmg: 1 }); }
-        pop(false);
+        q.done = 1;
+        if (S.orbit) releaseOrbit(S, p);
+        S.orbit = { t: 0, life: 1.6 + 0.8 * q.pw, n: 3 + Math.round(2 * q.pw), R: 1.05 + 0.25 * q.pw, cool: new Map(), dir: q.f, ang: 0 };
+        FK.tone(520, { dur: 0.25, vol: 0.1, type: 'sine', slide: 1040 }); pop(false);
       }
-      if (q.t > 0.3) S.seq = null;
+      if (q.t > 0.18) S.seq = null;
     },
-    side(p, dt, S, q) {
-      const f = q.f, n = 4 + Math.round(3 * q.pw);
-      S.target = PO.blowB; S.rate = 50;
-      p.vy = Math.min(p.vy, 0.8);
-      while (q.t >= 0.04 + q.n * 0.05 && q.n < n) {
-        const w = wand(p, PO.blowB, f); q.n++;
-        shoot(S, w[0] + f * 0.3, w[1], f * 16, (Math.random() - 0.5) * 1.6, { life: 0.7 });
-        if (!FK.blocked(p.x - f * 0.12, p.y + 0.02, p.w, p.h - 0.04)) p.vx = -f * 4.5;   // recoil
+    jet(p, dt, S, q) {   // FIZZ JET: shake, then the spray rockets her forward and lays foam behind
+      const f = q.f, W = 0.1, D = 0.3 + 0.12 * q.pw;
+      if (q.t < W) {
+        S.target = pose(Object.assign({}, PO.shake, { lean: PO.shake.lean + Math.sin(q.t * 90) * 0.15 })); S.rate = 60;
+        p.vy = Math.min(p.vy, 0.5); p.vx *= 0.6;
+        if (!q.snd) { q.snd = 1; FK.noise({ dur: 0.12, cut: 5000, q: 6, vol: 0.12 }); }
+        return;
       }
-      if (q.t > 0.04 + n * 0.05 + 0.1) S.seq = null;
+      if (!q.go) { q.go = 1; FK.noise({ dur: D + 0.1, cut: 3800, cutEnd: 1200, q: 1.5, vol: 0.22 }); FK.tone(700, { dur: 0.2, vol: 0.08, type: 'sine', slide: 1500 }); }
+      const u = (q.t - W) / D, sp = (17 + 6 * q.pw) * (1 - 0.45 * FK.ease(u));
+      S.target = PO.jet; S.rate = 50; S.selfMove = true;
+      if (!FK.moveX(p, f * sp * dt)) { q.t = W + D; }
+      p.vx = f * sp * 0.35; p.vy = Math.min(p.vy, 0.4) * 0.5;
+      if (Math.floor(q.t * 28) !== q.d) {   // foam left hanging in the air behind her, and spray from the wand
+        q.d = Math.floor(q.t * 28);
+        S.mines.push({ x: pcx(p) - f * 0.55, y: pcy(p) + (Math.random() - 0.4) * 0.5, t: 0, life: 0.9 + 0.4 * q.pw, r: 0.2 + Math.random() * 0.1, ph: Math.random() * 6 });
+        S.fx.push({ k: 'suds', x: pcx(p) - f * 0.9, y: pcy(p) + 0.1, t: 0, life: 0.35, ph: Math.random() * 6 });
+      }
+      for (const e of FK.within(pcx(p) + f * 0.45, pcy(p), 0.95)) {
+        if (q.hits.has(e)) continue; q.hits.add(e);
+        FK.hit(S, e, 1.5 + q.pw, { kx: f * (8 + 3 * q.pw), ky: -5, stun: 0.35, c: C_FX, big: q.pw > 0.4 });
+        soakCount(S, p, e, 1, f); FK.smack(false);
+      }
+      if (q.t > W + D) { p.vx = f * 3; S.seq = null; }
+    },
+    splash(p, dt, S, q) {   // SPLASHDOWN: a heavy bubble, straight down; spikes on the way, splash waves on the floor
+      const W = 0.12, k = FK.keys();
+      S.target = PO.dive; S.rate = 50; S.inBubble = true; S.heavy = true;
+      if (q.t < W) { p.vy = Math.min(p.vy, 0) * 0.3; p.vx *= 0.5; if (!q.snd) { q.snd = 1; FK.tone(200, { dur: 0.2, vol: 0.14, type: 'sine', slide: 120 }); } return; }
+      p.vy = 21 + 3 * q.pw; p.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 3;
+      if (!q.go) { q.go = 1; FK.whoosh(false, true); }
+      for (const e of FK.within(pcx(p), pcy(p) + 0.35, 0.95 + 0.15 * q.pw)) {
+        if (q.hits.has(e)) continue; q.hits.add(e);
+        const tr = S.traps.find(t => t.e === e);
+        if (tr) { burst(S, p, tr, FK.face(p)); continue; }
+        FK.hit(S, e, 2 + q.pw, { kx: 0, ky: 15, stun: 0.45, c: C_FX, big: true, stop: 0.05 });
+        soakCount(S, p, e, 2, FK.face(p)); pop(false);
+      }
+      if ((p.onGround && q.t > W + 0.02) || q.t > 1.4) {
+        S.inBubble = false; S.heavy = false; pop(true); FK.thud(false);
+        const L = 0.45 + 0.2 * q.pw;
+        for (const d of [-1, 1]) S.waves.push({ x: pcx(p) + d * 0.4, fy: p.y + p.h, dir: d, t: 0, life: L, hits: new Set(), big: q.pw > 0.4 });
+        S.fx.push({ k: 'ring', x: pcx(p), y: p.y + p.h - 0.2, R: 1.6 + 0.5 * q.pw, c: C_FX, t: 0, life: 0.35 });
+        for (let i = 0; i < 6; i++) S.fx.push({ k: 'suds', x: pcx(p) + (Math.random() - 0.5) * 1.4, y: p.y + p.h - 0.1, t: 0, life: 0.5, ph: Math.random() * 6 });
+        if (p.onGround) { p.vy = -9 - 2 * q.pw; p.onGround = false; }
+        S.seq = null;
+      }
     },
     ride(p, dt, S, q) {
       const k = FK.keys(), D = 0.75 + 0.25 * q.pw;
@@ -147,20 +202,41 @@
         p.vy = -6;
       }
     },
-    drop(p, dt, S, q) {
-      const n = 6 + Math.round(5 * q.pw), k = FK.keys();
-      S.target = pose(Object.assign({}, PO.drop, { y: PO.drop.y + Math.sin(q.t * 60) * 0.5 })); S.rate = 50;
-      while (q.t >= 0.05 + q.n * 0.06 && q.n < n) {
-        q.n++;
-        shoot(S, pcx(p) + (Math.random() - 0.5) * 0.3, p.y + p.h + 0.2, (Math.random() - 0.5) * 3 + ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 2, 14, { life: 0.6, dmg: 0.9 });
-        p.vy = Math.min(p.vy, -3.2);   // each bubble holds you up
-      }
-      if (q.t > 0.05 + n * 0.06 + 0.08 || p.onGround) S.seq = null;
-    },
   };
 
   function stepWorld(p, dt, S) {
     const foes = FK.foes();
+    // the soap orbit circles her; each foe it touches is soaked (once every so often)
+    if (S.orbit) {
+      const O = S.orbit; O.t += dt; O.ang = (O.ang || 0) + dt * 6.5 * O.dir;
+      if (!p.onGround && O.t < 0.8 && (p.vy || 0) > 3.5) p.vy = 3.5;   // a gentle float while it spins up
+      for (const [e, c] of O.cool) { if (c - dt <= 0) O.cool.delete(e); else O.cool.set(e, c - dt); }
+      for (let i = 0; i < O.n; i++) {
+        const an = O.ang + i / O.n * Math.PI * 2, bx = pcx(p) + Math.cos(an) * O.R, by = pcy(p) + Math.sin(an) * O.R;
+        for (const e of foes) if (!O.cool.has(e) && Math.abs(ex(e) - bx) < 0.3 + (e.w || 0.9) / 2 && Math.abs(ey(e) - by) < 0.3 + (e.h || 0.9) / 2) {
+          O.cool.set(e, 0.3); soak(S, p, e, { vx: Math.sign(ex(e) - pcx(p)) || 1, dmg: 0.8 }); blip();
+        }
+      }
+      if (O.t >= O.life) { releaseOrbit(S, p); pop(false); }
+    }
+    // foam left by the Fizz Jet: hangs in the air and pops on whoever touches it
+    for (let i = S.mines.length - 1; i >= 0; i--) {
+      const m = S.mines[i]; m.t += dt; m.y -= dt * 0.25;
+      let gone = m.t >= m.life;
+      if (!gone && m.t > 0.08) for (const e of foes) if (Math.abs(ex(e) - m.x) < m.r + (e.w || 0.9) / 2 && Math.abs(ey(e) - m.y) < m.r + (e.h || 0.9) / 2) { soak(S, p, e, { vx: Math.sign(ex(e) - m.x) || 1, dmg: 0.7 }); gone = true; break; }
+      if (gone) { S.fx.push({ k: 'pip', x: m.x, y: m.y, t: 0, life: 0.18 }); S.mines.splice(i, 1); }
+    }
+    // splash waves run along the floor from a Splashdown
+    for (let i = S.waves.length - 1; i >= 0; i--) {
+      const w = S.waves[i]; w.t += dt;
+      const nx = w.x + w.dir * 11 * dt;
+      if (FK.blocked(nx - 0.2, w.fy - 0.8, 0.4, 0.6) || !FK.blocked(nx - 0.1, w.fy + 0.05, 0.2, 0.2)) w.t = w.life;   // a wall, or the floor ends
+      else w.x = nx;
+      for (const e of foes) if (!w.hits.has(e) && Math.abs(ex(e) - w.x) < 0.7 && Math.abs(e.y + (e.h || 0.9) - w.fy) < 1.2) {
+        w.hits.add(e); FK.hit(S, e, w.big ? 2 : 1.5, { kx: w.dir * 3, ky: -11, stun: 0.4, c: C_FX, big: w.big }); soakCount(S, p, e, 1, w.dir);
+      }
+      if (w.t >= w.life) S.waves.splice(i, 1);
+    }
     // bubbles in flight
     for (let i = S.shots.length - 1; i >= 0; i--) {
       const b = S.shots[i]; b.t += dt;
@@ -228,7 +304,7 @@
 
   const MOVES = {
     ground: { neutral: { name: 'Bubble Stream', big: 'SODA BLAST', cd: 0.3 }, side: { name: 'Suds Slide', cd: 0.45 }, up: { name: 'Lift Bubble', big: 'BIG LIFT BUBBLE', cd: 0.6 }, down: { name: 'Foam Pad', cd: 0.6 } },
-    air:    { neutral: { name: 'Bubble Burst', cd: 0.4 }, side: { name: 'Side Stream', cd: 0.3 }, up: { name: 'Bubble Ride', cd: 0.3 }, down: { name: 'Pop Drop', big: 'FIZZ HOVER', cd: 0.3 } },
+    air:    { neutral: { name: 'Soap Orbit', big: 'SOAP STORM', cd: 0.45 }, side: { name: 'Fizz Jet', big: 'SODA ROCKET', cd: 0.35 }, up: { name: 'Bubble Ride', cd: 0.3 }, down: { name: 'Splashdown', big: 'TIDAL SPLASH', cd: 0.4 } },
   };
   const FD = { windup: 0.02, active: 0.06, endlag: 0.04, root: false };
   const MFD = {}; for (const st of ['ground', 'air']) for (const d of ['neutral', 'side', 'up', 'down']) MFD[st + '_' + d] = FD;
@@ -237,30 +313,31 @@
     id: ID, plug: 'fizz',
     def: { name: 'Fizz', icon: '🫧', tier: 'gold', color: C_FX, color2: C_PINK,
       ability: 'Bubble Blower: rapid long-range bubble streams, Lift Bubbles you ride upward, Foam Pads that bounce everyone',
-      desc: 'A kid in a raincoat with a bubble wand. Every attack is a stream of fast little bubbles from far away; four on one foe SEAL it in a bubble that floats up, and the next hit POPS it. Lift Bubble (↑) floats upward with you standing on it, Foam Pad (↓) is a trampoline for you and for foes, Suds Slide skids along the floor. In the air: Bubble Burst (a ring), Side Stream (pushes you back), Bubble Ride (float up inside one) and Pop Drop (shoot down and hover on the recoil).' },
+      desc: 'A kid in a raincoat with a bubble wand. Every attack is a stream of fast little bubbles from far away; four on one foe SEAL it in a bubble that floats up, and the next hit POPS it. Lift Bubble (↑) floats upward with you standing on it, Foam Pad (↓) is a trampoline for you and for foes, Suds Slide skids along the floor. In the air: Soap Orbit (bubbles circle you and soak anyone close while you keep moving), Fizz Jet (shake the wand and rocket forward on the spray, leaving foam that pops on foes; once per jump), Bubble Ride (float up inside one) and Splashdown (dive in a heavy bubble that spikes foes, then two splash waves run along the floor).' },
     stats: { speed: 1.12, jump: 1.1, maxJumps: 2, maxDashes: 1, hp: 3 },
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, shots: [], traps: [], lifts: [], pads: [], airUp: false, inBubble: false, riding: false }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, shots: [], traps: [], lifts: [], pads: [], mines: [], waves: [], orbit: null, airUp: false, airSide: false, inBubble: false, heavy: false, riding: false }),
     busy: S => !!S.seq,
-    can(key, S) { if (key === 'air_up' && S.airUp) return 'Bubble Ride comes back when you land'; return null; },
+    can(key, S) { if (key === 'air_up' && S.airUp) return 'Bubble Ride comes back when you land'; if (key === 'air_side' && S.airSide) return 'Fizz Jet comes back when you land'; return null; },
     act: {
       ground_neutral: (p, f, pw, S) => startSeq(S, 'stream', { f, pw }),
       ground_side: (p, f, pw, S) => startSeq(S, 'slide', { f, pw }),
       ground_up: (p, f, pw, S) => startSeq(S, 'lift', { f, pw }),
       ground_down: (p, f, pw, S) => startSeq(S, 'pad', { f, pw }),
-      air_neutral: (p, f, pw, S) => startSeq(S, 'ring', { f, pw }),
-      air_side: (p, f, pw, S) => startSeq(S, 'side', { f, pw }),
+      air_neutral: (p, f, pw, S) => startSeq(S, 'orbit', { f, pw }),
+      air_side: (p, f, pw, S) => { S.airSide = true; startSeq(S, 'jet', { f, pw }); },
       air_up: (p, f, pw, S) => { S.airUp = true; startSeq(S, 'ride', { f, pw }); },
-      air_down: (p, f, pw, S) => startSeq(S, 'drop', { f, pw }),
+      air_down: (p, f, pw, S) => startSeq(S, 'splash', { f, pw }),
     },
-    onTeleport(p, S) { S.seq = null; S.inBubble = false; S.lifts.length = 0; S.pads.length = 0; S.traps.length = 0; },
+    onTeleport(p, S) { S.seq = null; S.inBubble = false; S.heavy = false; S.orbit = null; S.lifts.length = 0; S.pads.length = 0; S.traps.length = 0; S.mines.length = 0; S.waves.length = 0; },
     step(p, dt, S, k) {
-      if (p.hitstun > 0 && S.seq) { S.seq = null; S.inBubble = false; }
+      if (p.hitstun > 0 && S.seq) { S.seq = null; S.inBubble = false; S.heavy = false; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
       stepWorld(p, dt, S);
       if (!S.seq) S.target = FK.locomotion(S, p, dt, PO, { aF: [1.0, 0.9] });
       if (p.onGround && !S.riding) S.airUp = false;
+      if (p.onGround) S.airSide = false;
       S.pose = FK.lerpPose(S.pose, S.target, 1 - Math.exp(-dt * S.rate));
     },
 
@@ -288,7 +365,7 @@
       FK.mitt(ctx, K.lF[2][0] + 1.0 * s, K.lF[2][1] - 0.3 * s, 3 * s, C_BOOT);
       // head: hood, a tuft of pink hair, big eyes, puffed cheeks while blowing
       ctx.save(); ctx.translate(K.head[0], K.head[1]); ctx.rotate(q.lean + q.head);
-      const hr = K.hr, blowing = S && S.seq && (S.seq.kind === 'stream' || S.seq.kind === 'side' || S.seq.kind === 'drop');
+      const hr = K.hr, blowing = S && S.seq && (S.seq.kind === 'stream' || S.seq.kind === 'jet');
       ctx.fillStyle = C_COAT2; ctx.beginPath(); ctx.arc(-hr * 0.12, -hr * 0.05, hr * 1.16, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = C_COAT; ctx.beginPath(); ctx.arc(-hr * 0.05, -hr * 0.08, hr * 1.1, Math.PI * 0.75, Math.PI * 2.1); ctx.fill();
       ctx.fillStyle = C_COAT; ctx.beginPath(); ctx.moveTo(-hr * 0.5, -hr * 1.0); ctx.quadraticCurveTo(-hr * 1.0, -hr * 1.9 + Math.sin(t * 4) * s, -hr * 1.35, -hr * 1.15); ctx.quadraticCurveTo(-hr * 0.9, -hr * 1.1, -hr * 0.8, -hr * 0.7); ctx.fill();
@@ -320,9 +397,33 @@
         const grow = Math.min(1, L.t / 0.25), left = L.life - L.t, wob = left < 0.9 ? Math.sin(V.now * 40) * 0.06 : 0;
         bubble(ctx, V.SX(L.x), V.SY(L.y), L.r * T * grow * (1 + wob), left < 0.9 ? 0.6 + 0.4 * Math.sin(V.now * 30) : 1, L.on ? C_PINK : C_FX);
       }
+      for (const m of S.mines) {   // Fizz Jet foam: little clusters that fade
+        const a = Math.min(1, m.t / 0.08) * Math.min(1, (m.life - m.t) / 0.25), x = V.SX(m.x), y = V.SY(m.y), r = m.r * T;
+        for (let i = 0; i < 3; i++) { const an = m.ph + i * 2.1; bubble(ctx, x + Math.cos(an) * r * 0.7, y + Math.sin(an) * r * 0.5, r * (0.55 + 0.15 * i), a, i === 1 ? C_PINK : C_FX); }
+      }
+      for (const w of S.waves) {   // splash waves: a curling crest running along the floor
+        const u = w.t / w.life, a = 1 - u * 0.6, x = V.SX(w.x), y = V.SY(w.fy), h = T * (w.big ? 1.0 : 0.8) * (1 - 0.4 * u), d = w.dir;
+        ctx.beginPath(); ctx.moveTo(x - d * T * 0.9, y); ctx.quadraticCurveTo(x - d * T * 0.3, y - h * 0.4, x, y - h); ctx.quadraticCurveTo(x + d * T * 0.35, y - h * 1.05, x + d * T * 0.3, y - h * 0.55);
+        ctx.quadraticCurveTo(x + d * T * 0.15, y - h * 0.7, x + d * T * 0.05, y - h * 0.45); ctx.quadraticCurveTo(x + d * T * 0.4, y - h * 0.2, x + d * T * 0.5, y); ctx.closePath();
+        FK.glow(ctx, C_FX, 0.35 * a); ctx.fill(); FK.glow(ctx, '#ffffff', 0.8 * a); ctx.lineWidth = 2; ctx.stroke();
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + d * T * (0.2 + i * 0.12), y - h * (1.05 + 0.15 * i) - Math.sin(V.now * 20 + i) * 3, T * 0.05, 0, Math.PI * 2); ctx.fill(); }
+      }
+      if (S.orbit) {   // soap orbit: the bubbles on their circle, with a faint ring between them
+        const O = S.orbit, a = Math.min(1, O.t / 0.12) * (O.life - O.t < 0.3 ? 0.6 + 0.4 * Math.sin(V.now * 30) : 1), cx = V.SX(pcx(p)), cy = V.SY(pcy(p)), R = O.R * T;
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); FK.glow(ctx, C_FX, 0.18 * a); ctx.lineWidth = 2; ctx.stroke();
+        for (let i = 0; i < O.n; i++) { const an = (O.ang || 0) + i / O.n * Math.PI * 2; bubble(ctx, cx + Math.cos(an) * R, cy + Math.sin(an) * R, T * 0.27, a, i % 2 ? C_PINK : C_FX); }
+      }
       for (const b of S.shots) bubble(ctx, V.SX(b.x), V.SY(b.y), b.r * T * (0.7 + 0.3 * Math.min(1, b.t / 0.1)), Math.min(1, (b.life - b.t) / 0.15));
       for (const tr of S.traps) if (!tr.e.dead) bubble(ctx, V.SX(ex(tr.e)), V.SY(ey(tr.e)), T * 0.85 * (1 + 0.04 * Math.sin(V.now * 9)), tr.t > 1.6 ? 0.6 + 0.4 * Math.sin(V.now * 30) : 1, C_PINK);
-      if (S.inBubble) bubble(ctx, V.SX(pcx(p)), V.SY(pcy(p)), T * 0.95 * (1 + 0.04 * Math.sin(V.now * 12)), 1);
+      if (S.inBubble) {
+        if (S.heavy) {   // Splashdown: a heavier, water-filled bubble stretched by the fall, with streaks above it
+          const cx = V.SX(pcx(p)), cy = V.SY(pcy(p)), r = T * 0.95;
+          ctx.save(); ctx.translate(cx, cy); ctx.scale(0.92, 1.12);
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); FK.glow(ctx, '#4fb6ff', 0.3); ctx.fill(); FK.glow(ctx, C_FX, 0.95); ctx.lineWidth = 3; ctx.stroke();
+          ctx.restore();
+          for (let i = 0; i < 4; i++) { const x = cx + (i - 1.5) * r * 0.45; ctx.beginPath(); ctx.moveTo(x, cy - r * 1.2); ctx.lineTo(x, cy - r * (1.9 + 0.3 * Math.sin(V.now * 25 + i))); FK.glow(ctx, '#ffffff', 0.5); ctx.lineWidth = 2; ctx.stroke(); }
+        } else bubble(ctx, V.SX(pcx(p)), V.SY(pcy(p)), T * 0.95 * (1 + 0.04 * Math.sin(V.now * 12)), 1);
+      }
     },
     drawFx(ctx, V, f, u, a) {
       if (f.k === 'pip') { const x = V.SX(f.x), y = V.SY(f.y); for (let i = 0; i < 5; i++) { const an = i * 1.26; ctx.beginPath(); ctx.arc(x + Math.cos(an) * V.T * 0.3 * u, y + Math.sin(an) * V.T * 0.3 * u, V.T * 0.04, 0, Math.PI * 2); FK.glow(ctx, C_FX, a); ctx.fill(); } return true; }
@@ -337,7 +438,7 @@
         if (I.dy < -1.2 && !S.airUp) return { type: 'tap', v: 'up' };
         if (I.dy > 1 && I.adx < 1.5) return { type: 'tap', v: 'down' };
         if (I.adx < 2 && Math.abs(I.dy) < 2) return { type: 'tap', v: '' };
-        if (I.adx < 9 && Math.abs(I.dy) < 1.2) return { type: 'tap', v: 'side' };
+        if (I.adx < 5 && Math.abs(I.dy) < 1.2 && !S.airSide) return { type: 'tap', v: 'side' };
         return null;
       }
       if (I.adx < 1.6 && Math.abs(I.dy) < 1.2) return Math.random() < 0.5 ? { type: 'tap', v: 'side' } : { type: 'tap', v: 'down' };

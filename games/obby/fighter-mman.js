@@ -7,12 +7,13 @@
  * touch it to take that FORM for 24 seconds. Two hits taken knock him back to normal.
  *   🔥 EMBER CORE  (land 6 hits)        -> FORGE form: glowing furnace armour, the wrench throws bouncing hot rivets
  *   🌀 SPRING COIL (5 s in the air)      -> BOUNCE form: coil boots, a triple jump, stomps that chain sky-high
- *   🧲 MAGNET CORE (run 50 tiles)        -> MAGNET form: a horseshoe gauntlet that pulls foes in and rushes along rails
+ *   ⚙️ DRILL BIT   (3 stomps)            -> DRILL form: a power-drill gauntlet; grinding many-hit moves that pin foes and carry them
  *
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge). Each form changes some of them.
- *  Ground: neutral WRENCH SWING (Forge: RIVET VOLLEY, Magnet: MAGNET PULL), side SHOULDER CHARGE, up JACK-UP (Bounce: SPRING LAUNCH),
- *          down HAMMER QUAKE.
- *  Air:    neutral SPIN WRENCH, side FLYING KICK, up TOOL TWIRL (recovery), down BUTT STOMP (Bounce: POGO DRILL).
+ *  Ground: neutral WRENCH SWING (Forge: RIVET VOLLEY, Drill: DRILL BORE), side SHOULDER CHARGE (Drill: CORKSCREW), up JACK-UP
+ *          (Bounce: SPRING LAUNCH), down HAMMER QUAKE.
+ *  Air:    neutral SPIN WRENCH, side FLYING KICK (Drill: CORKSCREW), up TOOL TWIRL (recovery), down BUTT STOMP (Bounce: POGO BOUNCE,
+ *          Drill: TWISTER DRILL).
  */
 (function () {
   'use strict';
@@ -22,7 +23,7 @@
   const FORMS = {
     forge:  { name: 'FORGE', icon: '🔥', c: '#ff8a1a', suit: '#ff7a1a', suit2: '#9a3a0a', glow: '#ffb347' },
     bounce: { name: 'BOUNCE', icon: '🌀', c: '#4fe0c2', suit: '#30b89e', suit2: '#1f7d6c', glow: '#b8fff0' },
-    magnet: { name: 'MAGNET', icon: '🧲', c: '#5a8cff', suit: '#3f63d6', suit2: '#253f99', glow: '#ff5a6e' },
+    drill:  { name: 'DRILL', icon: '⚙️', c: '#ffd23b', suit: '#6d7f99', suit2: '#3e4a5e', glow: '#ffe27a' },
   };
   const P = { hip: 8, torso: 10.5, neck: -1.5, head: 7.6, ua: 4.6, fa: 4.4, th: 4.0, sh: 3.8 };   // a stocky grown man: a broad chest, a smaller head
   const U = 30, pose = FK.pose, { ex, ey, pcx, pcy } = FK;
@@ -31,7 +32,7 @@
     tasks: [
       { kind: 'hits', need: 6, form: 'forge', label: '6 HITS' },
       { kind: 'air', need: 5, form: 'bounce', label: 'AIR TIME' },
-      { kind: 'dist', need: 50, form: 'magnet', label: '50 TILES' },
+      { kind: 'stomp', need: 3, form: 'drill', label: '3 STOMPS' },
     ],
     forms: FORMS,
     drawItem(ctx, x, y, r, f, t) {
@@ -45,11 +46,11 @@
         const sq = 1 + Math.sin(t * 8) * 0.18;
         for (let i = 0; i <= 24; i++) { const u = i / 24, a = u * Math.PI * 8; ctx.lineTo(x + Math.cos(a) * r * 0.6, y + (u - 0.5) * r * 1.4 * sq + Math.sin(a) * r * 0.16); }
         ctx.stroke(); ctx.fillStyle = '#e6fffa'; ctx.fillRect(x - r * 0.7, y - r * 0.8 * sq, r * 1.4, r * 0.18); ctx.fillRect(x - r * 0.7, y + r * 0.62 * sq, r * 1.4, r * 0.18);
-      } else {   // a horseshoe magnet
-        ctx.lineCap = 'butt'; ctx.lineWidth = r * 0.42;
-        ctx.strokeStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(x, y - r * 0.1, r * 0.55, Math.PI, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x - r * 0.55, y - r * 0.1); ctx.lineTo(x - r * 0.55, y + r * 0.45); ctx.moveTo(x + r * 0.55, y - r * 0.1); ctx.lineTo(x + r * 0.55, y + r * 0.45); ctx.stroke();
-        ctx.strokeStyle = '#e8edf5'; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y + r * 0.45); ctx.lineTo(x - r * 0.55, y + r * 0.75); ctx.moveTo(x + r * 0.55, y + r * 0.45); ctx.lineTo(x + r * 0.55, y + r * 0.75); ctx.stroke();
+      } else {   // a drill bit: a striped steel cone on a yellow chuck, turning
+        ctx.fillStyle = '#ffd23b'; ctx.beginPath(); ctx.roundRect(x - r * 0.75, y - r * 0.32, r * 0.55, r * 0.64, r * 0.12); ctx.fill();
+        ctx.fillStyle = '#c9d3e0'; ctx.beginPath(); ctx.moveTo(x - r * 0.2, y - r * 0.36); ctx.lineTo(x + r * 0.85, y); ctx.lineTo(x - r * 0.2, y + r * 0.36); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#6d7f99'; ctx.lineWidth = r * 0.09;
+        for (let i = 0; i < 4; i++) { const u = ((i / 4 + t * 1.5) % 1), xx = x - r * 0.2 + u * r * 1.05, hh = r * 0.36 * (1 - u); ctx.beginPath(); ctx.moveTo(xx - r * 0.1, y - hh); ctx.lineTo(xx + r * 0.1, y + hh); ctx.stroke(); }
       }
     },
   });
@@ -79,7 +80,7 @@
     const x0 = f > 0 ? pcx(p) + dx : pcx(p) - dx - w, y0 = pcy(p) - (dy || 0) - h / 2;
     return FK.foes().filter(e => ex(e) + (e.w || 0.9) / 2 > x0 && ex(e) - (e.w || 0.9) / 2 < x0 + w && ey(e) + (e.h || 0.9) / 2 > y0 && ey(e) - (e.h || 0.9) / 2 < y0 + h);
   }
-  const mul = S => form(S) === 'forge' ? 1.3 : form(S) === 'magnet' ? 1.1 : 1;
+  const mul = S => form(S) === 'forge' ? 1.3 : form(S) === 'drill' ? 1.1 : 1;
   function hit(S, e, dmg, o) { FK.hit(S, e, dmg * mul(S), Object.assign({ c: fc(S) }, o)); PU.add(S, 'hits'); }
   function clang(big) { FK.tone(big ? 520 : 760, { dur: 0.12, vol: 0.16, type: 'square', slide: big ? 260 : 420 }); FK.noise({ dur: 0.06, cut: 4200, q: 3, vol: 0.18 }); }
   function boing(hi) { FK.tone(hi ? 330 : 220, { dur: 0.22, vol: 0.18, type: 'square', slide: hi ? 1320 : 880 }); }
@@ -109,24 +110,66 @@
       }
       if (q.t > 0.06 + n * 0.09 + 0.12) S.seq = null;
     },
-    pull(p, dt, S, q) {   // MAGNET: a beam that drags foes in, then a clank
-      const f = q.f, D = 0.55 + 0.25 * q.pw;
-      S.target = PO.pull; S.rate = 30; S.beam = { f, t: q.t };
-      const list = box(p, f, 0.3, 7 + 2 * q.pw, 2.4);
-      for (const e of list) { if (!e._noKnockback) { e.vx = -f * 9; e.vy = Math.min(e.vy || 0, 0); } e.stunTimer = Math.max(e.stunTimer || 0, 0.15); }
-      if (Math.floor(q.t * 12) !== q.d) { q.d = Math.floor(q.t * 12); FK.tone(140 + q.t * 200, { dur: 0.08, vol: 0.06, type: 'sawtooth' }); }
+    bore(p, dt, S, q) {   // DRILL: DRILL BORE, the drill thrust forward and held there, grinding whatever it catches
+      const f = q.f, D = 0.5 + 0.25 * q.pw, tipX = pcx(p) + f * 1.25;
+      S.target = q.t < 0.06 ? PO.wind : PO.swing; S.rate = 50; S.drill = 1; p.vx = 0;
+      if (q.t < 0.06) return;
+      if (Math.floor(q.t / 0.07) !== q.n) {
+        q.n = Math.floor(q.t / 0.07);
+        FK.tone(180 + (q.n % 2) * 40, { dur: 0.06, vol: 0.08, type: 'sawtooth' });
+        for (const e of box(p, f, 0.1, 1.9, 1.4)) {
+          hit(S, e, 0.6, { kx: 0, ky: 0, stun: 0.25 });
+          if (!e._noKnockback) { e.vx = 0; e.vy = 0; const nx = tipX - (e.w || 0.9) / 2 + f * 0.25; if (!FK.blocked(nx, e.y, e.w || 0.9, e.h || 0.9)) e.x += (nx - e.x) * 0.5; }   // pinned on the bit
+          S.fx.push({ k: 'spark2', x: tipX, y: pcy(p) - 0.05, vx: -f * (2 + Math.random() * 3), vy: -2 - Math.random() * 3, t: 0, life: 0.3 });
+          q.got = 1;
+        }
+      }
       if (q.t > D) {
-        for (const e of box(p, f, 0, 1.8, 1.8)) hit(S, e, 3 + 2 * q.pw, { kx: f * 10, ky: -9, stun: 0.5, big: true, stop: 0.06 });
-        clang(true); S.beam = null; S.seq = null;
+        if (q.got) { for (const e of box(p, f, 0.1, 2.0, 1.5)) hit(S, e, 2 + 2 * q.pw, { kx: f * (10 + 4 * q.pw), ky: -8, stun: 0.45, big: true, stop: 0.06 }); clang(true); }
+        S.drill = 0; S.seq = null;
       }
     },
-    charge(p, dt, S, q) {   // SHOULDER CHARGE (Forge: FURNACE RUSH, Magnet: RAIL RUSH, longer)
-      const f = q.f, D = form(S) === 'magnet' ? 0.5 : 0.34;
+    cork(p, dt, S, q) {   // DRILL: CORKSCREW, a spinning drill dash that carries foes along and flings them at the end
+      const f = q.f, D = 0.42 + 0.1 * q.pw;
+      S.target = PO.swing; S.rate = 50; S.selfMove = true; S.drill = 1;
+      if (!q.snd) { q.snd = 1; FK.whoosh(false, true); FK.tone(160, { dur: D, vol: 0.12, type: 'sawtooth', slide: 320 }); q.carry = new Set(); }
+      const sp = (18 + 4 * q.pw) * (1 - 0.35 * FK.ease(q.t / D));
+      const stop = !FK.moveX(p, f * sp * dt);
+      p.vx = f * sp * 0.4; p.vy = Math.min(p.vy, 0.5);
+      for (const e of box(p, f, -0.2, 1.4, 1.5)) q.carry.add(e);
+      if (Math.floor(q.t / 0.08) !== q.n) { q.n = Math.floor(q.t / 0.08); for (const e of q.carry) if (!e.dead) hit(S, e, 0.7, { kx: 0, ky: 0, stun: 0.25 }); }
+      for (const e of q.carry) if (!e.dead && !e._noKnockback) { const nx = pcx(p) + f * 0.95 - (e.w || 0.9) / 2; if (!FK.blocked(nx, e.y, e.w || 0.9, e.h || 0.9)) e.x = nx; e.vx = 0; e.vy = 0; }
+      if (Math.floor(q.t * 30) !== q.d) { q.d = Math.floor(q.t * 30); S.fx.push({ k: 'spark2', x: pcx(p) + f * 1.1, y: pcy(p), vx: -f * 4, vy: (Math.random() - 0.5) * 5, t: 0, life: 0.25 }); }
+      if (q.t > D || stop) {
+        for (const e of q.carry) if (!e.dead) hit(S, e, 2.5 + q.pw, { kx: f * 13, ky: -9, stun: 0.5, big: true, stop: 0.06 });
+        if (q.carry.size) clang(true); else if (stop) FK.thud(false);
+        S.drill = 0; S.seq = null;
+      }
+    },
+    twister(p, dt, S, q) {   // DRILL: TWISTER DRILL, a spinning drill dive that grinds foes down to the floor
+      if (q.t < 0.12) { S.target = PO.stomp; S.rate = 40; p.vy = 0; p.vx = 0; S.drill = 1; return; }
+      S.target = PO.twirl; S.rate = 40; S.drill = 1; S.dive = 1;
+      p.vy = 18; p.vx = 0;
+      if (!q.snd) { q.snd = 1; q.carry = new Set(); FK.tone(220, { dur: 0.6, vol: 0.12, type: 'sawtooth', slide: 90 }); }
+      for (const e of box(p, 1, -0.65, 1.3, 1.4, -0.7)) q.carry.add(e);
+      if (Math.floor(q.t / 0.08) !== q.n) { q.n = Math.floor(q.t / 0.08); for (const e of q.carry) if (!e.dead) hit(S, e, 0.6, { kx: 0, ky: 0, stun: 0.25 }); }
+      for (const e of q.carry) if (!e.dead && !e._noKnockback) { const ny = p.y + p.h + 0.05; if (!FK.blocked(e.x, ny, e.w || 0.9, e.h || 0.9)) e.y = ny; e.vx = 0; e.vy = 0; }
+      if (p.onGround || q.t > 1.4) {
+        const R = 2 + q.pw;
+        S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R, c: FORMS.drill.c, t: 0, life: 0.45 });
+        for (let i = 0; i < 8; i++) S.fx.push({ k: 'spark2', x: pcx(p), y: p.y + p.h - 0.1, vx: (Math.random() - 0.5) * 10, vy: -3 - Math.random() * 5, t: 0, life: 0.4 });
+        FK.thud(true); FK.shake(6);
+        for (const e of FK.within(pcx(p), p.y + p.h - 0.4, R)) hit(S, e, q.carry.has(e) ? 3 + q.pw : 2, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 5, ky: -13, stun: 0.5, big: true });
+        S.drill = 0; S.dive = 0; S.seq = null;
+      }
+    },
+    charge(p, dt, S, q) {   // SHOULDER CHARGE (Forge: FURNACE RUSH)
+      const f = q.f, D = 0.34;
       S.target = PO.charge; S.rate = 40; S.selfMove = true;
       if (!q.snd) { q.snd = 1; FK.whoosh(false, true); }
-      const sp = (form(S) === 'magnet' ? 20 : 15 + 5 * q.pw) * (1 - 0.5 * FK.ease(q.t / D));
+      const sp = (15 + 5 * q.pw) * (1 - 0.5 * FK.ease(q.t / D));
       if (!FK.moveX(p, f * sp * dt)) { FK.thud(false); S.seq = null; return; }
-      p.vx = f * sp * 0.4; if (form(S) === 'magnet') p.vy = Math.min(p.vy, 0);
+      p.vx = f * sp * 0.4;
       if (Math.floor(q.t * 30) !== q.d) { q.d = Math.floor(q.t * 30); S.fx.push({ k: form(S) === 'forge' ? 'ember' : 'dust', x: pcx(p) - f * 0.3, y: p.y + p.h - 0.15, vx: -f, t: 0, life: 0.4, c: fc(S) }); }
       for (const e of box(p, f, -0.2, 1.3, 1.5)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 2.5 + q.pw, { kx: f * 12, ky: -7, stun: 0.45, big: true }); FK.thud(false); }
       if (q.t > D) S.seq = null;
@@ -179,7 +222,7 @@
       if (q.t < 0.16) { S.target = PO.stomp; S.rate = 40; p.vy = 0; p.vx = 0; S.rot = q.t / 0.16 * Math.PI * 2 * q.f; return; }
       S.rot = 0; S.target = PO.stomp; p.vy = 26; p.vx = 0;
       if (!q.snd) { q.snd = 1; FK.whoosh(false, true); }
-      for (const e of box(p, 1, -0.6, 1.2, 1.2, -0.6)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 3 + q.pw, { kx: 0, ky: 16, stun: 0.5, big: true, stop: 0.06 }); }
+      for (const e of box(p, 1, -0.6, 1.2, 1.2, -0.6)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 3 + q.pw, { kx: 0, ky: 16, stun: 0.5, big: true, stop: 0.06 }); PU.add(S, 'stomp'); }
       if (p.onGround || q.t > 1.4) {
         const R = 2 + q.pw;
         S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R, c: fc(S), t: 0, life: 0.45 });
@@ -208,7 +251,7 @@
       for (const e of foes) {
         const top = e.y, l = e.x, r = e.x + (e.w || 0.9), feet = p.y + p.h;
         if (pcx(p) > l - 0.2 && pcx(p) < r + 0.2 && feet > top - 0.1 && feet < top + 0.55 && (S.stompCool.get(e) || 0) <= 0) {
-          S.stompCool.set(e, 0.35); hit(S, e, 2, { kx: 0, ky: 9, stun: 0.45, big: true });
+          S.stompCool.set(e, 0.35); hit(S, e, 2, { kx: 0, ky: 9, stun: 0.45, big: true }); PU.add(S, 'stomp');
           p.vy = form(S) === 'bounce' ? -18 : -13; S.airUp = false; boing(form(S) === 'bounce');
           FK.label(S, p, 'STOMP!', fc(S), false);
           break;
@@ -228,30 +271,30 @@
   FK.define({
     id: ID, plug: 'mman',
     def: { name: 'M-Man', icon: '🔧', tier: 'prismatic', color: '#ff4a3a', color2: '#ffb627',
-      ability: 'Stomping handyman: bounce off foes, swing a giant wrench, and grab power-ups for FORGE, BOUNCE and MAGNET forms',
-      desc: 'The older brother: a sturdy fix-it man with a hard hat and a giant wrench. Fall onto a foe to STOMP it and spring back up. Tasks fill the rings over his head (6 hits, 5 s in the air, 50 tiles run); each one puts a Tool Crate over his head: bump it from below and catch the power-up that slides out: 🔥 FORGE (hot rivets, harder hits), 🌀 BOUNCE (triple jump, sky-high stomps, Spring Launch, Pogo Drill) or 🧲 MAGNET (pull foes in, Rail Rush). A form lasts 24 s; two hits end it. Moves: Wrench Swing, Shoulder Charge, Jack-Up, Hammer Quake; in the air Spin Wrench, Flying Kick, Tool Twirl and Butt Stomp.' },
+      ability: 'Stomping handyman: bounce off foes, swing a giant wrench, and grab power-ups for FORGE, BOUNCE and DRILL forms',
+      desc: 'The older brother: a sturdy fix-it man with a hard hat and a giant wrench. Fall onto a foe to STOMP it and spring back up. Tasks fill the rings over his head (6 hits, 5 s in the air, 3 stomps); each one puts a Tool Crate over his head: bump it from below and catch the power-up that slides out: 🔥 FORGE (hot rivets, harder hits), 🌀 BOUNCE (triple jump, sky-high stomps, Spring Launch, Pogo Bounce) or ⚙️ DRILL (a power-drill gauntlet: Drill Bore pins and grinds, Corkscrew carries foes along, Twister Drill grinds them into the floor). A form lasts 24 s; two hits end it. Moves: Wrench Swing, Shoulder Charge, Jack-Up, Hammer Quake; in the air Spin Wrench, Flying Kick, Tool Twirl and Butt Stomp.' },
     stats: { speed: 1.05, jump: 1.12, maxJumps: 2, maxDashes: 1, hp: 4 },
-    statMod: S => form(S) === 'bounce' ? { jump: 1.32, maxJumps: 3 } : form(S) === 'forge' ? { speed: 0.98 } : form(S) === 'magnet' ? { speed: 1.18 } : {},
+    statMod: S => form(S) === 'bounce' ? { jump: 1.32, maxJumps: 3 } : form(S) === 'forge' ? { speed: 0.98 } : form(S) === 'drill' ? { speed: 1.1 } : {},
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rot: 0, rotor: 0, shots: [], stompCool: new Map(), airUp: false, beam: null, pu: PU.init() }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rot: 0, rotor: 0, drill: 0, dive: 0, shots: [], stompCool: new Map(), airUp: false, pu: PU.init() }),
     busy: S => !!S.seq,
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Tool Twirl comes back when you land'; return null; },
     act: {
-      ground_neutral: (p, f, pw, S) => { const fm = form(S); if (fm === 'forge') { startSeq(S, 'rivets', { f, pw }); return 'RIVET VOLLEY'; } if (fm === 'magnet') { startSeq(S, 'pull', { f, pw }); return 'MAGNET PULL'; } startSeq(S, 'swing', { f, pw }); },
-      ground_side: (p, f, pw, S) => { startSeq(S, 'charge', { f, pw }); return form(S) === 'forge' ? 'FURNACE RUSH' : form(S) === 'magnet' ? 'RAIL RUSH' : null; },
+      ground_neutral: (p, f, pw, S) => { const fm = form(S); if (fm === 'forge') { startSeq(S, 'rivets', { f, pw }); return 'RIVET VOLLEY'; } if (fm === 'drill') { startSeq(S, 'bore', { f, pw }); return 'DRILL BORE'; } startSeq(S, 'swing', { f, pw }); },
+      ground_side: (p, f, pw, S) => { if (form(S) === 'drill') { startSeq(S, 'cork', { f, pw }); return 'CORKSCREW'; } startSeq(S, 'charge', { f, pw }); return form(S) === 'forge' ? 'FURNACE RUSH' : null; },
       ground_up: (p, f, pw, S) => { startSeq(S, 'jackup', { f, pw }); return form(S) === 'bounce' ? 'SPRING LAUNCH' : null; },
       ground_down: (p, f, pw, S) => startSeq(S, 'quake', { f, pw }),
       air_neutral: (p, f, pw, S) => { if (form(S) === 'forge') { startSeq(S, 'rivets', { f, pw }); return 'RIVET VOLLEY'; } startSeq(S, 'spin', { f, pw }); },
-      air_side: (p, f, pw, S) => startSeq(S, 'kick', { f, pw }),
+      air_side: (p, f, pw, S) => { if (form(S) === 'drill') { startSeq(S, 'cork', { f, pw }); return 'CORKSCREW'; } startSeq(S, 'kick', { f, pw }); },
       air_up: (p, f, pw, S) => { S.airUp = true; startSeq(S, 'twirl', { f, pw }); },
-      air_down: (p, f, pw, S) => { startSeq(S, 'stomp', { f, pw }); return form(S) === 'bounce' ? 'POGO DRILL' : null; },
+      air_down: (p, f, pw, S) => { if (form(S) === 'drill') { startSeq(S, 'twister', { f, pw }); return 'TWISTER DRILL'; } startSeq(S, 'stomp', { f, pw }); return form(S) === 'bounce' ? 'POGO BOUNCE' : null; },
     },
-    onTeleport(p, S) { S.seq = null; S.rot = 0; S.rotor = 0; S.shots.length = 0; S.beam = null; },
+    onTeleport(p, S) { S.seq = null; S.rot = 0; S.rotor = 0; S.drill = 0; S.dive = 0; S.shots.length = 0; },
     step(p, dt, S, k) {
-      if (p.hitstun > 0 && S.seq) { S.seq = null; S.rot = 0; S.rotor = 0; S.beam = null; }
+      if (p.hitstun > 0 && S.seq) { S.seq = null; S.rot = 0; S.rotor = 0; S.drill = 0; S.dive = 0; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
-      if (!S.seq) { S.rot = 0; S.rotor = 0; S.beam = null; }
+      if (!S.seq) { S.rot = 0; S.rotor = 0; S.drill = 0; S.dive = 0; }
       stepWorld(p, dt, S);
       PU.tick(p, dt, S);
       if (!S.seq) S.target = FK.locomotion(S, p, dt, PO, { aF: [0.4, 1.2] });
@@ -336,13 +379,19 @@
       ctx.fillStyle = fm ? F.suit2 : '#d32a1f'; ctx.font = `900 ${hr * 0.46}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('M', hr * 0.35, -hr * 0.76);
       if (fm === 'forge') { ctx.fillStyle = '#2b2b33'; ctx.fillRect(-hr * 0.7, -hr * 0.62, hr * 0.6, hr * 0.28); ctx.fillStyle = '#ffb347'; ctx.fillRect(-hr * 0.62, -hr * 0.56, hr * 0.44, hr * 0.16); }
       ctx.restore();
-      // front arm with the wrench (or the magnet gauntlet)
+      // front arm with the wrench (or the drill gauntlet)
       FK.limb(ctx, K.aF, 5 * s, suit, 4.6 * s);
       const hx = K.aF[2][0], hy = K.aF[2][1], an = q.aF[0] + q.aF[1], dx = Math.sin(an), dy = Math.cos(an);
-      if (fm === 'magnet') {
-        ctx.save(); ctx.translate(hx + dx * 3 * s, hy + dy * 3 * s); ctx.rotate(-an + Math.PI);
-        ctx.lineWidth = 2.6 * s; ctx.strokeStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(0, 0, 3 * s, 0, Math.PI); ctx.stroke();
-        ctx.strokeStyle = '#e8edf5'; ctx.beginPath(); ctx.moveTo(-3 * s, 0); ctx.lineTo(-3 * s, -2 * s); ctx.moveTo(3 * s, 0); ctx.lineTo(3 * s, -2 * s); ctx.stroke();
+      if (fm === 'drill') {   // the power-drill gauntlet: a yellow body on the fist, the bit pointing along the arm (spinning in a move)
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(S && S.dive ? 0 : -an + Math.PI);   // (the Twister Drill points the bit at the floor)
+        ctx.fillStyle = '#ffd23b'; ctx.beginPath(); ctx.roundRect(-2.6 * s, -3.6 * s, 5.2 * s, 5 * s, 1.2 * s); ctx.fill();
+        ctx.fillStyle = '#2b2f3a'; ctx.fillRect(-2.6 * s, -1.2 * s, 5.2 * s, 1.1 * s);
+        ctx.fillStyle = '#9aa6b8'; ctx.fillRect(-1.3 * s, -5.2 * s, 2.6 * s, 1.8 * s);
+        const L = 7.5 * s, spin = S && S.drill ? t * 60 : 0;
+        ctx.fillStyle = C_STEEL; ctx.beginPath(); ctx.moveTo(-1.6 * s, -5.2 * s); ctx.lineTo(0, -5.2 * s - L); ctx.lineTo(1.6 * s, -5.2 * s); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = C_STEEL2; ctx.lineWidth = 0.8 * s;
+        for (let i = 0; i < 4; i++) { const u = ((i / 4 + spin / 6) % 1), yy = -5.2 * s - u * L, hw = 1.6 * s * (1 - u); ctx.beginPath(); ctx.moveTo(-hw, yy + 0.6 * s); ctx.lineTo(hw, yy - 0.6 * s); ctx.stroke(); }
+        if (S && S.drill) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,226,122,0.35)'; ctx.beginPath(); ctx.arc(0, -5.2 * s - L, 2.4 * s, 0, Math.PI * 2); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
         ctx.restore();
       } else if (S && S.rotor) {
         ctx.save(); ctx.translate(hx + dx * 3 * s, hy + dy * 3 * s); ctx.rotate(t * 40);
@@ -356,10 +405,6 @@
     },
     drawWorld(ctx, V, S) {
       const p = V.p, T = V.T;
-      if (S.beam) {   // MAGNET PULL: red and blue field lines
-        const f = S.beam.f, x0 = V.SX(pcx(p) + f * 0.9), y0 = V.SY(pcy(p) - 0.1), L = T * 7;
-        for (let i = 0; i < 5; i++) { const off = ((V.now * 3 + i / 5) % 1); ctx.beginPath(); ctx.ellipse(x0 + f * L * (1 - off) * 0.5, y0, L * (1 - off) * 0.5, T * (0.4 + 0.5 * (1 - off)), 0, 0, Math.PI * 2); FK.glow(ctx, i % 2 ? '#ff4d5e' : '#5a8cff', 0.35 * off); ctx.lineWidth = 2; ctx.stroke(); }
-      }
       for (const b of S.shots) {   // hot rivets
         const x = V.SX(b.x), y = V.SY(b.y);
         ctx.beginPath(); ctx.arc(x, y, T * 0.24, 0, Math.PI * 2); FK.glow(ctx, '#ff7a2a', 0.35); ctx.fill();
@@ -369,6 +414,7 @@
       PU.draw(ctx, V, S);
     },
     drawFx(ctx, V, f, u, a) {
+      if (f.k === 'spark2') { const x = V.SX(f.x + f.vx * f.t), y = V.SY(f.y + f.vy * f.t + 9 * f.t * f.t); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - f.vx * 3, y - f.vy * 3); FK.glow(ctx, u < 0.4 ? '#ffffff' : '#ffd23b', a); ctx.lineWidth = 2; ctx.stroke(); return true; }
       if (f.k === 'ember') { const x = V.SX(f.x) + (f.vx || 0) * f.t * V.T, y = V.SY(f.y) - u * V.T * 0.6; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + (i - 1) * 5, y - i * 3, V.T * (0.1 - u * 0.06), 0, Math.PI * 2); FK.glow(ctx, i ? '#ffb347' : '#ff5a2a', a); ctx.fill(); } return true; }
       return false;
     },
