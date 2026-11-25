@@ -3170,7 +3170,7 @@ input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; u
       color: '#ff6b35',
       emoji: '🔥',
       ability: 'elementalForms',
-      description: 'Press 0 to switch between fire, ice, storm and stone.',
+      description: 'Press 0 to switch elements: Flame rushes down, Frost controls, Storm hits and runs, Stone tanks.',
       stats: { speed: 1.1, jump: 1.15, dashRegen: 0, maxDashes: 2 }
     }
   };
@@ -4402,23 +4402,25 @@ let jumpJustPressed = false;
   
   const FORM_SWITCHER_FORMS = [
     { id: 'flame', name: 'Flame Form',  emoji: '🔥', color: '#ff6b35', aura: '#ff4500',
-      desc: 'Turret - high dmg, no self-movement',
-      stats: { speed: 0.95, jump: 1.05, maxDashes: 2 },
+      desc: 'Rushdown - fast close combos, burns, builds Heat',
+      stats: { speed: 1.3, jump: 1.1, maxDashes: 2 },
       slashColor: '#ff6b35', slashLabel: 'Ember Slash', slashDmg: 2, slashRange: 2.2, slashKnockX: 6, slashKnockY: -3 },
     { id: 'frost', name: 'Frost Form',  emoji: '❄️', color: '#7dd3fc', aura: '#38bdf8',
-      desc: 'Fastest attacks - chain long combos',
-      stats: { speed: 1.2,  jump: 1.1,  maxDashes: 3 },
+      desc: 'Control - ranged ice, slows, the third chill freezes',
+      stats: { speed: 1.15, jump: 1.1,  maxDashes: 2 },
       slashColor: '#7dd3fc', slashLabel: 'Ice Needles', slashDmg: 1, slashRange: 1.8, slashKnockX: 4, slashKnockY: -1.5 },
     { id: 'storm', name: 'Storm Form',  emoji: '⚡', color: '#fbbf24', aura: '#f59e0b',
-      desc: 'Stun specialist - extends stun on stacked hits',
-      stats: { speed: 1.05, jump: 1.2,  maxDashes: 2 },
+      desc: 'Hit and run - the fastest, blinks, every hit refunds a dash',
+      stats: { speed: 1.45, jump: 1.3,  maxDashes: 3 },
       slashColor: '#fbbf24', slashLabel: 'Volt Strike', slashDmg: 1, slashRange: 2.0, slashKnockX: 3, slashKnockY: -2, stun: 1.2 },
     { id: 'stone', name: 'Stone Form',  emoji: '🪨', color: '#a8a29e', aura: '#78716c',
-      desc: 'Max knockback - slow but devastating',
-      stats: { speed: 0.85, jump: 0.95, maxDashes: 1 },
+      desc: 'Tank - super armor on every move, the hardest hits',
+      stats: { speed: 1.05, jump: 1.0,  maxDashes: 1 },
       slashColor: '#d6d3d1', slashLabel: 'Boulder Slam', slashDmg: 2, slashRange: 2.6, slashKnockX: 14, slashKnockY: -7 },
   ];
-  let formSwitcherIndex = 0;      
+ let formSwitcherIndex = 0;      
+  // fighter-spirit.js (the Elemental Spirit's moves) reads which element he is in
+  Object.defineProperty(window, '_fsForm', { get: () => FORM_SWITCHER_FORMS[formSwitcherIndex].id, configurable: true });
   let formSwitchCooldown = 0;     
   let formSwitchAura = [];        
   let formSwitchFlash = 0;        
@@ -11978,6 +11980,8 @@ function resetPlayer() {
       return;
     }
 
+    // the Elemental Spirit's moves and charged specials live in fighter-spirit.js
+    if (selectedCharacter === 'formSwitcher' && window.__spirit) { window.__spirit.press(); return; }
     if (window.PPStrike && !_strikeViaFire && STRIKE_PICK[selectedCharacter]) {
       const ch = selectedCharacter;
       window.PPStrike.press(() => {
@@ -36443,6 +36447,7 @@ window._claimLBro = function() {
     },
   };
   function smashRec(ch, s) {
+    if (ch === 'formSwitcher' && window.__spirit) return null;   // (his own charged specials: fighter-spirit.js)
     if (!(window.__smash && window.__smash.active) || s.aim !== 'up') return null;
     const p = P(); if (!p || p.onGround) return null;
     let R = SMASH_REC[ch]; if (!R) return null;
@@ -36477,6 +36482,7 @@ window._claimLBro = function() {
   }
   function specialFor(ch, s) {
     const rec = smashRec(ch, s); if (rec) return rec;
+    if (ch === 'formSwitcher' && window.__spirit) return null;
     let set = SPECIALS[ch]; if (!set) return null;
     if (ch === 'formSwitcher') set = set[s.variant] || set.flame;
     const def = set[s.aim === 'up' ? 'up' : s.aim === 'down' ? 'down' : 'side']; if (!def) return null;
@@ -40244,6 +40250,7 @@ window._claimLBro = function() {
 <script src="fighter-lbro.js"></script>
 <script src="fighter-kprincess.js"></script>
 <script src="fighter-pebble.js"></script>
+<script src="fighter-spirit.js"></script>
 <script>
 // Free mystery boxes and character capsules bought in the Press Play shop open one after another.
 // Each is taken from the shop only as it opens, so leaving mid-way keeps the rest for next time.

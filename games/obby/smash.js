@@ -92,7 +92,7 @@
       meteor: { ix: 0, iy: 15, d: 1.0, sweet: 1 },                        // SPEAR PLUMMET: only the tip spikes
       launch: { ix: 1, iy: -20, d: 1.0 } } },                             // ICE PILLAR: tall launch
     phantomace:     { w: 0.90, d: 1.00, k: 1.00, leech: 0.15 },          // life leecher: many-hit moves (ace.js), heals this share of the percent he deals
-    formSwitcher:   { w: 0.95, d: 1.00, k: 1.00, mv: {
+    formSwitcher:   { w: 0.95, d: 1.00, k: 0.85, mv: {   // (moves: fighter-spirit.js; launches toned down)
       meteor: { ix: 0, iy: 14, d: 1.0 },
       launch: { ix: 1, iy: -17, d: 1.0 } } },
     conduit:        { w: 0.90, d: 0.95, k: 1.00, mv: {
