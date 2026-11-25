@@ -14,6 +14,8 @@
  *          down TELEPORT PAD.
  *  Air:    neutral BUSTER SHOT, side HOMING DOVES, up RISING CURTAIN (a short teleport up, recovery),
  *          down CARD RAIN (shots fanned downward while he hangs in the air).
+ * CHARGED (hold S to full), ground / air: neutral GRAND FINALE (the full-charge shot), side MAGIC CABINET / CARD TORNADO,
+ *  up LEVITATION / GRAND ESCAPE, down TRAPDOOR / SWORD RAIN.
  */
 (function () {
   'use strict';
@@ -109,6 +111,45 @@
 
   // ---------------------------------------------------------------- the moves
   const SEQ = {
+    // ---- CHARGED SPECIALS (hold S to full; neutral's full charge is the GRAND FINALE shot) ----
+    cabinet(p, dt, S, q) {   // MAGIC CABINET: a cabinet appears in front; the first foe inside is shut in, run through with swords, and burst out
+      S.target = q.t < 0.15 ? PO.lob : PO.tada; S.rate = 40; p.vx = 0;
+      if (!q.done && q.t > 0.12) { q.done = 1; S.cab = { x: pcx(p) + q.f * 1.6, fy: p.y + p.h, t: 0, e: null, f: q.f }; smoke(S, pcx(p) + q.f * 1.6, pcy(p), 6); FK.tone(600, { dur: 0.2, vol: 0.1, type: 'triangle', slide: 900 }); }
+      if (q.t > 0.4) S.seq = null;
+    },
+    levitate(p, dt, S, q) {   // LEVITATION: the cane waved over everyone in front; they float up, helpless... and are dropped hard
+      S.target = PO.tada; S.rate = 40; p.vx = 0;
+      if (!q.list) { q.list = FK.foes().filter(e => { const al = (ex(e) - pcx(p)) * q.f; return al > -0.3 && al < 4.5 && Math.abs(ey(e) - pcy(p)) < 2; }); FK.tone(400, { dur: 0.6, vol: 0.1, type: 'sine', slide: 1200 }); }
+      for (const e of q.list) if (!e.dead && !e._noKnockback && q.t < 0.7) { e.vx = 0; e.vy = 0; if (!FK.blocked(e.x, e.y - 3.5 * dt, e.w || 0.9, e.h || 0.9)) e.y -= 3.5 * dt; e.stunTimer = Math.max(e.stunTimer || 0, 0.2); }
+      S.lev = q.t < 0.7 ? q.list : null;
+      if (q.t >= 0.7 && !q.drop) { q.drop = 1; for (const e of q.list) if (!e.dead) FK.hit(S, e, 4, { kx: 0, ky: 20, stun: 0.6, c: C_GOLD, big: true, stop: 0.08 }); cards(S, pcx(p) + q.f * 2, pcy(p) - 1, 10, 1.5); FK.tone(200, { dur: 0.2, vol: 0.14, type: 'square', slide: 80 }); }
+      if (q.t > 0.85) { S.lev = null; S.seq = null; }
+    },
+    trapdoor(p, dt, S, q) {   // TRAPDOOR: a trapdoor in the floor ahead; whoever steps on it drops through... and falls out of the sky above him
+      S.target = PO.kneel; S.rate = 40; p.vx = 0;
+      if (!q.done && q.t > 0.12) { q.done = 1; const x = pcx(p) + q.f * 1.8, fy = FK.floorAt(x, p.y + p.h - 0.5, 3); if (fy != null) { S.door = { x, fy, t: 0, life: 10 }; FK.tone(300, { dur: 0.15, vol: 0.12, type: 'square' }); } }
+      if (q.t > 0.35) S.seq = null;
+    },
+    tornado(p, dt, S, q) {   // CARD TORNADO (air): a whirlwind of cards spun off the cane drifts ahead, trapping and shredding
+      S.target = PO.doves; S.rate = 40; p.vy = Math.min(p.vy, 0.8);
+      if (!q.done && q.t > 0.1) { q.done = 1; S.torn = { x: pcx(p) + q.f * 1.2, y: pcy(p), vx: q.f * 5, t: 0, life: 1.8, cool: new Map() }; FK.noise({ dur: 1.2, cut: 2500, q: 2, vol: 0.12 }); }
+      if (q.t > 0.35) S.seq = null;
+    },
+    escape(p, dt, S, q) {   // GRAND ESCAPE (air): gone in smoke; a burst of doves where he was, and he reappears high above with a flourish
+      S.target = PO.tada; S.rate = 40; S.airUp = true;
+      if (!q.done) {
+        q.done = 1; const x0 = pcx(p), y0 = pcy(p); smoke(S, x0, y0, 12); cards(S, x0, y0, 12, 2);
+        for (const e of FK.within(x0, y0, 2.2)) FK.hit(S, e, 4, { kx: (Math.sign(ex(e) - x0) || 1) * 10, ky: -10, stun: 0.5, c: C_GOLD, big: true });
+        let dy = 0; while (dy < 6 && !FK.blocked(p.x, p.y - dy - 0.3, p.w, p.h)) dy += 0.25;
+        p.y -= dy; p.vy = -4; p.onGround = false; S.selfMove = true; smoke(S, pcx(p), pcy(p), 8); FK.tone(1300, { dur: 0.2, vol: 0.1, type: 'triangle', slide: 2400 });
+      }
+      if (q.t > 0.25) S.seq = null;
+    },
+    swords(p, dt, S, q) {   // SWORD RAIN (air): magician's swords plunge down in a line below and ahead, then stand a moment in the floor
+      S.target = PO.rain; S.rate = 40; p.vy = Math.min(p.vy, 0.4);
+      while (q.t >= 0.06 + q.n * 0.07 && (q.n || 0) < 6) { q.n = (q.n || 0) + 1; S.blades.push({ x: pcx(p) + q.f * (q.n - 1) * 0.8, y: p.y + p.h, vy: 26, t: 0, hits: new Set(), stuck: 0 }); FK.tone(1500 - q.n * 100, { dur: 0.05, vol: 0.08, type: 'square' }); }
+      if (q.t > 0.55) S.seq = null;
+    },
     buster(p, dt, S, q) {
       S.target = q.t < 0.05 ? PO.aim : q.t < 0.14 ? PO.recoil : PO.aim; S.rate = 50;
       if (!q.go) { q.go = 1; const z = sizeOf(q.pw); if (z === 0 && S.shots.filter(s => s.size === 0).length >= MAX_PELLETS) { S.seq = null; return; } shoot(S, p, q.f, z, q.f, 0); if (z === 2) p.vx = -q.f * 4; }
@@ -171,6 +212,41 @@
 
   function stepThings(p, dt, S) {
     const enemies = FK.foes();
+    if (S.cab) {   // the magic cabinet: catch, swords, burst
+      const C = S.cab; C.t += dt;
+      if (!C.e) { for (const e of enemies) if (Math.abs(ex(e) - C.x) < 0.8 && Math.abs(ey(e) - (C.fy - 0.9)) < 1.2) { C.e = e; C.t0 = C.t; FK.tone(200, { dur: 0.1, vol: 0.15, type: 'square' }); break; } if (!C.e && C.t > 3) { smoke(S, C.x, C.fy - 0.9, 6); S.cab = null; } }
+      else {
+        const e = C.e, u = C.t - C.t0;
+        if (!e.dead && !e._noKnockback) { e.x = C.x - (e.w || 0.9) / 2; e.y = C.fy - 0.1 - (e.h || 0.9); e.vx = 0; e.vy = 0; e.stunTimer = Math.max(e.stunTimer || 0, 0.2); }
+        if (Math.floor(u / 0.2) !== C.n && u < 1) { C.n = Math.floor(u / 0.2); if (!e.dead) FK.hit(S, e, 1, { kx: 0, ky: 0, stun: 0.3, c: C_CYAN }); FK.tone(1800, { dur: 0.05, vol: 0.08, type: 'square' }); }
+        if (u >= 1.1 || e.dead) { if (!e.dead) FK.hit(S, e, 5, { kx: C.f * 12, ky: -12, stun: 0.6, c: C_GOLD, big: true, stop: 0.1 }); cards(S, C.x, C.fy - 0.9, 16, 2); smoke(S, C.x, C.fy - 0.9, 8); FK.label(S, p, 'TA-DA!', C_GOLD, true); S.cab = null; }
+      }
+    }
+    if (S.door) {   // the trapdoor: drop through, fall out of the sky above him
+      const D = S.door; D.t += dt;
+      for (const e of enemies) if (Math.abs(ex(e) - D.x) < 0.6 && Math.abs(e.y + (e.h || 0.9) - D.fy) < 0.4) {
+        smoke(S, D.x, D.fy - 0.4, 6);
+        if (!e._noKnockback) { const nx = pcx(p) - (e.w || 0.9) / 2, ny = p.y - 5; if (!FK.blocked(nx, ny, e.w || 0.9, e.h || 0.9)) { e.x = nx; e.y = ny; } e.vx = 0; e.vy = 6; }
+        FK.hit(S, e, 3, { kx: 0, ky: 10, stun: 0.8, c: C_FX }); FK.label(S, p, 'TRAPDOOR!', C_FX, true); smoke(S, pcx(p), p.y - 4.5, 6);
+        S.door = null; break;
+      }
+      if (S.door && D.t > D.life) S.door = null;
+    }
+    if (S.torn) {   // card tornado: drifts, pulls in, shreds
+      const T = S.torn; T.t += dt;
+      if (!FK.blocked(T.x + T.vx * dt - 0.3, T.y - 0.5, 0.6, 1)) T.x += T.vx * dt; else T.vx = 0;
+      for (const [e, c] of T.cool) { if (c - dt <= 0) T.cool.delete(e); else T.cool.set(e, c - dt); }
+      for (const e of enemies) { const d = Math.hypot(ex(e) - T.x, ey(e) - T.y); if (d < 2.2 && !e._noKnockback) { e.vx = (T.x - ex(e)) * 4 + T.vx; e.vy = (T.y - ey(e)) * 3 - 1; } if (d < 1.1 && !T.cool.has(e)) { T.cool.set(e, 0.12); FK.hit(S, e, 0.6, { kx: 0, ky: -2, stun: 0.3, c: C_CYAN }); } }
+      if (T.t > T.life) { for (const e of FK.within(T.x, T.y, 1.8)) FK.hit(S, e, 3, { kx: Math.sign(T.vx || 1) * 10, ky: -10, stun: 0.5, c: C_GOLD, big: true }); cards(S, T.x, T.y, 16, 2); S.torn = null; }
+    }
+    for (let i = S.blades.length - 1; i >= 0; i--) {   // sword rain
+      const b = S.blades[i]; b.t += dt;
+      if (!b.stuck) {
+        b.y += b.vy * dt;
+        for (const e of enemies) if (!b.hits.has(e) && Math.abs(ex(e) - b.x) < 0.45 && Math.abs(ey(e) - b.y) < 0.9) { b.hits.add(e); FK.hit(S, e, 2.5, { kx: 0, ky: 12, stun: 0.45, c: C_CYAN }); }
+        if (FK.blocked(b.x - 0.05, b.y + 0.5, 0.1, 0.1) || b.t > 2) { b.stuck = b.t; FK.tone(700, { dur: 0.05, vol: 0.06, type: 'square' }); }
+      } else if (b.t - b.stuck > 1.2) S.blades.splice(i, 1);
+    }
     for (let i = S.shots.length - 1; i >= 0; i--) {
       const c = S.shots[i]; c.t += dt;
       const n = 2; let dead = false;
@@ -254,8 +330,13 @@
       desc: 'A stage magician who fights from afar. Tap S for quick cane shots, hold S for a big piercing blast. ↓ + S sets a teleport pad on the floor (up to 3): K / 🌀 warps to one from anywhere (hold a direction to pick it). Each pad works once, then vanishes. G / 👻 turns him invisible for a few seconds, blinking into view now and then. Card Spread, Bomb Lob, Homing Doves, Rising Curtain and Card Rain round him out.' },
     stats: { speed: 1.1, jump: 1.15, maxJumps: 2, maxDashes: 1, hp: 3 },
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, airUp: false, shots: [], bombs: [], doves: [], pads: [], padNo: 0, tpIdx: -1, tpCD: 0, invis: 0, invisCD: 0, reveal: 0 }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, airUp: false, shots: [], bombs: [], doves: [], pads: [], padNo: 0, tpIdx: -1, tpCD: 0, invis: 0, invisCD: 0, reveal: 0, cab: null, door: null, torn: null, blades: [], lev: null }),
     busy: S => !!S.seq,
+    charged: {
+      side: (p, f, S, air) => { startSeq(S, air ? 'tornado' : 'cabinet', { f }); return air ? 'CARD TORNADO' : 'MAGIC CABINET'; },
+      up: (p, f, S, air) => { startSeq(S, air ? 'escape' : 'levitate', { f }); return air ? 'GRAND ESCAPE' : 'LEVITATION'; },
+      down: (p, f, S, air) => { startSeq(S, air ? 'swords' : 'trapdoor', { f }); return air ? 'SWORD RAIN' : 'TRAPDOOR'; },
+    },
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Rising Curtain comes back when you land (or warp to a pad)'; return null; },
     act: {
       ground_neutral: (p, f, pw, S) => { startSeq(S, 'buster', { f, pw }); return ['BUSTER', 'CHARGED SHOT', 'GRAND FINALE'][sizeOf(pw)]; },
@@ -310,6 +391,12 @@
       }
     },
     drawWorld(ctx, V, S) {
+      const T0 = V.T;
+      if (S.cab) { const x = V.SX(S.cab.x), y = V.SY(S.cab.fy), w = T0 * 1.1, h = T0 * 1.8; FK.solid(ctx, C_VIOLET2, 1); ctx.fillRect(x - w / 2, y - h, w, h); FK.solid(ctx, C_GOLD, 1); ctx.lineWidth = 2; ctx.strokeRect(x - w / 2 + 2, y - h + 2, w - 4, h - 4); for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x, y - h * (0.25 + i * 0.25), 3, 0, Math.PI * 2); ctx.fill(); } if (S.cab.e) { FK.solid(ctx, '#e8edf5', 1); for (let i = 0; i < Math.min(5, (S.cab.n || 0) + 1); i++) { const yy = y - h * (0.2 + i * 0.15); ctx.fillRect(x - w * 0.9, yy, w * 1.8, 2); } } }
+      if (S.door) { const x = V.SX(S.door.x), y = V.SY(S.door.fy); FK.solid(ctx, '#0b0a12', 1); ctx.beginPath(); ctx.ellipse(x, y - 1, T0 * 0.6, T0 * 0.12, 0, 0, Math.PI * 2); ctx.fill(); FK.glow(ctx, C_VIOLET, 0.5 + 0.3 * Math.sin(V.now * 6)); ctx.lineWidth = 2; ctx.stroke(); }
+      if (S.torn) { const x = V.SX(S.torn.x), y = V.SY(S.torn.y); for (let i = 0; i < 14; i++) { const an = V.now * 12 + i * 0.9, r = T0 * (0.3 + (i % 5) * 0.3); drawCard(ctx, x + Math.cos(an) * r, y - T0 * 0.9 + (i % 7) * T0 * 0.3, T0 / 30, an, i % 4, false, 0.9); } }
+      for (const b of S.blades) { const x = V.SX(b.x), y = V.SY(b.y), a = b.stuck ? Math.max(0, 1 - (b.t - b.stuck) / 1.2) : 1; FK.solid(ctx, '#e8edf5', a); ctx.beginPath(); ctx.moveTo(x - 3, y - T0 * 0.6); ctx.lineTo(x + 3, y - T0 * 0.6); ctx.lineTo(x, y + T0 * 0.5); ctx.fill(); FK.solid(ctx, C_GOLD, a); ctx.fillRect(x - 7, y - T0 * 0.65, 14, 3); ctx.fillRect(x - 1.5, y - T0 * 0.95, 3, T0 * 0.3); }
+      if (S.lev) for (const e of S.lev) if (!e.dead) { ctx.beginPath(); ctx.ellipse(V.SX(ex(e)), V.SY(e.y + (e.h || 0.9)) + 6, T0 * 0.5, T0 * 0.12, 0, 0, Math.PI * 2); FK.glow(ctx, C_VIOLET, 0.6); ctx.lineWidth = 2; ctx.stroke(); }
       const T = V.T, p = V.p;
       // teleport pads: a turning magic circle on the floor with its number
       S.pads.forEach((pd, i) => {
