@@ -24891,6 +24891,8 @@ function resolveCollisions(axis, dt) {
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.setTransform(dpr,0,0,dpr,0,0);
+    // online: the parts of this frame that are your own character are recorded for the other phone (netdraw.js)
+    const _rq = window.__ppRec; if (_rq) _rq.frameStart(ctx);
     const _bgTheme = window.getActiveBgTheme ? window.getActiveBgTheme() : {bgTop:'#17214a',bgBot:'#0f1220',starColor:'rgba(124,219,255,0.75)'};
     const _bgKey = _bgTheme.bgTop + '|' + (_bgTheme.bgMid||'') + '|' + _bgTheme.bgBot;
     if (!_bgGradCache || _bgKey !== _bgGradThemeKey || viewH !== _bgGradViewH) {
@@ -24934,6 +24936,7 @@ function resolveCollisions(axis, dt) {
     ctx.restore(); if (window._settingShowGrid !== false) drawGrid(); drawAllTiles();
 
     
+    if (_rq) _rq.on();
     if (grapple.active) {
       const _ropePx = (player.x + player.w/2)*TILE - cam.x;
       const _ropePy = (_moveCenterY())*TILE - cam.y;
@@ -24950,6 +24953,7 @@ function resolveCollisions(axis, dt) {
       ctx.beginPath(); ctx.arc(_ropeAx, _ropeAy, 5, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     }
+    if (_rq) _rq.off();
     
     if (grapple.flashTimer > 0) {
       ctx.save();
@@ -24959,14 +24963,17 @@ function resolveCollisions(axis, dt) {
       ctx.restore();
     }
 
-    drawParticles(); drawConduitEffects(); if (window.__obbyNet) window.__obbyNet.frame(); drawPlayer(); drawSpawnMarks();
+    if (_rq) _rq.on(); drawParticles(); drawConduitEffects(); if (_rq) _rq.off();
+    if (window.__obbyNet) window.__obbyNet.frame();
+    if (_rq) _rq.on(); drawPlayer(); if (_rq) _rq.off(); drawSpawnMarks();
     if (window.__smash && window.__smash.active) window.__smash.draw();
     if (window._drawSelectionOverlay) window._drawSelectionOverlay();
     
-    if (window.drifterDrawHook) window.drifterDrawHook(ctx, Date.now()*0.001, cam);
+    if (_rq) _rq.on(); if (window.drifterDrawHook) window.drifterDrawHook(ctx, Date.now()*0.001, cam); if (_rq) _rq.off();
     ctx.shadowBlur = 0; ctx.globalAlpha = 1; 
     ctx.restore();
     
+    if (_rq) _rq.on();
     if (player.hasClone && selectedCharacter === 'boomerang') {
       const cx2 = player.cloneX * TILE - cam.x;
       const cy2 = player.cloneY * TILE - cam.y;
@@ -25157,6 +25164,7 @@ function resolveCollisions(axis, dt) {
 
     
     _fxArchmage();
+    if (_rq) _rq.off();
 
     
     for (const e of enemies) {
@@ -25709,6 +25717,7 @@ function resolveCollisions(axis, dt) {
     }
 
     
+    if (_rq) _rq.on();
     _fxUPunch();
 
     
@@ -25718,6 +25727,7 @@ function resolveCollisions(axis, dt) {
     
     
     _fxSlugger();
+    if (_rq) _rq.off();
 
     
     if (mode === 'play') {
@@ -25735,6 +25745,7 @@ function resolveCollisions(axis, dt) {
     }
 
     
+    if (_rq) _rq.on();
     for (const qb of quarryBlocks) {
       const bx = qb.x * TILE - cam.x;
       const by = qb.y * TILE - cam.y;
@@ -25934,6 +25945,7 @@ function resolveCollisions(axis, dt) {
     }
 
     
+    if (_rq) _rq.off();
     if (necroThrowWindow > 0 && necroThrowTarget && !necroThrowTarget.dead) {
       const winProg = necroThrowWindow / NECRO_THROW_WINDOW_DUR; 
       const clingCount = (necroThrowTarget._clingSkelList || []).length;
@@ -26419,6 +26431,7 @@ function resolveCollisions(axis, dt) {
         ctx.restore();
       }
     }
+    if (_rq) _rq.frameEnd();
   } 
 
   function roundRect(x, y, w, h, r, fill) { const rr = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2)); ctx.beginPath(); ctx.moveTo(x + rr, y); ctx.arcTo(x + w, y, x + w, y + h, rr); ctx.arcTo(x + w, y + h, x, y + h, rr); ctx.arcTo(x, y + h, x, y, rr); ctx.arcTo(x, y, x + w, y, rr); ctx.closePath(); if (fill) ctx.fill(); }
@@ -35868,6 +35881,7 @@ window._claimLBro = function() {
 })();
 </script>
 <script src="../qrlink/qrlink.js"></script>
+<script src="netdraw.js"></script>
 <script src="online.js"></script>
 <script src="smash.js"></script>
 <script>

@@ -498,6 +498,16 @@
     if (foe.kind === 'cpu' && foe._entX != null && (Math.abs(ent.x - foe._entX) > 0.01 || Math.abs(ent.y - foe._entY) > 0.01) && foe.respawnHold <= 0 && !foe.ledge && SM.phase === 'fight') {
       foe.x = ent.x; foe.y = ent.y; foe.vx = foe.vy = 0; foe.liftHold = 0.12; foe.onGround = false;
     }
+    // online: the same hold on the other player (a grab, a tongue, a plunger pull, a lift...). Their phone puts them there
+    // and locks their movement for a moment (unless they shield, dodge or are safe); meanwhile they are shown where it holds them.
+    if (foe.kind === 'remote') {
+      if (foe.holdT > 0) foe.holdT -= dt;
+      if (foe._entX != null && (Math.abs(ent.x - foe._entX) > 0.01 || Math.abs(ent.y - foe._entY) > 0.01) && SM.phase === 'fight') {
+        if (!(foe.holdT > 0)) foe.holdStart = clock;
+        foe.holdX = ent.x; foe.holdY = ent.y; foe.holdT = 0.15;
+        if (SM.net && SM.net.sendHold && clock - (foe.holdSent == null ? -9 : foe.holdSent) >= 0.03) { foe.holdSent = clock; SM.net.sendHold(ent.x, ent.y); }
+      }
+    }
     var fp = foePos(); ent.x = fp.x; ent.y = fp.y; ent.w = fp.w; ent.h = fp.h; ent.hitFlash = 0; ent._preFlash = 0;
     foe._entX = ent.x; foe._entY = ent.y;
     foe._hp0 = BIG;
@@ -672,6 +682,17 @@
     return true;
   }
   SM.__hitMe = hitMe;
+  // online: the other player's move holds you (a grab, a pull, a lift): you go where it puts you and can't act meanwhile,
+  // unless you are shielding, dodging, safe or on a ledge. Returns false when it didn't take.
+  SM.heldByRemote = function (x, y) {
+    var g = G(), P = g.player;
+    if (SM.phase !== 'fight' || me.respawnHold > 0 || me.invuln > 0 || me.dodge > 0 || me.ledgeInv > 0 || me.guarding || me.ledge) return false;
+    P.x = x; P.y = y; P.vx = 0; P.vy = 0; P.onGround = false; me.heldT = 0.15; me.guarding = false;
+    return true;
+  };
+  // online: their poison, burn and beam ticks on you
+  SM.chipMe = function (d) { chip(me, d); };
+  SM.meFree = function () { return !(me.heldT > 0); };
 
   function guardBreak() {
     var g = G(), P = g.player; me.guarding = false; me.guardBreak = BAL.shieldBreakStun; me.shield = BAL.shieldMax * 0.5;
@@ -803,7 +824,9 @@
 
   // ---------------------------------------------------------------- opponent
   function foePos() {
-    if (foe.kind === 'remote' && SM.net && SM.net.remotePos) { var r = SM.net.remotePos(); if (r) { foe.x = r.x; foe.y = r.y; foe.w = r.w || .72; foe.h = r.h || .92; foe.char = r.char || foe.char; foe.vx = r.vx || 0; foe.vy = r.vy || 0; foe.onGround = !!r.onGround; foe.remEm = r.em || null; foe.remFk = r.fk || null; } }
+    if (foe.kind === 'remote' && SM.net && SM.net.remotePos) { var r = SM.net.remotePos(); if (r) { foe.x = r.x; foe.y = r.y; foe.w = r.w || .72; foe.h = r.h || .92; foe.char = r.char || foe.char; foe.vx = r.vx || 0; foe.vy = r.vy || 0; foe.onGround = !!r.onGround; foe.remEm = r.em || null; foe.remFk = r.fk || null;
+      // held by one of your moves: shown where the move holds them, unless their phone says it didn't take (they shielded or dodged)
+      if (foe.holdT > 0 && !(r.hd === 0 && clock - foe.holdStart > 0.25)) { foe.x = foe.holdX; foe.y = foe.holdY; } } }
     return { x: foe.x, y: foe.y, w: foe.w, h: foe.h };
   }
 
@@ -818,6 +841,7 @@
       if (Math.abs(e.vx) + Math.abs(e.vy) > 0.01) { a.ix = e.vx; a.iy = e.vy; a.kb = true; }
       if (flash) a.kb = true;
     }
+    if (e.stunTimer > 0 && f.acc) f.acc.stun = Math.max(f.acc.stun || 0, e.stunTimer);   // stuns and freezes go to the other phone with the hit
     e.hp = BIG; e.vx = 0; e.vy = 0; e.hitFlash = 0; e.stunTimer = 0; e.dead = false;
   }
 
@@ -829,7 +853,7 @@
     if (f.acc && f.hitLock <= 0) {
       var A = f.acc; f.acc = null;
       var cm = ch(me.char);
-      if (!A.kb) { chip(f, A.dmg * cm.d); return; }                     // poison / burn / beam tick: percent only
+      if (!A.kb) { if (f.kind === 'remote') { if (SM.net && SM.net.sendChip) SM.net.sendChip(A.dmg * cm.d); } else chip(f, A.dmg * cm.d); return; }   // poison / burn / beam tick: percent only
       var pct = Math.max(BAL.flinch, A.dmg * BAL.pctPerDmg) * cm.d;
       pct = Math.min(BAL.maxPctHit, pct);
       var ix = A.ix, iy = A.iy;
@@ -847,7 +871,7 @@
         }
       }
       f.hitLock = BAL.rehit;
-      hitFoe(g, P, pct, ix, iy, cm.k);
+      hitFoe(g, P, pct, ix, iy, cm.k, false, A.stun);
       if (mvM && mvGood) {
         if (mvMeteor && mvM.bounce) { P.vy = -12; P.onGround = false; addFx('ring', P.x + P.w / 2, P.y + P.h, '#ffd23b'); }
         else if (!mvMeteor && mvM.rocket) { P.vy = -14; P.onGround = false; addFx('ring', P.x + P.w / 2, P.y + P.h, '#6bd0ff'); }
@@ -866,11 +890,11 @@
   }
   // a life leecher takes a share of the percent it just dealt off its own
   function leech(s, pct) { var l = ch(s.char).leech; if (l && s.pct > 0) { s.pct = Math.max(0, s.pct - pct * l); s.leechT = 0.25; } }
-  function hitFoe(g, P, pct, ix, iy, k, noDef) {
+  function hitFoe(g, P, pct, ix, iy, k, noDef, stun) {
     var f = foe;
     if (SM.phase !== 'fight') return;
     if (!noDef && f.kind !== 'remote' && !(f.invuln > 0 || f.dodge > 0 || f.respawnHold > 0) && defend(false, { pct: pct })) return;
-    if (f.kind === 'remote') { if (SM.net && SM.net.sendHit) SM.net.sendHit(pct, ix, iy, P.x + P.w / 2, k); f.flash = 0.12; addFx('burst', f.x + f.w / 2, f.y + f.h / 2, '#fff', 10); return; }
+    if (f.kind === 'remote') { if (SM.net && SM.net.sendHit) SM.net.sendHit(pct, ix, iy, P.x + P.w / 2, k, stun); f.flash = 0.12; addFx('burst', f.x + f.w / 2, f.y + f.h / 2, '#fff', 10); return; }
     if (f.invuln > 0 || f.dodge > 0 || f.ledgeInv > 0 || f.respawnHold > 0 && f.lvl > 0 && false) return;
     if (f.respawnHold > 0) return;
     if (f.lvl > 0 && f.guarding) {
