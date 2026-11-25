@@ -1,122 +1,107 @@
-/* Obby Builder: L-BROTHER, the lanky younger brother.
+/* Obby Builder: L-BROTHER, the lanky, jumpy younger brother. He is scared of everything, and that is his strength.
  *
- * Tall, thin and a bit jumpy: a green work shirt under slate overalls, a long striped scarf and a knit beanie with an L patch. He jumps
- * higher than anyone and FLUTTERS (hold jump while falling: his legs paddle and he hangs in the air for a moment).
- * His tool is a plunger on a cord: it sticks to foes (and pulls them in) or to walls (and pulls him there).
+ * Tall, thin and nervous: a green work shirt under slate overalls, a long striped scarf, a knit beanie with an L patch
+ * and a plunger on a cord. He jumps higher than anyone and FLUTTERS (hold jump while falling: his legs paddle and he
+ * hangs in the air for a moment). He trembles when foes are close.
  *
- * POWER-UPS (the rings over his head fill up; a finished task puts a TOOL CRATE over his head: bump it from below, catch the power-up for a 24 s FORM, two hits end it):
- *   🪶 GALE FEATHER (5 s in the air) -> GALE form: the scarf becomes wings, hold jump to glide, gusts of wind
- *   ❄️ FROST VIAL   (land 6 hits)    -> FROST form: every hit chills (longer stun), an ice sheet that trips foes
- *   ⚡ THUNDER CELL (run 50 tiles)   -> VOLT form: faster, the plunger becomes a ZIP that blinks through foes
+ * WHAT MAKES HIM DIFFERENT: FEAR IS A RESOURCE
+ *  - FLINCH (passive): when a hit is about to land while he isn't attacking, he yelps "EEP!" and leaps out of the way
+ *    untouched. Then it has to come back (6 s: the sweat drop by his head shows it is ready). Nobody else dodges by
+ *    themselves.
+ *  - NERVE: every flinch gives him a point of Nerve (up to 3, the pips over his head), so does a successful Duck & Cover
+ *    and every 6 hits he lands.
+ *  - POCKET GADGETS (K / 🎒 + a direction) spend Nerve. They replace the power-up forms: he doesn't wait for crates,
+ *    he pulls things out of his overalls in a panic.
+ *      🎈 K            BALLOON (1 Nerve): floats him up out of trouble for a few seconds; foes that touch it are bonked.
+ *      📯 K + ← / →    AIR HORN (2 Nerve): a deafening blast in front: pushes everyone far back and leaves them dazed.
+ *      🪤 K + ↓        SPRING TRAP (2 Nerve): a trap on the floor; the first foe to step on it is flung sky-high.
+ *      💛 K + ↑        BRAVE HEART (3 Nerve): 9 s of courage: he stands tall and stops shaking, his scarf blazes gold,
+ *                      every hit is 40% stronger, his moves have super armor, and each move gets its BRAVE version.
  *
  * 8 MOVES (S / ⚔️ + a direction; hold S to charge)
- *  Ground: neutral PLUNGER POKE (Volt: ARC LASH), side PLUNGER SHOT (Volt: ZIP), up SCISSOR KICK (Gale: UPDRAFT), down LEG SWEEP (Frost: ICE SHEET).
- *  Air:    neutral FLAIL KICKS, side SUCTION SWING, up SCARF COPTER (recovery), down KNEE DROP.
+ *  Ground: neutral JITTER JAB (a nervous flurry of long plunger pokes), side PLUNGER LINE (sticks to a foe and reels it in,
+ *          or to a wall and pulls him there), up STILT KICK (his long leg straight up; the toe is a sweet spot),
+ *          down DUCK & COVER (he cowers: a hit in that moment and he slips behind the attacker and kicks them).
+ *  Air:    neutral PINWHEEL (all four long limbs spinning), side LONG LEG (the longest kick in the cast: the toe tips),
+ *          up SCARF COPTER (recovery), down PLUNGER POGO (plunger first: sticks to a foe and springs off it).
  */
 (function () {
   'use strict';
   const FK = window.FKit; if (!FK) return;
   const ID = 'cb_luigi_ref';
-  const C_JAK = '#3cc457', C_JAK2 = '#23853a', C_PANT = '#3b4a6b', C_PANT2 = '#28324a', C_SKIN = '#f3c9a3', C_HAIR = '#3a2a1e', C_HAT = '#34b852', C_HAT2 = '#1f7a35', C_SCARF = '#ffe08a', C_SCARF2 = '#ff9a6a', C_SHOE = '#f2efe8', C_BIB = '#56607a', C_BIB2 = '#3c4458', C_MUST = '#2e2016';
-  const FORMS = {
-    gale:  { name: 'GALE', icon: '🪶', c: '#c9f4ff', jak: '#e8fbff', jak2: '#8fd0e6', glow: '#ffffff' },
-    frost: { name: 'FROST', icon: '❄️', c: '#7cc8ff', jak: '#9fd8ff', jak2: '#4c8ed0', glow: '#bfe6ff' },
-    volt:  { name: 'VOLT', icon: '⚡', c: '#ffe14d', jak: '#ffd84a', jak2: '#c89a12', glow: '#fff3a0' },
-  };
+  const C_JAK = '#3cc457', C_JAK2 = '#23853a', C_SKIN = '#f3c9a3', C_HAIR = '#3a2a1e', C_HAT = '#34b852', C_HAT2 = '#1f7a35', C_SCARF = '#ffe08a', C_SCARF2 = '#ff9a6a', C_SHOE = '#f2efe8', C_BIB = '#56607a', C_BIB2 = '#3c4458', C_MUST = '#2e2016';
+  const C_GOLD = '#ffcf3a', C_GOLD2 = '#ff8a1a', C_NERVE = '#ffd84a', C_SWEAT = '#8fd8ff';
   const P = { hip: 11.5, torso: 11, neck: -1, head: 6.8, ua: 5.4, fa: 5.4, th: 5.8, sh: 5.8 };   // a tall, lanky grown man
   const U = 30, pose = FK.pose, { ex, ey, pcx, pcy } = FK;
-
-  const PU = FK.powerups({
-    tasks: [
-      { kind: 'air', need: 5, form: 'gale', label: 'AIR TIME' },
-      { kind: 'hits', need: 6, form: 'frost', label: '6 HITS' },
-      { kind: 'dist', need: 50, form: 'volt', label: '50 TILES' },
-    ],
-    forms: FORMS,
-    drawItem(ctx, x, y, r, f, t) {
-      if (f === 'gale') {   // a curling feather
-        ctx.save(); ctx.translate(x, y); ctx.rotate(-0.6 + Math.sin(t * 3) * 0.2);
-        ctx.fillStyle = '#e8fbff'; ctx.beginPath(); ctx.moveTo(0, -r); ctx.quadraticCurveTo(r * 0.7, -r * 0.2, 0, r * 0.9); ctx.quadraticCurveTo(-r * 0.7, -r * 0.2, 0, -r); ctx.fill();
-        ctx.strokeStyle = '#8fd0e6'; ctx.lineWidth = r * 0.1; ctx.beginPath(); ctx.moveTo(0, -r * 0.9); ctx.lineTo(0, r * 1.1); ctx.stroke();
-        for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(0, -r * 0.5 + i * r * 0.3); ctx.lineTo(r * 0.35, -r * 0.7 + i * r * 0.3); ctx.moveTo(0, -r * 0.5 + i * r * 0.3); ctx.lineTo(-r * 0.35, -r * 0.7 + i * r * 0.3); ctx.stroke(); }
-        ctx.restore();
-      } else if (f === 'frost') {   // a stoppered vial with a snowflake in it
-        ctx.fillStyle = '#bfe6ff'; ctx.beginPath(); ctx.roundRect(x - r * 0.45, y - r * 0.5, r * 0.9, r * 1.25, r * 0.4); ctx.fill();
-        ctx.fillStyle = '#7cc8ff'; ctx.beginPath(); ctx.roundRect(x - r * 0.45, y, r * 0.9, r * 0.75, r * 0.4); ctx.fill();
-        ctx.fillStyle = '#8a5a3a'; ctx.fillRect(x - r * 0.25, y - r * 0.85, r * 0.5, r * 0.38);
-        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = r * 0.08; for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3 + t; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r * 0.28, y + r * 0.2 + Math.sin(a) * r * 0.28); ctx.lineTo(x - Math.cos(a) * r * 0.28, y + r * 0.2 - Math.sin(a) * r * 0.28); ctx.stroke(); }
-      } else {   // a battery cell with a bolt on it
-        ctx.fillStyle = '#2b2f3a'; ctx.beginPath(); ctx.roundRect(x - r * 0.5, y - r * 0.7, r, r * 1.45, r * 0.18); ctx.fill();
-        ctx.fillStyle = '#c8cfdc'; ctx.fillRect(x - r * 0.2, y - r * 0.88, r * 0.4, r * 0.2);
-        ctx.fillStyle = '#ffe14d'; ctx.beginPath(); ctx.moveTo(x + r * 0.1, y - r * 0.5); ctx.lineTo(x - r * 0.25, y + r * 0.05); ctx.lineTo(x, y + r * 0.05); ctx.lineTo(x - r * 0.1, y + r * 0.55); ctx.lineTo(x + r * 0.28, y - r * 0.05); ctx.lineTo(x + r * 0.02, y - r * 0.05); ctx.closePath(); ctx.fill();
-      }
-    },
-  });
-  const form = S => PU.form(S);
-  const fc = S => form(S) ? FORMS[form(S)].c : C_JAK;
+  const FLINCH_CD = 6, NERVE_MAX = 3, BRAVE_T = 9, HITS_PER_NERVE = 6;
+  const GADGETS = {
+    balloon: { cost: 1, icon: '🎈', name: 'BALLOON' },
+    horn:    { cost: 2, icon: '📯', name: 'AIR HORN' },
+    trap:    { cost: 2, icon: '🪤', name: 'SPRING TRAP' },
+    brave:   { cost: 3, icon: '💛', name: 'BRAVE HEART' },
+  };
 
   const PO = {
     idle:   pose({ y: 0.3, lean: 0.12, head: 0.08, aF: [0.25, 0.7], aB: [-0.15, 0.5], lF: [0.15, -0.1], lB: [-0.2, -0.05] }),   // a slight nervous stoop
+    proud:  pose({ y: 0, lean: -0.08, head: -0.12, aF: [0.5, 1.6], aB: [-0.4, 1.7], lF: [0.25, -0.05], lB: [-0.3, -0.05] }),    // BRAVE: chest out, fists on the hips
     jump:   pose({ y: -0.5, lean: -0.05, aF: [2.7, 0.4], aB: [2.4, 0.5], lF: [0.6, -1.4], lB: [-0.3, -0.5] }),
     fall:   pose({ lean: 0.05, aF: [2.0, 0.9], aB: [-2.0, 0.9], lF: [0.5, -0.4], lB: [-0.5, -0.4] }),
     flutA:  pose({ lean: 0.1, aF: [2.3, 0.6], aB: [-2.3, 0.6], lF: [1.2, -1.6], lB: [-0.2, -0.3] }),
     flutB:  pose({ lean: 0.1, aF: [2.6, 0.4], aB: [-2.6, 0.4], lF: [-0.2, -0.3], lB: [1.2, -1.6] }),
-    glide:  pose({ y: -0.5, lean: 0.9, head: -0.5, aF: [1.6, 0.0], aB: [-1.6, 0.0], lF: [0.15, -0.2], lB: [-0.15, -0.3] }),
+    eep:    pose({ y: -1, lean: -0.6, head: -0.4, aF: [2.9, 0.9], aB: [2.6, 1.1], lF: [1.3, -1.9], lB: [0.9, -1.6] }),          // FLINCH: arms up, knees up, leaning away
+    cower:  pose({ y: 8, lean: 0.55, head: 0.5, aF: [2.6, 2.3], aB: [2.4, 2.4], lF: [1.4, -2.6], lB: [0.6, -2.4] }),           // DUCK & COVER: balled up, hands over the head
+    backK:  pose({ y: 1, lean: 0.9, head: -0.3, aF: [0.4, 0.5], aB: [-0.3, 0.6], lF: [0.3, -0.3], lB: [-1.7, -0.05] }),         // a mule kick backwards
     poke:   pose({ y: 0.8, lean: 0.4, aF: [1.6, 0.02], aB: [-0.6, 0.8], lF: [0.8, -0.3], lB: [-0.7, -0.1] }),
     pokeW:  pose({ y: 0.8, lean: -0.15, aF: [0.9, 1.6], aB: [-0.4, 0.6], lF: [0.5, -0.3], lB: [-0.5, -0.1] }),
     aim:    pose({ y: 0.4, lean: 0.1, aF: [1.65, 0.0], aB: [1.4, 0.3], lF: [0.6, -0.2], lB: [-0.6, -0.1] }),
-    scisA:  pose({ y: 2.0, lean: 0.2, aF: [0.4, 0.8], aB: [-0.4, 0.8], lF: [0.9, -1.4], lB: [-0.5, -0.9] }),
-    scisB:  pose({ y: -1.0, lean: -0.6, aF: [-1.2, 0.3], aB: [-2.0, 0.3], lF: [2.8, -0.05], lB: [-0.5, -0.2] }),   // a leg kicked straight up
-    sweep:  pose({ y: 9.0, lean: 0.5, aF: [-0.4, 0.3], aB: [-1.0, 0.2], lF: [1.55, 0.0], lB: [0.3, -2.4] }),        // down low, leg out
-    flail:  pose({ y: -0.5, lean: 0.0, aF: [2.6, 1.0], aB: [-2.6, 1.0], lF: [1.4, -0.4], lB: [-1.1, -0.6] }),
     swing:  pose({ y: -0.5, lean: 0.4, aF: [2.6, 0.1], aB: [-0.8, 0.8], lF: [0.9, -0.9], lB: [0.3, -0.5] }),
+    scisA:  pose({ y: 2.0, lean: 0.2, aF: [0.4, 0.8], aB: [-0.4, 0.8], lF: [0.9, -1.4], lB: [-0.5, -0.9] }),
+    scisB:  pose({ y: -1.0, lean: -0.6, aF: [-1.2, 0.3], aB: [-2.0, 0.3], lF: [2.95, -0.02], lB: [-0.5, -0.2] }),   // a leg kicked straight up
+    pinA:   pose({ y: -0.5, lean: 0.0, aF: [1.57, 0.0], aB: [-1.57, 0.0], lF: [1.4, 0.0], lB: [-1.4, 0.0] }),     // a star: all four limbs out
+    longL:  pose({ y: -0.5, lean: -0.75, head: 0.3, aF: [-0.6, 0.6], aB: [-1.3, 0.5], lF: [1.62, 0.0], lB: [-0.4, -1.3] }),   // one long leg straight out
+    longW:  pose({ y: -0.5, lean: -0.1, aF: [1.2, 0.9], aB: [-1.0, 0.7], lF: [1.4, -2.2], lB: [-0.3, -0.9] }),                 // knee chambered
     copter: pose({ y: -0.6, lean: 0.0, aF: [2.9, 0.4], aB: [-2.9, 0.4], lF: [0.25, -0.3], lB: [-0.25, -0.3] }),
-    knee:   pose({ y: -1.5, lean: 0.2, aF: [2.5, 0.8], aB: [-2.5, 0.8], lF: [1.4, -2.4], lB: [-0.1, -0.6] }),
-    zap:    pose({ y: 0.6, lean: 0.25, aF: [1.65, -0.1], aB: [-1.6, 0.4], lF: [0.7, -0.3], lB: [-0.8, -0.1] }),
+    pogo:   pose({ y: -3, lean: 0.0, aF: [0.05, 0.0], aB: [0.1, 0.1], lF: [0.15, -0.1], lB: [-0.15, -0.1] }),       // straight as a stick, plunger first
+    horn:   pose({ y: 1, lean: -0.35, head: -0.2, aF: [1.75, 0.6], aB: [1.6, 0.9], lF: [0.8, -0.3], lB: [-0.9, -0.1] }),       // leaning back into the blast
+    balloon:pose({ y: -0.5, lean: 0.05, aF: [3.0, 0.1], aB: [-1.2, 0.8], lF: [0.5, -0.9], lB: [-0.2, -0.5] }),               // one hand on the string
   };
 
+  const brave = S => (S.braveT || 0) > 0;
   function startSeq(S, kind, o) { S.seq = Object.assign({ kind, t: 0, hits: new Set(), n: 0 }, o || {}); }
   function box(p, f, dx, w, h, dy) {
     const x0 = f > 0 ? pcx(p) + dx : pcx(p) - dx - w, y0 = pcy(p) - (dy || 0) - h / 2;
     return FK.foes().filter(e => ex(e) + (e.w || 0.9) / 2 > x0 && ex(e) - (e.w || 0.9) / 2 < x0 + w && ey(e) + (e.h || 0.9) / 2 > y0 && ey(e) - (e.h || 0.9) / 2 < y0 + h);
   }
+  function nerve(S, p, n, why) {
+    const was = S.nerve; S.nerve = Math.min(NERVE_MAX, S.nerve + n);
+    if (S.nerve > was) { FK.label(S, p, '+NERVE' + (why ? ' · ' + why : ''), C_NERVE, false); FK.tone(660 + S.nerve * 140, { dur: 0.12, vol: 0.08, type: 'triangle' }); S.pipFlash = 0.5; }
+  }
   function hit(S, e, dmg, o) {
-    o = Object.assign({ c: fc(S) }, o);
-    if (form(S) === 'frost') { o.stun = (o.stun || 0.3) + 0.35; e._lbChill = 1.2; }
-    FK.hit(S, e, dmg, o); PU.add(S, 'hits');
+    o = Object.assign({ c: brave(S) ? C_GOLD : C_JAK }, o);
+    FK.hit(S, e, dmg * (brave(S) ? 1.4 : 1), o);
+    if (++S.hitN >= HITS_PER_NERVE) { S.hitN = 0; nerve(S, window._gamePlayer || { x: 0, y: 0, w: 0, h: 0 }, 1); }
   }
   function pop() { FK.tone(620, { dur: 0.08, vol: 0.14, type: 'square', slide: 1240 }); FK.noise({ dur: 0.05, cut: 1800, q: 4, vol: 0.14 }); }
-  function zapSnd() { FK.noise({ dur: 0.18, cut: 5200, cutEnd: 1400, q: 1, vol: 0.2 }); FK.tone(1600, { dur: 0.1, vol: 0.08, type: 'sawtooth', slide: 400 }); }
+  function yelp() { FK.tone(900, { dur: 0.16, vol: 0.12, type: 'square', slide: 1700 }); FK.tone(1300, { dur: 0.1, vol: 0.06, type: 'triangle', delay: 0.05, slide: 2000 }); }
   function hand(p, q, f) { const u = p.h / U, K = FK.skel(P, q, 0, 0, u), h = K.aF[2]; return [pcx(p) + f * h[0], p.y + p.h + h[1]]; }
+  function toe(p, q, f) { const u = p.h / U, K = FK.skel(P, q, 0, 0, u), h = K.lF[2]; return [pcx(p) + f * h[0], p.y + p.h + h[1]]; }
+  function nearestFoe(p, R) { let best = null, bd = R; for (const e of FK.foes()) { const d = Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)); if (d < bd) { bd = d; best = e; } } return best; }
 
   const SEQ = {
-    poke(p, dt, S, q) {   // PLUNGER POKE: a quick double jab
-      const f = q.f, n = 2 + Math.round(q.pw);
-      const ph = (q.t / 0.13) % 1, on = ph > 0.35;
-      S.target = on ? PO.poke : PO.pokeW; S.rate = 55;
-      const i = Math.floor(q.t / 0.13);
+    jab(p, dt, S, q) {   // JITTER JAB: a nervous flurry of long plunger pokes; the last one pops (BRAVE: more, ending in a SUCTION POP)
+      const f = q.f, n = 3 + Math.round(q.pw) + (brave(S) ? 2 : 0), P1 = 0.085;
+      const ph = (q.t / P1) % 1, on = ph > 0.35, i = Math.floor(q.t / P1);
+      S.target = on ? pose(Object.assign({}, PO.poke, { y: PO.poke.y + (i % 2) * 0.8, aF: [1.6 + (i % 2 ? 0.12 : -0.1), 0.02] })) : PO.pokeW; S.rate = 60;
       if (i !== q.n && i < n) { q.n = i; q.hits.clear(); FK.whoosh(false, false); }
-      if (on) for (const e of box(p, f, 0, 1.9, 1.0, 0.1)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 1.2 + (q.n === n - 1 ? 1 + q.pw : 0), { kx: f * (q.n === n - 1 ? 9 : 3), ky: -4, stun: 0.3, big: q.n === n - 1 }); pop(); }
-      if (q.t > n * 0.13 + 0.06) S.seq = null;
-    },
-    arc(p, dt, S, q) {   // VOLT: ARC LASH, a bolt that jumps to up to 3 foes
-      S.target = PO.zap; S.rate = 50;
-      if (!q.done && q.t > 0.06) {
-        q.done = 1; zapSnd();
-        let from = hand(p, PO.zap, q.f), left = 3, used = new Set(); S.arcs = [];
-        while (left-- > 0) {
-          let best = null, bd = 6 + 2 * q.pw;
-          for (const e of FK.foes()) { if (used.has(e)) continue; const d = Math.hypot(ex(e) - from[0], ey(e) - from[1]); if (d < bd && (used.size || Math.sign(ex(e) - pcx(p)) === q.f)) { bd = d; best = e; } }
-          if (!best) break; used.add(best);
-          S.arcs.push([from[0], from[1], ex(best), ey(best)]); hit(S, best, 2 + q.pw, { kx: q.f * 6, ky: -6, stun: 0.5 });
-          from = [ex(best), ey(best)];
-        }
-        if (!S.arcs.length) S.arcs.push([from[0], from[1], from[0] + q.f * 4, from[1]]);
-        S.arcT = 0.25;
+      const last = q.n === n - 1;
+      if (on) for (const e of box(p, f, 0, 2.3, 1.0, 0.1)) if (!q.hits.has(e)) {
+        q.hits.add(e);
+        hit(S, e, last ? 1.5 + q.pw + (brave(S) ? 1 : 0) : 0.7, { kx: f * (last ? 9 + (brave(S) ? 4 : 0) : 1.5), ky: last ? -6 : -1.5, stun: last ? 0.4 : 0.25, big: last });
+        pop(); if (last && brave(S)) FK.label(S, p, 'SUCTION POP!', C_GOLD, true);
       }
-      if (q.t > 0.3) S.seq = null;
+      if (q.t > n * P1 + 0.06) S.seq = null;
     },
-    shot(p, dt, S, q) {   // PLUNGER SHOT / SUCTION SWING: the plunger flies out on its cord
+    line(p, dt, S, q) {   // PLUNGER LINE / SUCTION SWING: the plunger flies out on its cord (BRAVE: the reeled foe is slammed over his head)
       const f = q.f, R = 6.5 + 2 * q.pw, air = q.air;
       S.target = air ? PO.swing : PO.aim; S.rate = 45;
       if (!q.cup) { const h = hand(p, PO.aim, f); q.cup = { x: h[0], y: h[1] - (air ? 0.4 : 0), vx: f * 26, vy: air ? -10 : 0, d: 0, state: 'out' }; FK.whoosh(false, false); }
@@ -127,12 +112,16 @@
         if (c.state === 'out' && FK.blocked(c.x - 0.1, c.y - 0.1, 0.2, 0.2)) { c.state = 'wall'; pop(); }
         if (c.state === 'out' && c.d > R) c.state = 'back';
         q.t2 = 0;
-      } else if (c.state === 'foe') {   // reel the foe in, then a kick
+      } else if (c.state === 'foe') {   // reel the foe in, then a kick (or, BRAVE, an overhead slam behind him)
         q.t2 += dt; const e = c.e;
         if (!e || e.dead) { S.cup = null; S.seq = null; return; }
         c.x = ex(e); c.y = ey(e);
         if (!e._noKnockback) { e.vx = -f * 15; e.vy = -3; }
-        if (Math.abs(ex(e) - pcx(p)) < 1.4 || q.t2 > 0.4) { hit(S, e, 2 + q.pw, { kx: f * 10, ky: -8, stun: 0.45, big: true }); FK.smack(true); S.cup = null; S.seq = null; }
+        if (Math.abs(ex(e) - pcx(p)) < 1.4 || q.t2 > 0.4) {
+          if (brave(S)) { hit(S, e, 3 + q.pw, { kx: -f * 11, ky: -12, stun: 0.6, big: true, stop: 0.07 }); FK.label(S, p, 'OVERHEAD SLAM!', C_GOLD, true); FK.thud(true); }
+          else { hit(S, e, 2 + q.pw, { kx: f * 10, ky: -8, stun: 0.45, big: true }); FK.smack(true); }
+          S.cup = null; S.seq = null;
+        }
       } else if (c.state === 'wall') {   // pull himself to the wall
         q.t2 += dt; S.selfMove = true;
         const dx = c.x - pcx(p), dy = c.y - pcy(p), d = Math.hypot(dx, dy) || 1;
@@ -145,119 +134,244 @@
       }
       if (q.t > 1.6) { S.cup = null; S.seq = null; }
     },
-    zip(p, dt, S, q) {   // VOLT: ZIP, a blink-dash through everything in the way
-      const f = q.f, L = 5 + 2 * q.pw;
-      S.target = PO.zap; S.rate = 60;
-      if (!q.done) {
-        q.done = 1; zapSnd(); const x0 = pcx(p);
-        let d = 0; while (d < L && FK.moveX(p, f * 0.25)) d += 0.25;
-        S.selfMove = true; p.vx = f * 4;
-        const lo = Math.min(x0, pcx(p)), hi = Math.max(x0, pcx(p));
-        for (const e of FK.foes()) if (ex(e) > lo - 0.5 && ex(e) < hi + 0.5 && Math.abs(ey(e) - pcy(p)) < 1.3) hit(S, e, 2.5 + q.pw, { kx: f * 8, ky: -9, stun: 0.5, big: true });
-        S.fx.push({ k: 'trail', x0, x1: pcx(p), y: pcy(p), t: 0, life: 0.35, c: FORMS.volt.c });
-      }
-      if (q.t > 0.18) S.seq = null;
-    },
-    scissor(p, dt, S, q) {   // SCISSOR KICK: crouch, one leg kicked straight up (Gale: UPDRAFT, a gust column that lifts him too)
-      const gale = form(S) === 'gale';
+    stilt(p, dt, S, q) {   // STILT KICK: crouch, then one long leg kicked straight up. The toe is a sweet spot.
       S.target = q.t < 0.1 ? PO.scisA : PO.scisB; S.rate = 50;
       if (q.t < 0.1 && p.vy < 0) p.vy = 0;
-      if (q.t >= 0.1 && !q.done) { q.done = 1; p.vy = gale ? -20 : -9 - 3 * q.pw; p.onGround = false; FK.whoosh(true, gale); if (gale) S.fx.push({ k: 'gust', x: pcx(p), y: p.y + p.h, t: 0, life: 0.6 }); }
-      if (q.t >= 0.1 && q.t < 0.3) for (const e of box(p, FK.face(p), -0.3, 1.4, 2.2, 0.9)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 2.5 + 2 * q.pw, { kx: FK.face(p) * 1.5, ky: gale ? -19 : -15 - 3 * q.pw, stun: 0.5, big: true }); FK.smack(true); }
+      if (q.t >= 0.1 && !q.done) { q.done = 1; p.vy = -9 - 3 * q.pw - (brave(S) ? 5 : 0); p.onGround = false; FK.whoosh(true, q.pw > 0.3); }
+      if (q.t >= 0.1 && q.t < 0.3) {
+        const tp = toe(p, PO.scisB, FK.face(p));
+        for (const e of box(p, FK.face(p), -0.3, 1.4, 2.6, 1.1)) if (!q.hits.has(e)) {
+          q.hits.add(e);
+          const tip = Math.abs(ey(e) - tp[1]) < 0.75 && Math.abs(ex(e) - tp[0]) < 0.8;
+          hit(S, e, (tip ? 3.5 : 2) + 2 * q.pw, { kx: FK.face(p) * 1.5, ky: tip ? -18 - 3 * q.pw : -12, stun: 0.5, big: true, stop: tip ? 0.07 : 0 });
+          if (tip) FK.label(S, p, 'TOE TIP!', C_NERVE, true); FK.smack(true);
+        }
+      }
       if (q.t > 0.4) S.seq = null;
     },
-    sweep(p, dt, S, q) {   // LEG SWEEP (Frost: lays an ICE SHEET as well)
-      const f = q.f;
-      S.target = PO.sweep; S.rate = 45; S.rot2 = Math.min(1, q.t / 0.25) * Math.PI * 2;
-      for (const e of box(p, f, -1.2, 3.0, 0.9, -0.6)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 2 + q.pw, { kx: f * 4, ky: -11, stun: 0.5 }); FK.smack(false); }
-      if (!q.done) { q.done = 1; FK.whoosh(false, false); if (form(S) === 'frost') { if (S.ice.length >= 2) S.ice.shift(); S.ice.push({ x: pcx(p) + f * 1.2, fy: p.y + p.h, w: 3.2 + q.pw, t: 0, life: 9, cool: new Map() }); FK.noise({ dur: 0.3, cut: 6000, cutEnd: 2000, q: 2, vol: 0.14 }); } }
-      if (q.t > 0.3) { S.rot2 = 0; S.seq = null; }
+    cover(p, dt, S, q) {   // DUCK & COVER: he balls up. A hit in this moment: he slips behind the attacker and mule-kicks them
+      p.vx = 0;
+      if (!q.armed) { q.armed = 1; p._parryT = 0.4; p._dodgeT = 0.4; FK.tone(420, { dur: 0.12, vol: 0.1, type: 'square', slide: 260 }); }
+      if (q.kick) {   // the counter: behind them, a kick back into them
+        S.target = PO.backK; S.rate = 55;
+        if (!q.kicked && q.t - q.kick > 0.06) {
+          q.kicked = 1; const e = q.e;
+          if (e && !e.dead) hit(S, e, 3 + (brave(S) ? 1 : 0), { kx: -q.f2 * 12, ky: -9, stun: 0.55, big: true, stop: 0.08 });
+          FK.smack(true);
+        }
+        if (q.t - q.kick > 0.3) S.seq = null;
+        return;
+      }
+      S.target = PO.cover; S.rate = 40;
+      if (q.t > 0.55) S.seq = null;
     },
-    flail(p, dt, S, q) {   // FLAIL KICKS: a panicked flurry
-      S.target = Math.floor(q.t * 22) % 2 ? PO.flail : PO.flutA; S.rate = 60;
+    pinwheel(p, dt, S, q) {   // PINWHEEL: a star of long limbs, spinning; many small hits and a fling at the end
+      const D = 0.42 + 0.12 * q.pw;
+      S.target = PO.pinA; S.rate = 60; S.rot = q.t / D * Math.PI * 4 * q.f;
       p.vy = Math.min(p.vy, 1.5);
-      if (Math.floor(q.t / 0.08) !== q.n) { q.n = Math.floor(q.t / 0.08); q.hits.clear(); }
-      for (const e of FK.within(pcx(p), pcy(p) + 0.3, 1.5)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 0.8, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 3, ky: -3, stun: 0.2 }); FK.smack(false); }
-      if (q.t > 0.4) { for (const e of FK.within(pcx(p), pcy(p), 1.6)) hit(S, e, 1.5, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 8, ky: -7, stun: 0.4, big: true }); S.seq = null; }
+      if (Math.floor(q.t / 0.08) !== q.n) { q.n = Math.floor(q.t / 0.08); q.hits.clear(); FK.whoosh(false, false); }
+      for (const e of FK.within(pcx(p), pcy(p), 1.75)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 0.7, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 2.5, ky: -3, stun: 0.22 }); }
+      if (q.t > D) {
+        for (const e of FK.within(pcx(p), pcy(p), 1.9)) hit(S, e, 1.5 + q.pw, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 9, ky: -7, stun: 0.4, big: true });
+        S.rot = 0; S.seq = null;
+      }
+    },
+    longleg(p, dt, S, q) {   // LONG LEG: a chambered knee, then the longest kick in the cast. The toe (far end) tips.
+      const f = q.f, W = 0.08;
+      S.target = q.t < W ? PO.longW : PO.longL; S.rate = q.t < W ? 40 : 70;
+      p.vy = Math.min(p.vy, 1);
+      if (q.t >= W && q.t < W + 0.14) {
+        if (!q.snd) { q.snd = 1; FK.whoosh(false, true); }
+        for (const e of box(p, f, 0.3, 2.3, 1.0, 0.05)) if (!q.hits.has(e)) {
+          q.hits.add(e);
+          const along = (ex(e) - pcx(p)) * f, tip = along > 1.55;
+          hit(S, e, (tip ? 3.5 : 1.8) + q.pw, { kx: f * (tip ? 15 : 6), ky: tip ? -8 : -4, stun: tip ? 0.5 : 0.3, big: tip, stop: tip ? 0.08 : 0 });
+          if (tip) FK.label(S, p, 'TOE TIP!', C_NERVE, true); FK.smack(tip);
+        }
+      }
+      if (q.t > W + 0.26) S.seq = null;
     },
     copter(p, dt, S, q) {   // SCARF COPTER: the scarf spins overhead like a rotor
-      const k = FK.keys(), D = form(S) === 'gale' ? 0.9 : 0.65;
+      const k = FK.keys(), D = brave(S) ? 0.85 : 0.65;
       S.target = PO.copter; S.rate = 40; S.rotor = q.t;
       p.vy = -(10.5 - 8 * q.t / D); p.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 6.5; p.onGround = false;
       if (Math.floor(q.t * 16) !== q.d) { q.d = Math.floor(q.t * 16); FK.whoosh(true, false); }
       for (const e of FK.within(pcx(p), p.y - 0.2, 1.4)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 1.5, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 5, ky: -10, stun: 0.35 }); }
       if (q.t > D) { S.rotor = 0; S.seq = null; }
     },
-    knee(p, dt, S, q) {   // KNEE DROP: a meteor knee
-      S.target = PO.knee; S.rate = 50;
-      if (q.t < 0.1) { p.vy = 0; return; }
-      p.vy = 22; if (!q.snd) { q.snd = 1; FK.whoosh(false, true); }
-      for (const e of box(p, 1, -0.6, 1.2, 1.4, -0.5)) if (!q.hits.has(e)) { q.hits.add(e); hit(S, e, 3 + q.pw, { kx: 0, ky: 17, stun: 0.5, big: true, stop: 0.06 }); p.vy = -8; S.seq = null; return; }
-      if (p.onGround || q.t > 1.2) { FK.thud(false); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 1.4, c: fc(S), t: 0, life: 0.35 }); S.seq = null; }
+    pogo(p, dt, S, q) {   // PLUNGER POGO: straight down plunger first. On a foe: it sticks, spikes them, and he springs off sky-high
+      S.target = PO.pogo; S.rate = 50; S.pogo = 1;
+      if (q.t < 0.1) { p.vy = Math.min(p.vy, 0) * 0.3; p.vx *= 0.6; return; }
+      p.vy = 21; if (!q.snd) { q.snd = 1; FK.whoosh(false, true); }
+      for (const e of box(p, 1, -0.55, 1.1, 1.3, -0.75)) if (!q.hits.has(e)) {
+        q.hits.add(e); pop();
+        hit(S, e, 3 + q.pw, { kx: 0, ky: 17, stun: 0.55, big: true, stop: 0.07 });
+        p.vy = -16 - 2 * q.pw - (brave(S) ? 3 : 0); p.onGround = false; S.airUp = false;
+        S.fx.push({ k: 'ring', x: pcx(p), y: p.y + p.h, R: 1.2, c: C_NERVE, t: 0, life: 0.3 });
+        FK.label(S, p, 'SPROING!', C_NERVE, true); FK.tone(240, { dur: 0.3, vol: 0.18, type: 'square', slide: 1100 });
+        S.pogo = 0; S.seq = null; return;
+      }
+      if (p.onGround || q.t > 1.3) {   // the floor: a smaller bounce
+        FK.thud(false); S.fx.push({ k: 'shock', x: pcx(p), y: p.y + p.h, R: 1.3, c: C_JAK, t: 0, life: 0.35 });
+        for (const e of FK.within(pcx(p), p.y + p.h - 0.4, 1.3)) hit(S, e, 1.5, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 5, ky: -8, stun: 0.35 });
+        if (p.onGround) { p.vy = -10; p.onGround = false; }
+        S.pogo = 0; S.seq = null;
+      }
+    },
+    horn(p, dt, S, q) {   // AIR HORN: a deafening blast in front
+      const f = q.f;
+      S.target = PO.horn; S.rate = 50;
+      if (!q.done && q.t > 0.06) {
+        q.done = 1; S.hornT = 0.5; S.hornF = f;
+        FK.tone(330, { dur: 0.55, vol: 0.22, type: 'sawtooth' }); FK.tone(415, { dur: 0.55, vol: 0.16, type: 'sawtooth' }); FK.shake(8);
+        for (const e of FK.foes()) {
+          const along = (ex(e) - pcx(p)) * f, side = Math.abs(ey(e) - pcy(p));
+          if (along > -0.3 && along < 4.8 && side < 1 + along * 0.45) hit(S, e, 1, { kx: f * (16 - along * 1.5), ky: -6, stun: 1.0, big: true });
+        }
+        if (!FK.blocked(p.x - f * 0.2, p.y + 0.02, p.w, p.h - 0.04)) p.vx = -f * 6;   // the blast knocks him back a little too
+      }
+      if (q.t > 0.4) S.seq = null;
     },
   };
+
+  // ---------------------------------------------------------------- gadgets (K / 🎒 + a direction)
+  function useGadget(which, S, p) {
+    if (!S || !p) return;
+    const k = FK.keys();
+    which = which || (k.up && !k.down ? 'brave' : k.down ? 'trap' : (k.left || k.right) ? 'horn' : 'balloon');
+    const G = GADGETS[which];
+    if (which === 'brave' && brave(S)) { FK.msg('💛 Already brave!'); return; }
+    if (S.nerve < G.cost) { FK.msg('🎒 ' + G.icon + ' ' + G.name + ' needs ' + G.cost + ' Nerve (you have ' + S.nerve + ')'); FK.tone(200, { dur: 0.1, vol: 0.08, type: 'square' }); return; }
+    if (S.seq && which !== 'balloon') return;
+    S.nerve -= G.cost;
+    const f = k.right ? 1 : k.left ? -1 : FK.face(p);
+    FK.label(S, p, G.icon + ' ' + G.name + '!', which === 'brave' ? C_GOLD : C_NERVE, true); FK.msg(G.icon + ' ' + G.name + '!');
+    if (which === 'balloon') {
+      S.balloon = { t: 0, life: 3, ph: Math.random() * 6, cool: new Map() }; p.vy = Math.min(p.vy, -4); p.onGround = false;
+      FK.tone(500, { dur: 0.4, vol: 0.1, type: 'sine', slide: 900 });
+    } else if (which === 'horn') { p.dashDir = f; p.lastMoveDir = f; startSeq(S, 'horn', { f }); }
+    else if (which === 'trap') {
+      const fy = p.onGround ? p.y + p.h : FK.floorAt(pcx(p), p.y + p.h, 8);
+      if (fy == null) { S.nerve += G.cost; FK.msg('🪤 No floor under you for the trap'); return; }
+      S.trap = { x: pcx(p) + f * 0.9, fy, t: 0, life: 15, sprung: 0 };
+      FK.tone(700, { dur: 0.08, vol: 0.12, type: 'square' }); FK.tone(500, { dur: 0.08, vol: 0.12, type: 'square', delay: 0.07 });
+    } else if (which === 'brave') {
+      S.braveT = BRAVE_T; S.fx.push({ k: 'ring', x: pcx(p), y: pcy(p), R: 2.4, c: C_GOLD, t: 0, life: 0.5 });
+      for (let i = 0; i < 4; i++) FK.tone(392 * Math.pow(1.26, i), { dur: 0.22, vol: 0.12, delay: i * 0.07, type: 'triangle' });
+      FK.shake(6);
+    }
+  }
+  const myState = () => (window.selectedCharacter === ID && H) ? H.state() : null;
+  function pressGadget() { const S = myState(), p = window._gamePlayer; if (!S || !p || (window._gameMode && window._gameMode() !== 'play')) return; useGadget(null, S, p); }
 
   function stepWorld(p, dt, S, k) {
     const foes = FK.foes();
-    // FLUTTER: hold jump while falling, once per jump (Gale: glide for as long as you hold it)
-    const gale = form(S) === 'gale', falling = !p.onGround && (p.vy || 0) > 0;
-    if (p.onGround) { S.flutT = 0; S.fluttering = false; }
-    S.fluttering = false; S.gliding = false;
-    if (falling && k.jump && !S.seq) {
-      if (gale) { p.vy = Math.min(p.vy, 2.2); S.gliding = true; p.vx = (p.vx || 0) * 0.98 + FK.face(p) * 0.4; }
-      else if (S.flutT < 0.85) { S.flutT += dt; p.vy = Math.max(-3.5, p.vy - 60 * dt); S.fluttering = true; if (Math.floor(S.flutT * 14) !== S.flutD) { S.flutD = Math.floor(S.flutT * 14); FK.tone(260 + S.flutT * 200, { dur: 0.05, vol: 0.05, type: 'square' }); } }
+    // FLUTTER: hold jump while falling, once per jump
+    const falling = !p.onGround && (p.vy || 0) > 0;
+    if (p.onGround) S.flutT = 0;
+    S.fluttering = false;
+    if (falling && k.jump && !S.seq && !S.balloon && S.flutT < 0.85) {
+      S.flutT += dt; p.vy = Math.max(-3.5, p.vy - 60 * dt); S.fluttering = true;
+      if (Math.floor(S.flutT * 14) !== S.flutD) { S.flutD = Math.floor(S.flutT * 14); FK.tone(260 + S.flutT * 200, { dur: 0.05, vol: 0.05, type: 'square' }); }
     }
-    // ice sheets: foes that touch one slip and fall over
-    for (let i = S.ice.length - 1; i >= 0; i--) {
-      const d = S.ice[i]; d.t += dt;
-      for (const [e, c] of d.cool) { if (c - dt <= 0) d.cool.delete(e); else d.cool.set(e, c - dt); }
-      for (const e of foes) if (!d.cool.has(e) && Math.abs(ex(e) - d.x) < d.w / 2 && Math.abs(e.y + (e.h || 0.9) - d.fy) < 0.4) { d.cool.set(e, 1.2); hit(S, e, 1, { kx: (Math.sign(e.vx || 1)) * 6, ky: -6, stun: 0.9 }); }
-      if (d.t > d.life) S.ice.splice(i, 1);
+    // FLINCH: ready, not attacking, not brave: any hit that would land is dodged (FKit / Smash treat _dodgeT as a pure dodge)
+    if (S.flinchCD > 0) S.flinchCD = Math.max(0, S.flinchCD - dt);
+    if (S.flinchCD <= 0 && !S.seq && !brave(S) && !(p.hitstun > 0)) { p._parryT = Math.max(p._parryT || 0, 0.05); p._dodgeT = Math.max(p._dodgeT || 0, 0.05); }
+    if (p._parried > 0 && !S.parrySeen) {
+      S.parrySeen = true;
+      const d = p._parryDir || FK.face(p);
+      if (S.seq && S.seq.kind === 'cover' && !S.seq.kick) {   // DUCK & COVER worked: slip behind the attacker
+        const q = S.seq, e = nearestFoe(p, 3.5);
+        q.kick = q.t; q.f2 = e ? (Math.sign(pcx(p) - ex(e)) || -d) : -d; q.e = e;
+        if (e) { const nx = ex(e) + (Math.sign(ex(e) - pcx(p)) || d) * ((e.w || 0.9) / 2 + p.w / 2 + 0.15) - p.w / 2; if (!FK.blocked(nx, p.y, p.w, p.h)) { p.x = nx; S.selfMove = true; } }
+        p.dashDir = -q.f2 || 1; p.lastMoveDir = p.dashDir;
+        FK.label(S, p, 'SIDESTEP!', C_NERVE, true); nerve(S, p, 1); FK.whoosh(false, false);
+      } else {   // FLINCH: EEP! and a leap away from whatever it was
+        S.flinchCD = FLINCH_CD; S.eepT = 0.4;
+        p.vx = -d * 8; p.vy = -8.5; p.onGround = false; S.selfMove = true;
+        FK.label(S, p, 'EEP!', C_SWEAT, true); yelp(); nerve(S, p, 1, 'FLINCH');
+        S.fx.push({ k: 'drops', x: pcx(p), y: p.y, t: 0, life: 0.5 });
+      }
     }
-    if (S.arcT > 0) S.arcT -= dt;
+    if (!(p._parried > 0)) S.parrySeen = false;
+    if (S.eepT > 0) S.eepT -= dt;
+    // BRAVE HEART: super armor on his own moves
+    if (brave(S)) { S.braveT = Math.max(0, S.braveT - dt); if (S.seq) p._armorT = Math.max(p._armorT || 0, 0.06); if (S.braveT <= 0) { FK.label(S, p, 'NERVOUS AGAIN', '#cfd6e6', false); FK.tone(440, { dur: 0.3, vol: 0.08, slide: 220 }); } }
+    // BALLOON: float up, steer; bonks foes it touches; popped when he is hit
+    if (S.balloon) {
+      const B = S.balloon; B.t += dt;
+      p.vy = Math.max(-4.5, Math.min(p.vy, 1) - 30 * dt); p.onGround = false; S.airUp = false; S.flutT = 0;
+      if (FK.blocked(p.x, p.y - 1.6, p.w, 0.3)) p.vy = Math.max(p.vy, 0);   // under a ceiling: just hang there
+      for (const [e, c] of B.cool) { if (c - dt <= 0) B.cool.delete(e); else B.cool.set(e, c - dt); }
+      const bx = pcx(p) + 0.2, by = p.y - 1.4;
+      for (const e of foes) if (!B.cool.has(e) && Math.hypot(ex(e) - bx, ey(e) - by) < 1.1) { B.cool.set(e, 0.6); hit(S, e, 1, { kx: (Math.sign(ex(e) - bx) || 1) * 7, ky: -6, stun: 0.3 }); FK.tone(300, { dur: 0.1, vol: 0.1, type: 'sine', slide: 600 }); }
+      const hurt = (S.lastHp != null && p.hp < S.lastHp) || (p.hitstun > 0 && !S.wasStun);
+      if (B.t > B.life || hurt) { S.balloon = null; FK.noise({ dur: 0.08, cut: 2500, q: 2, vol: 0.3 }); S.fx.push({ k: 'ring', x: bx, y: by, R: 0.9, c: '#ff5a6e', t: 0, life: 0.25 }); }
+    }
+    S.lastHp = p.hp; S.wasStun = p.hitstun > 0;
+    // SPRING TRAP: the first foe to step on it is flung sky-high
+    if (S.trap) {
+      const T = S.trap; T.t += dt;
+      if (T.sprung > 0) { T.sprung -= dt; if (T.sprung <= 0) S.trap = null; }
+      else {
+        for (const e of foes) if (Math.abs(ex(e) - T.x) < 0.55 + (e.w || 0.9) / 2 && Math.abs(e.y + (e.h || 0.9) - T.fy) < 0.5) {
+          hit(S, e, 2, { kx: 0, ky: -19, stun: 1.0, big: true, stop: 0.06 }); T.sprung = 0.4;
+          FK.tone(180, { dur: 0.35, vol: 0.2, type: 'square', slide: 1200 }); S.fx.push({ k: 'ring', x: T.x, y: T.fy - 0.3, R: 1.2, c: C_NERVE, t: 0, life: 0.3 });
+          break;
+        }
+        if (S.trap && T.t > T.life) S.trap = null;
+      }
+    }
+    if (S.hornT > 0) S.hornT -= dt;
+    if (S.pipFlash > 0) S.pipFlash -= dt;
+    // scared of anything close (he trembles)
+    S.scared = !brave(S) && FK.foes().some(e => Math.hypot(ex(e) - pcx(p), ey(e) - pcy(p)) < 3.2);
   }
 
   const MOVES = {
-    ground: { neutral: { name: 'Plunger Poke', cd: 0.3 }, side: { name: 'Plunger Shot', cd: 0.5 }, up: { name: 'Scissor Kick', cd: 0.45 }, down: { name: 'Leg Sweep', cd: 0.45 } },
-    air:    { neutral: { name: 'Flail Kicks', cd: 0.4 }, side: { name: 'Suction Swing', cd: 0.5 }, up: { name: 'Scarf Copter', cd: 0.3 }, down: { name: 'Knee Drop', cd: 0.4 } },
+    ground: { neutral: { name: 'Jitter Jab', big: 'JITTER FLURRY', cd: 0.3 }, side: { name: 'Plunger Line', cd: 0.5 }, up: { name: 'Stilt Kick', big: 'SKY STILT', cd: 0.45 }, down: { name: 'Duck & Cover', cd: 0.5 } },
+    air:    { neutral: { name: 'Pinwheel', cd: 0.4 }, side: { name: 'Long Leg', cd: 0.35 }, up: { name: 'Scarf Copter', cd: 0.3 }, down: { name: 'Plunger Pogo', cd: 0.4 } },
   };
   const FD = { windup: 0.02, active: 0.06, endlag: 0.04, root: false };
   const MFD = {}; for (const st of ['ground', 'air']) for (const d of ['neutral', 'side', 'up', 'down']) MFD[st + '_' + d] = FD;
+  const named = (S, n) => brave(S) ? '💛 BRAVE ' + n : null;
 
-  FK.define({
+  const H = FK.define({
     id: ID, plug: 'lbro',
-    def: { name: 'L-Brother', icon: '🪠', tier: 'prismatic', color: C_JAK, color2: '#ffe14d',
-      ability: 'Lanky high-jumper: flutter in the air, a plunger grapple, and power-ups for GALE, FROST and VOLT forms',
-      desc: 'The younger brother: tall, thin and jumpy, with a knit beanie, a long scarf and a plunger on a cord. Hold jump while falling to FLUTTER. The plunger sticks to foes (reels them in for a kick) or to walls (pulls him there). Tasks fill the rings over his head (5 s in the air, 6 hits, 50 tiles run); each puts a Tool Crate over his head: bump it from below and catch the power-up that slides out: 🪶 GALE (glide, Updraft), ❄️ FROST (chilling hits, Ice Sheet) or ⚡ VOLT (Arc Lash chains foes, Zip blinks through them). A form lasts 24 s; two hits end it.' },
+    def: { name: 'L-Brother', icon: '🪠', tier: 'prismatic', color: C_JAK, color2: C_NERVE,
+      ability: 'Scared of everything: he FLINCHES out of hits by himself, turns fear into NERVE, and spends it on pocket gadgets (Balloon, Air Horn, Spring Trap, Brave Heart)',
+      desc: 'The younger brother: tall, thin, jumpy and scared of everything, with a knit beanie, a long scarf and a plunger on a cord. Hold jump while falling to FLUTTER. FLINCH: when a hit is about to land while he isn\'t attacking, he yelps and leaps out of the way (then 6 s to come back: the sweat drop shows it is ready). Every flinch, every Duck & Cover that works and every 6 hits give him NERVE (3 pips over his head). Spend it with K / 🎒: 🎈 Balloon (1, float up out of trouble), 📯 Air Horn with ←/→ (2, blasts everyone back, dazed), 🪤 Spring Trap with ↓ (2, flings the first foe to step on it), 💛 Brave Heart with ↑ (3, 9 s of courage: +40% damage, super armor on his moves, and BRAVE versions of them). Moves: Jitter Jab, Plunger Line, Stilt Kick, Duck & Cover; in the air Pinwheel, Long Leg (the longest kick there is: the toe tips), Scarf Copter and Plunger Pogo.' },
     stats: { speed: 1.08, jump: 1.25, maxJumps: 2, maxDashes: 1, hp: 3 },
-    statMod: S => form(S) === 'volt' ? { speed: 1.3 } : form(S) === 'gale' ? { jump: 1.35 } : {},
+    statMod: S => brave(S) ? { speed: 1.2, jump: 1.3 } : {},
     moves: MOVES, mfd: MFD,
-    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rotor: 0, rot2: 0, cup: null, arcs: [], arcT: 0, ice: [], flutT: 0, airUp: false, pu: PU.init() }),
+    fresh: () => ({ seq: null, pose: PO.idle, target: PO.idle, rate: 18, run: 0, rotor: 0, rot: 0, pogo: 0, cup: null, flutT: 0, airUp: false,
+      nerve: 0, hitN: 0, flinchCD: 0, braveT: 0, eepT: 0, balloon: null, trap: null, hornT: 0, hornF: 1, scared: false, parrySeen: false, pipFlash: 0 }),
     busy: S => !!S.seq,
     can(key, S) { if (key === 'air_up' && S.airUp) return 'Scarf Copter comes back when you land'; return null; },
     act: {
-      ground_neutral: (p, f, pw, S) => { if (form(S) === 'volt') { startSeq(S, 'arc', { f, pw }); return 'ARC LASH'; } startSeq(S, 'poke', { f, pw }); },
-      ground_side: (p, f, pw, S) => { if (form(S) === 'volt') { startSeq(S, 'zip', { f, pw }); return 'ZIP'; } startSeq(S, 'shot', { f, pw }); },
-      ground_up: (p, f, pw, S) => { startSeq(S, 'scissor', { f, pw }); return form(S) === 'gale' ? 'UPDRAFT' : null; },
-      ground_down: (p, f, pw, S) => { startSeq(S, 'sweep', { f, pw }); return form(S) === 'frost' ? 'ICE SHEET' : null; },
-      air_neutral: (p, f, pw, S) => { if (form(S) === 'volt') { startSeq(S, 'arc', { f, pw }); return 'ARC LASH'; } startSeq(S, 'flail', { f, pw }); },
-      air_side: (p, f, pw, S) => { if (form(S) === 'volt') { startSeq(S, 'zip', { f, pw }); return 'ZIP'; } startSeq(S, 'shot', { f, pw, air: true }); },
+      ground_neutral: (p, f, pw, S) => { startSeq(S, 'jab', { f, pw }); return named(S, 'JITTER JAB'); },
+      ground_side: (p, f, pw, S) => { startSeq(S, 'line', { f, pw }); return named(S, 'PLUNGER LINE'); },
+      ground_up: (p, f, pw, S) => { startSeq(S, 'stilt', { f, pw }); return named(S, 'STILT KICK'); },
+      ground_down: (p, f, pw, S) => startSeq(S, 'cover', { f, pw }),
+      air_neutral: (p, f, pw, S) => { startSeq(S, 'pinwheel', { f, pw }); return named(S, 'PINWHEEL'); },
+      air_side: (p, f, pw, S) => { startSeq(S, 'longleg', { f, pw }); return named(S, 'LONG LEG'); },
       air_up: (p, f, pw, S) => { S.airUp = true; startSeq(S, 'copter', { f, pw }); },
-      air_down: (p, f, pw, S) => startSeq(S, 'knee', { f, pw }),
+      air_down: (p, f, pw, S) => { startSeq(S, 'pogo', { f, pw }); return named(S, 'PLUNGER POGO'); },
     },
-    onTeleport(p, S) { S.seq = null; S.cup = null; S.rotor = 0; S.ice.length = 0; },
+    onTeleport(p, S) { S.seq = null; S.cup = null; S.rotor = 0; S.rot = 0; S.pogo = 0; S.balloon = null; S.trap = null; },
     step(p, dt, S, k) {
-      if (p.hitstun > 0 && S.seq) { S.seq = null; S.cup = null; S.rotor = 0; S.rot2 = 0; }
+      if (p.hitstun > 0 && S.seq) { S.seq = null; S.cup = null; S.rotor = 0; S.rot = 0; S.pogo = 0; }
       S.rate = 18;
       if (S.seq) { S.seq.t += dt; const fn = SEQ[S.seq.kind]; if (fn) fn(p, dt, S, S.seq); else S.seq = null; }
-      if (!S.seq) { S.rotor = 0; S.rot2 = 0; S.cup = null; }
+      if (!S.seq) { S.rotor = 0; S.rot = 0; S.pogo = 0; S.cup = null; }
       stepWorld(p, dt, S, k);
-      PU.tick(p, dt, S);
       if (!S.seq) {
-        if (S.gliding) S.target = PO.glide;
+        if (S.eepT > 0) S.target = PO.eep;
+        else if (S.balloon) S.target = PO.balloon;
         else if (S.fluttering) S.target = Math.floor(performance.now() / 70) % 2 ? PO.flutA : PO.flutB;
-        else S.target = FK.locomotion(S, p, dt, PO, { lean: 0.3 });
-        if (S.fluttering) S.rate = 40;
+        else if (brave(S) && p.onGround && Math.abs(p.vx || 0) <= 0.8) S.target = PO.proud;
+        else S.target = FK.locomotion(S, p, dt, PO, { lean: brave(S) ? 0.15 : 0.3 });
+        if (S.fluttering || S.eepT > 0) S.rate = 40;
       }
       if (p.onGround) S.airUp = false;
       S.pose = FK.lerpPose(S.pose, S.target, 1 - Math.exp(-dt * S.rate));
@@ -265,39 +379,42 @@
 
     // ---------------- drawing: a tall thin worrier with a beanie, a long scarf and a plunger
     drawBody(ctx, px, py, pw, ph, t, S, p) {
-      const q = S ? S.pose : PO.idle, fm = S && S.pu ? S.pu.form : null, F = fm ? FORMS[fm] : null;
+      const q = S ? S.pose : PO.idle, B = S && brave(S);
       const s = ph / U, cx = px + pw / 2, fy = py + ph;
-      const jak = F ? F.jak : C_JAK, jak2 = F ? F.jak2 : C_JAK2;
       ctx.save();
-      if (S && S.rot2) { ctx.translate(cx, fy - ph * 0.2); ctx.rotate(-S.rot2 * 0.08); ctx.translate(-cx, -(fy - ph * 0.2)); }
+      // he trembles when something is close (not when brave)
+      if (S && S.scared && !S.seq) ctx.translate(Math.sin(t * 55) * 0.5 * s, 0);
+      if (S && S.rot) { ctx.translate(cx, fy - ph * 0.45); ctx.rotate(S.rot); ctx.translate(-cx, -(fy - ph * 0.45)); }
+      if (S && S.pogo) { ctx.translate(cx, fy - ph * 0.5); ctx.rotate(Math.PI); ctx.translate(-cx, -(fy - ph * 0.5)); }   // upside down, plunger first
       const K = FK.skel(P, q, cx, fy, s);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      if (F) { const ag = ctx.createRadialGradient(cx, fy - ph * 0.45, ph * 0.1, cx, fy - ph * 0.45, ph * 0.62); ag.addColorStop(0, F.glow + '55'); ag.addColorStop(1, F.glow + '00'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, fy - ph * 0.45, ph * 0.62, 0, Math.PI * 2); ctx.fill(); }   // the form's glow: one soft circle (a canvas blur on every limb was far too slow on phones)
-      if (S && S.pu && S.pu.flash > 0 && Math.sin(t * 50) > 0) ctx.globalAlpha = 0.6;
-      // the scarf trails behind (wings in Gale form, a rotor in the copter)
-      scarf(ctx, K, s, t, S, fm);
+      if (B) { const ag = ctx.createRadialGradient(cx, fy - ph * 0.45, ph * 0.1, cx, fy - ph * 0.45, ph * 0.66); ag.addColorStop(0, 'rgba(255,207,58,0.38)'); ag.addColorStop(1, 'rgba(255,207,58,0)'); ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, fy - ph * 0.45, ph * 0.66, 0, Math.PI * 2); ctx.fill(); }
+      // the scarf trails behind (a blazing gold cape when brave, a rotor in the copter)
+      scarf(ctx, K, s, t, S, B);
       FK.limb(ctx, K.lB, 3.8 * s, C_BIB2, 3.6 * s);
       shoe(ctx, K.lB[2], s, 0.9);
-      FK.limb(ctx, K.aB, 3.4 * s, jak2, 3 * s);
+      FK.limb(ctx, K.aB, 3.4 * s, C_JAK2, 3 * s);
       FK.mitt(ctx, K.aB[2][0], K.aB[2][1], 2 * s, C_SKIN);
       // torso: a work shirt with rolled sleeves under long bib overalls (straps, brass buttons, an L patch on the bib)
       ctx.save(); ctx.translate(K.hip[0], K.hip[1]); ctx.rotate(q.lean);
       const Lt = P.torso * s, W = 11.5 * s;
-      FK.blob(ctx, W, Lt + 1.5 * s, jak, jak2, 4 * s);
+      FK.blob(ctx, W, Lt + 1.5 * s, C_JAK, C_JAK2, 4 * s);
       ctx.shadowBlur = 0;
       const bg = ctx.createLinearGradient(-W / 2, 0, W / 2, 0); bg.addColorStop(0, C_BIB2); bg.addColorStop(0.6, C_BIB); bg.addColorStop(1, '#7a85a2');
       ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(-W / 2, -Lt * 0.45, W, Lt * 0.45 + 1.5 * s, [0, 0, 3 * s, 3 * s]); ctx.fill();
       ctx.beginPath(); ctx.roundRect(-W * 0.32, -Lt * 0.78, W * 0.64, Lt * 0.4, 1.2 * s); ctx.fill();
       ctx.fillRect(-W * 0.38, -Lt - 0.5 * s, 1.8 * s, Lt * 0.3); ctx.fillRect(W * 0.38 - 1.8 * s, -Lt - 0.5 * s, 1.8 * s, Lt * 0.3);
       ctx.fillStyle = '#ffd166'; for (const bx of [-W * 0.25, W * 0.25]) { ctx.beginPath(); ctx.arc(bx, -Lt * 0.72, 0.95 * s, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(-W * 0.17, -Lt * 0.66, W * 0.34, W * 0.3, 0.8 * s); ctx.fill();
-      ctx.fillStyle = fm ? F.jak2 : C_JAK2; ctx.font = `900 ${W * 0.26}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('L', 0, -Lt * 0.66 + W * 0.155);
-      if (fm === 'volt') { ctx.strokeStyle = '#fff3a0'; ctx.lineWidth = 0.8 * s; ctx.beginPath(); ctx.moveTo(-W * 0.4, -Lt * 0.3); for (let i = 1; i < 6; i++) ctx.lineTo(-W * 0.4 + i * W * 0.16, -Lt * 0.3 + (i % 2 ? -1 : 1) * 1.2 * s * Math.sin(t * 30 + i)); ctx.stroke(); }
+      ctx.fillStyle = B ? C_GOLD : '#ffffff'; ctx.beginPath(); ctx.roundRect(-W * 0.17, -Lt * 0.66, W * 0.34, W * 0.3, 0.8 * s); ctx.fill();
+      ctx.fillStyle = B ? '#a8410f' : C_JAK2; ctx.font = `900 ${W * 0.26}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('L', 0, -Lt * 0.66 + W * 0.155);
+      // a bulging overall pocket: the gadgets live in there
+      ctx.fillStyle = C_BIB2; ctx.beginPath(); ctx.roundRect(W * 0.08, -Lt * 0.36, W * 0.34, Lt * 0.24, 1 * s); ctx.fill();
+      ctx.fillStyle = '#ff5a6e'; ctx.beginPath(); ctx.arc(W * 0.3, -Lt * 0.4, 0.9 * s, 0, Math.PI * 2); ctx.fill();   // a balloon poking out
       ctx.restore();
       ctx.shadowBlur = 0;
       FK.limb(ctx, K.lF, 4.0 * s, C_BIB, 3.8 * s);
       shoe(ctx, K.lF[2], s, 1);
-      // head: long face, worried brows, a big curl of hair at the back, the knit beanie with an L and a pompom
+      // head: long face, worried brows (set and determined when brave), a curl of hair at the back, the knit beanie with an L
       ctx.save(); ctx.translate(K.head[0], K.head[1]); ctx.rotate(q.lean + q.head);
       const hr = K.hr;
       ctx.fillStyle = C_HAIR; ctx.beginPath(); ctx.ellipse(-hr * 0.55, hr * 0.1, hr * 0.45, hr * 0.65, 0.3, 0, Math.PI * 2); ctx.fill();
@@ -305,23 +422,29 @@
       ctx.fillStyle = 'rgba(60,40,30,0.18)'; ctx.beginPath(); ctx.ellipse(hr * 0.2, hr * 1.05, hr * 0.42, hr * 0.28, 0, 0, Math.PI * 2); ctx.fill();   // stubble
       ctx.fillStyle = '#e8a985'; ctx.beginPath(); ctx.ellipse(-hr * 0.5, hr * 0.22, hr * 0.16, hr * 0.26, 0, 0, Math.PI * 2); ctx.fill();   // ear
       ctx.fillStyle = C_HAIR; ctx.beginPath(); ctx.moveTo(-hr * 0.75, -hr * 0.35); ctx.lineTo(-hr * 0.42, -hr * 0.35); ctx.lineTo(-hr * 0.36, hr * 0.5); ctx.lineTo(-hr * 0.66, hr * 0.38); ctx.closePath(); ctx.fill();   // sideburn
-      const scared = S && (S.fluttering || (S.seq && S.seq.kind === 'flail'));
-      for (const dx of [0.28, 0.66]) {   // small eyes; wide open when he panics
+      const scared = S && !B && (S.fluttering || S.eepT > 0 || S.scared || (S.seq && S.seq.kind === 'cover'));
+      for (const dx of [0.28, 0.66]) {   // small eyes; wide open when he panics, narrowed when brave
         const er = scared ? 0.15 : 0.12;
-        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(hr * dx, hr * 0.02, hr * er, hr * (er + 0.03), 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(hr * dx, hr * 0.02, hr * er, hr * (B ? er - 0.03 : er + 0.03), 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#26402f'; ctx.beginPath(); ctx.arc(hr * (dx + 0.03), hr * 0.04, hr * (scared ? 0.05 : 0.075), 0, Math.PI * 2); ctx.fill();
       }
-      ctx.strokeStyle = C_MUST; ctx.lineWidth = hr * 0.09; ctx.lineCap = 'round';   // brows: worried, higher when scared
-      ctx.beginPath(); ctx.moveTo(hr * 0.12, -hr * (scared ? 0.36 : 0.22)); ctx.lineTo(hr * 0.4, -hr * 0.3); ctx.moveTo(hr * 0.54, -hr * 0.3); ctx.lineTo(hr * 0.82, -hr * (scared ? 0.36 : 0.22)); ctx.stroke();
+      ctx.strokeStyle = C_MUST; ctx.lineWidth = hr * 0.09; ctx.lineCap = 'round';
+      ctx.beginPath();
+      if (B) { ctx.moveTo(hr * 0.12, -hr * 0.2); ctx.lineTo(hr * 0.42, -hr * 0.12); ctx.moveTo(hr * 0.52, -hr * 0.12); ctx.lineTo(hr * 0.84, -hr * 0.2); }   // determined
+      else { ctx.moveTo(hr * 0.12, -hr * (scared ? 0.36 : 0.22)); ctx.lineTo(hr * 0.4, -hr * 0.3); ctx.moveTo(hr * 0.54, -hr * 0.3); ctx.lineTo(hr * 0.82, -hr * (scared ? 0.36 : 0.22)); }   // worried
+      ctx.stroke();
       ctx.fillStyle = '#e8a985'; ctx.beginPath(); ctx.ellipse(hr * 0.82, hr * 0.32, hr * 0.17, hr * 0.27, 0.15, 0, Math.PI * 2); ctx.fill();   // a long nose
-      // mouth (under the mustache), then the mustache: long and narrower than his brother's, the ends flicked up
-      ctx.fillStyle = '#7a3a2a'; ctx.beginPath(); if (scared) ctx.ellipse(hr * 0.55, hr * 0.95, hr * 0.11, hr * 0.15, 0, 0, Math.PI * 2); else ctx.ellipse(hr * 0.55, hr * 0.88, hr * 0.16, hr * 0.06, 0, 0, Math.PI); ctx.fill();
+      ctx.fillStyle = '#7a3a2a'; ctx.beginPath();
+      if (scared) ctx.ellipse(hr * 0.55, hr * 0.95, hr * 0.11, hr * 0.15, 0, 0, Math.PI * 2);
+      else if (B) { ctx.ellipse(hr * 0.55, hr * 0.84, hr * 0.2, hr * 0.09, 0, 0, Math.PI); }   // a grin
+      else ctx.ellipse(hr * 0.55, hr * 0.88, hr * 0.16, hr * 0.06, 0, 0, Math.PI);
+      ctx.fill();
       const tw = Math.sin(t * 3) * hr * 0.03;
       ctx.fillStyle = C_MUST; ctx.beginPath(); ctx.moveTo(hr * 0.2, hr * 0.6);
       ctx.quadraticCurveTo(hr * 0.0, hr * 0.62, -hr * 0.06, hr * 0.42 + tw); ctx.quadraticCurveTo(hr * 0.12, hr * 0.62, hr * 0.32, hr * 0.5);
       ctx.quadraticCurveTo(hr * 0.55, hr * 0.42, hr * 0.78, hr * 0.5); ctx.quadraticCurveTo(hr * 1.0, hr * 0.62, hr * 1.12, hr * 0.42 - tw);
       ctx.quadraticCurveTo(hr * 1.08, hr * 0.66, hr * 0.88, hr * 0.68); ctx.quadraticCurveTo(hr * 0.55, hr * 0.6, hr * 0.2, hr * 0.6); ctx.fill();
-      const hat = fm ? F.c : C_HAT, hat2 = fm ? F.jak2 : C_HAT2;
+      const hat = B ? C_GOLD : C_HAT, hat2 = B ? C_GOLD2 : C_HAT2;
       ctx.fillStyle = hat; ctx.beginPath(); ctx.moveTo(-hr * 0.85, -hr * 0.35); ctx.quadraticCurveTo(-hr * 0.9, -hr * 1.55, hr * 0.15, -hr * 1.55); ctx.quadraticCurveTo(hr * 1.0, -hr * 1.5, hr * 0.95, -hr * 0.35); ctx.closePath(); ctx.fill();
       ctx.fillStyle = hat2; ctx.beginPath(); ctx.roundRect(-hr * 0.92, -hr * 0.5, hr * 1.95, hr * 0.32, hr * 0.12); ctx.fill();
       ctx.strokeStyle = hat2; ctx.lineWidth = hr * 0.06; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * hr * 0.3, -hr * 0.55); ctx.lineTo(i * hr * 0.28, -hr * 1.4); ctx.stroke(); }
@@ -329,84 +452,141 @@
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-hr * 0.3, -hr * 1.65 + bob, hr * 0.3, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(hr * 0.45, -hr * 0.98, hr * 0.27, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = hat2; ctx.font = `900 ${hr * 0.4}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('L', hr * 0.45, -hr * 0.96);
+      // the sweat drop: his flinch is ready
+      if (S && S.flinchCD <= 0 && !B) { const dy = Math.sin(t * 3) * hr * 0.1; ctx.fillStyle = C_SWEAT; ctx.beginPath(); ctx.moveTo(-hr * 0.95, -hr * 0.6 + dy); ctx.quadraticCurveTo(-hr * 1.25, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.05 + dy); ctx.quadraticCurveTo(-hr * 0.68, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.6 + dy); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(-hr * 1.0, -hr * 0.22 + dy, hr * 0.06, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
       // front arm with the plunger (unless it is out on its cord)
-      FK.limb(ctx, K.aF, 3.6 * s, jak, 3.2 * s);
+      FK.limb(ctx, K.aF, 3.6 * s, C_JAK, 3.2 * s);
       const hx = K.aF[2][0], hy = K.aF[2][1], an = q.aF[0] + q.aF[1];
-      if (!(S && S.cup)) { ctx.save(); ctx.translate(hx, hy); ctx.rotate(-an + Math.PI); plunger(ctx, s, fm); ctx.restore(); }
+      if (!(S && S.cup)) { ctx.save(); ctx.translate(hx, hy); ctx.rotate(-an + Math.PI); if (S && S.seq && S.seq.kind === 'horn') airHorn(ctx, s); else plunger(ctx, s, B); ctx.restore(); }
       FK.mitt(ctx, hx, hy, 2.1 * s, C_SKIN);
       ctx.restore();
     },
     drawWorld(ctx, V, S) {
       const p = V.p, T = V.T;
-      for (const d of S.ice) {
-        const a = Math.min(1, d.t / 0.2) * Math.min(1, (d.life - d.t) / 0.6), x = V.SX(d.x - d.w / 2), y = V.SY(d.fy);
-        const g = ctx.createLinearGradient(x, y - 6, x, y + 2); g.addColorStop(0, 'rgba(220,245,255,0.9)'); g.addColorStop(1, 'rgba(124,200,255,0.5)');
-        FK.solid(ctx, '#fff', a); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x, y - 5, d.w * T, 6, 3); ctx.fill();
-        for (let i = 0; i < 4; i++) { const sx = x + ((i * 0.27 + V.now * 0.15) % 1) * d.w * T; FK.glow(ctx, '#ffffff', a * 0.8); ctx.fillRect(sx, y - 4, 6, 1.5); }
+      if (S.trap) {   // the spring trap: a coil on a base plate, with a red trigger
+        const Tr = S.trap, x = V.SX(Tr.x), y = V.SY(Tr.fy), a = Math.min(1, Tr.t / 0.2) * (Tr.life - Tr.t < 2 ? 0.6 + 0.4 * Math.sin(V.now * 20) : 1), up = Tr.sprung > 0 ? T * 0.8 : 0;
+        FK.solid(ctx, '#5a6070', a); ctx.beginPath(); ctx.roundRect(x - T * 0.55, y - T * 0.12, T * 1.1, T * 0.12, 3); ctx.fill();
+        ctx.strokeStyle = '#c9d3e0'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let i = 0; i <= 14; i++) { const u = i / 14; ctx.lineTo(x + Math.sin(u * Math.PI * 6) * T * 0.3, y - T * 0.12 - u * (T * 0.3 + up)); }
+        ctx.stroke();
+        FK.solid(ctx, '#ff5a6e', a); ctx.beginPath(); ctx.roundRect(x - T * 0.42, y - T * 0.5 - up, T * 0.84, T * 0.1, 2); ctx.fill();
+      }
+      if (S.hornT > 0) {   // AIR HORN: sound rings fanning out
+        const f = S.hornF, u = 1 - S.hornT / 0.5, x0 = V.SX(pcx(p) + f * 0.8), y0 = V.SY(pcy(p) - 0.2);
+        for (let i = 0; i < 4; i++) { const r = T * (0.6 + (u * 4.5 + i * 0.9) % 4.5); ctx.beginPath(); ctx.arc(x0, y0, r, f > 0 ? -0.55 : Math.PI - 0.55, f > 0 ? 0.55 : Math.PI + 0.55); FK.glow(ctx, i % 2 ? C_NERVE : '#ffffff', 0.7 * (1 - r / (T * 5.2))); ctx.lineWidth = 3; ctx.stroke(); }
+      }
+      if (S.balloon) {   // the balloon on its string over his head
+        const B = S.balloon, x = V.SX(pcx(p) + 0.2) + Math.sin(V.now * 2 + B.ph) * 3, y = V.SY(p.y - 1.4), r = T * 0.55, a = B.life - B.t < 0.6 ? 0.5 + 0.5 * Math.sin(V.now * 30) : 1;
+        FK.solid(ctx, '#d8d2c4', a); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(V.SX(pcx(p) + 0.15), V.SY(p.y + 0.2)); ctx.quadraticCurveTo(x - 6, y + r * 1.6, x, y + r * 1.1); ctx.stroke();
+        FK.solid(ctx, '#ff5a6e', a); ctx.beginPath(); ctx.ellipse(x, y, r * 0.9, r * 1.1, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x - 3, y + r * 1.15); ctx.lineTo(x + 3, y + r * 1.15); ctx.lineTo(x, y + r * 1.0); ctx.fill();
+        FK.solid(ctx, '#ffffff', 0.55 * a); ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.4, r * 0.18, r * 0.3, -0.5, 0, Math.PI * 2); ctx.fill();
       }
       if (S.cup) {   // the cord and the plunger
         const h = FK.local(V, p, FK.face(p), 0.5, p.h * 0.6), x = V.SX(S.cup.x), y = V.SY(S.cup.y);
         FK.solid(ctx, '#d8d2c4', 1); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h[0], h[1]); ctx.quadraticCurveTo((h[0] + x) / 2, (h[1] + y) / 2 + 10, x, y); ctx.stroke();
-        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(y - h[1], x - h[0]) + Math.PI / 2); plunger(ctx, T / U, PU.form(S)); ctx.restore();
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(y - h[1], x - h[0]) + Math.PI / 2); plunger(ctx, T / U, brave(S)); ctx.restore();
       }
-      if (S.arcT > 0) for (const a of S.arcs) bolt(ctx, V.SX(a[0]), V.SY(a[1]), V.SX(a[2]), V.SY(a[3]), S.arcT / 0.25);
-      PU.draw(ctx, V, S);
+      // NERVE pips over his head (and the time left of Brave Heart as a gold ring)
+      const hx = V.SX(pcx(p)), hy = V.SY(p.y) - T * 0.55;
+      if (brave(S)) {
+        ctx.beginPath(); ctx.arc(hx, hy, T * 0.2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (S.braveT / BRAVE_T)); FK.glow(ctx, C_GOLD, 0.95); ctx.lineWidth = 3; ctx.stroke();
+        FK.solid(ctx, '#fff', 0.95); ctx.font = (T * 0.22 | 0) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('💛', hx, hy + 1);
+      } else if (S.nerve > 0 || S.pipFlash > 0) {
+        for (let i = 0; i < NERVE_MAX; i++) {
+          const x = hx + (i - 1) * T * 0.3, on = i < S.nerve, pulse = on && S.pipFlash > 0 && i === S.nerve - 1 ? 1 + S.pipFlash : 1;
+          ctx.beginPath(); ctx.arc(x, hy, T * 0.09 * pulse, 0, Math.PI * 2);
+          if (on) { FK.glow(ctx, C_NERVE, 0.95); ctx.fill(); } else { FK.solid(ctx, 'rgba(10,10,20,0.55)', 1); ctx.fill(); FK.solid(ctx, C_NERVE, 0.5); ctx.lineWidth = 1.5; ctx.stroke(); }
+        }
+      }
     },
     drawFx(ctx, V, f, u, a) {
-      if (f.k === 'trail') { const y = V.SY(f.y); FK.glow(ctx, f.c, a * 0.6); ctx.lineWidth = V.T * 0.5 * a; ctx.beginPath(); ctx.moveTo(V.SX(f.x0), y); ctx.lineTo(V.SX(f.x1), y); ctx.stroke(); bolt(ctx, V.SX(f.x0), y, V.SX(f.x1), y, a); return true; }
-      if (f.k === 'gust') { const x = V.SX(f.x), y = V.SY(f.y); for (let i = 0; i < 4; i++) { const yy = y - (u * 4 + i * 0.7) * V.T; ctx.beginPath(); ctx.ellipse(x, yy, V.T * (0.6 + i * 0.15), V.T * 0.18, 0, 0, Math.PI * 2); FK.glow(ctx, '#e8fbff', a * 0.6); ctx.lineWidth = 2; ctx.stroke(); } return true; }
+      if (f.k === 'drops') { const x = V.SX(f.x), y = V.SY(f.y); for (let i = 0; i < 4; i++) { const an = -Math.PI / 2 + (i - 1.5) * 0.6; ctx.beginPath(); ctx.arc(x + Math.cos(an) * V.T * (0.4 + u), y + Math.sin(an) * V.T * (0.4 + u) + u * u * V.T, V.T * 0.07, 0, Math.PI * 2); FK.solid(ctx, C_SWEAT, a); ctx.fill(); } return true; }
       return false;
     },
     ai(I) {
       const S = I.S || {};
       if (S.seq) return null;
+      // gadgets: courage when it's close and he has it, the horn when someone is right in front
+      if ((S.nerve || 0) >= 3 && !(S.braveT > 0) && I.adx < 4) return { type: 'key', key: 'b' };
+      if ((S.nerve || 0) >= 2 && I.adx < 3.5 && Math.abs(I.dy) < 1.4 && Math.random() < 0.4) return { type: 'key', key: 'h' };
       if (I.air) {
         if (I.dy < -1.5 && !S.airUp) return { type: 'tap', v: 'up' };
         if (I.dy > 1 && I.adx < 1.2) return { type: 'tap', v: 'down' };
-        if (I.adx < 1.6 && Math.abs(I.dy) < 1.4) return { type: 'tap', v: '' };
-        if (I.adx < 6 && Math.abs(I.dy) < 1.5) return { type: 'tap', v: 'side' };
+        if (I.adx < 1.7 && Math.abs(I.dy) < 1.5) return { type: 'tap', v: '' };
+        if (I.adx < 2.6 && Math.abs(I.dy) < 1.2) return { type: 'tap', v: 'side' };
         return null;
       }
-      if (I.adx < 1.9 && Math.abs(I.dy) < 1.2) return { type: 'tap', v: Math.random() < 0.5 ? '' : 'down' };
+      if (I.adx < 1.4 && Math.abs(I.dy) < 1.2 && Math.random() < 0.25) return { type: 'tap', v: 'down' };   // duck & cover
+      if (I.adx < 2.3 && Math.abs(I.dy) < 1.2) return { type: 'tap', v: '' };
       if (I.dy < -1.5 && I.adx < 1.5) return { type: 'tap', v: 'up' };
       if (I.adx < 7 && Math.abs(I.dy) < 1) return { type: 'tap', v: 'side' };
       return null;
     },
+    keys: {
+      k: () => { const p = window._gamePlayer; useGadget(null, H.state(), p); },
+      b: () => useGadget('brave', H.state(), window._gamePlayer),
+      h: () => useGadget('horn', H.state(), window._gamePlayer),
+    },
   });
+
+  // ---------------------------------------------------------------- the 🎒 touch button and the K key
+  let btn = null;
+  function syncBtn(S) {
+    if (!btn) {
+      btn = document.createElement('button'); btn.id = 'lbGadgetBtn';
+      btn.style.cssText = 'position:absolute;right:16px;top:136px;z-index:100;width:54px;height:54px;border-radius:50%;display:none;flex-direction:column;align-items:center;justify-content:center;font-size:20px;line-height:1;color:#fff;border:2px solid ' + C_NERVE + ';background:radial-gradient(circle at 35% 30%,rgba(60,196,87,.9),rgba(20,60,30,.92));box-shadow:0 3px 10px rgba(0,0,0,.45);touch-action:none;user-select:none;-webkit-user-select:none';
+      btn.innerHTML = '🎒<small style="font-size:8px;font-weight:800;margin-top:2px;letter-spacing:.04em">○○○</small>';
+      const go = ev => { ev.preventDefault(); ev.stopPropagation(); pressGadget(); };
+      btn.addEventListener('touchstart', go, { passive: false }); btn.addEventListener('mousedown', go);
+      document.body.appendChild(btn);
+    }
+    const on = window.selectedCharacter === ID && (!window._gameMode || window._gameMode() === 'play');
+    const d = on ? 'flex' : 'none';
+    if (btn.style.display !== d) btn.style.display = d;
+    if (!on || !S) return;
+    const txt = brave(S) ? 'BRAVE' : '●●●'.slice(0, S.nerve) + '○○○'.slice(0, NERVE_MAX - S.nerve), sm = btn.querySelector('small');
+    if (sm.textContent !== txt) sm.textContent = txt;
+    const op = S.nerve > 0 && !brave(S) ? '1' : '0.55';
+    if (btn.style.opacity !== op) btn.style.opacity = op;
+  }
+  window.addEventListener('keydown', e => {
+    if (e.repeat || !e.key || window.selectedCharacter !== ID) return;
+    if (e.key.toLowerCase() === 'k') pressGadget();
+  });
+  (window._onPlayerReset = window._onPlayerReset || []).push(() => { try { const S = H.state(); if (S) { S.trap = null; S.balloon = null; } } catch (e) {} });
+  (window._rafHubTickers = window._rafHubTickers || []).push(() => { try { syncBtn(!window._fighterPass ? H.state() : null); } catch (e) {} });
 
   function shoe(ctx, at, s, k) {
     ctx.fillStyle = C_SHOE; ctx.beginPath(); ctx.roundRect(at[0] - 1.6 * s, at[1] - 1.4 * s, 5.4 * s * k, 2.6 * s, 1.3 * s); ctx.fill();
     ctx.fillStyle = '#c94a4a'; ctx.fillRect(at[0] - 1.6 * s, at[1] + 0.7 * s, 5.4 * s * k, 0.6 * s);
   }
-  function plunger(ctx, s, fm) {   // the handle along -y from the grip, the rubber cup at the end
+  function plunger(ctx, s, gold) {   // the handle along -y from the grip, the rubber cup at the end
     ctx.fillStyle = '#c99a5a'; ctx.fillRect(-0.6 * s, -9 * s, 1.2 * s, 10.5 * s);
-    ctx.fillStyle = fm === 'frost' ? '#9fd8ff' : fm === 'volt' ? '#ffd84a' : '#d63a4a';
+    ctx.fillStyle = gold ? C_GOLD : '#d63a4a';
     ctx.beginPath(); ctx.moveTo(-0.8 * s, -9 * s); ctx.quadraticCurveTo(-3.4 * s, -10 * s, -3.2 * s, -12.6 * s); ctx.lineTo(3.2 * s, -12.6 * s); ctx.quadraticCurveTo(3.4 * s, -10 * s, 0.8 * s, -9 * s); ctx.fill();
   }
-  function scarf(ctx, K, s, t, S, fm) {
-    const nx = K.neck[0], ny = K.neck[1] + s;
+  function airHorn(ctx, s) {   // a red can with a white trumpet bell
+    ctx.fillStyle = '#e8392b'; ctx.beginPath(); ctx.roundRect(-2 * s, -6 * s, 4 * s, 7 * s, 1 * s); ctx.fill();
+    ctx.fillStyle = '#f2efe8'; ctx.beginPath(); ctx.moveTo(-0.8 * s, -6 * s); ctx.lineTo(-3.4 * s, -12 * s); ctx.lineTo(3.4 * s, -12 * s); ctx.lineTo(0.8 * s, -6 * s); ctx.fill();
+  }
+  function scarf(ctx, K, s, t, S, gold) {
+    const nx = K.neck[0], ny = K.neck[1] + s, c1 = gold ? C_GOLD : C_SCARF, c2 = gold ? C_GOLD2 : C_SCARF2;
     if (S && S.rotor) {   // copter: two scarf ends spinning overhead
       const cxr = K.head[0], cyr = K.head[1] - K.hr * 1.9, a = S.rotor * 40;
-      for (let i = 0; i < 2; i++) { const an = a + i * Math.PI; ctx.fillStyle = i ? C_SCARF2 : C_SCARF; ctx.beginPath(); ctx.ellipse(cxr + Math.cos(an) * 7 * s, cyr, 7 * s, 1.6 * s, 0, 0, Math.PI * 2); ctx.fill(); }
+      for (let i = 0; i < 2; i++) { const an = a + i * Math.PI; ctx.fillStyle = i ? c2 : c1; ctx.beginPath(); ctx.ellipse(cxr + Math.cos(an) * 7 * s, cyr, 7 * s, 1.6 * s, 0, 0, Math.PI * 2); ctx.fill(); }
       return;
     }
-    if (fm === 'gale') {   // wings
-      for (let side = -1; side <= 1; side += 2) {
-        const flap = Math.sin(t * (S && S.gliding ? 4 : 9)) * 0.35;
-        ctx.save(); ctx.translate(nx - 2 * s, ny + 2 * s); ctx.rotate(-0.4 + side * 0.15 + flap);
-        ctx.fillStyle = side < 0 ? '#bfeaff' : '#ffffff'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-14 * s, -10 * s, -20 * s, -2 * s); ctx.quadraticCurveTo(-12 * s, 0, -16 * s, 4 * s); ctx.quadraticCurveTo(-8 * s, 3 * s, 0, 3 * s); ctx.fill(); ctx.restore();
-      }
-    }
-    const pts = [];   // a long scarf end streaming backwards, waving
-    for (let i = 0; i <= 8; i++) { const u = i / 8; pts.push([nx - u * 14 * s, ny + u * 4 * s + Math.sin(t * 8 - u * 5) * u * 3 * s]); }
+    const L = gold ? 20 : 14, pts = [];   // a long scarf end streaming backwards, waving (longer, a blazing cape when brave)
+    for (let i = 0; i <= 8; i++) { const u = i / 8; pts.push([nx - u * L * s, ny + u * (gold ? 6 : 4) * s + Math.sin(t * (gold ? 12 : 8) - u * 5) * u * 3 * s]); }
     ctx.lineCap = 'round';
-    for (let i = 0; i < pts.length - 1; i++) { ctx.strokeStyle = i % 2 ? C_SCARF2 : C_SCARF; ctx.lineWidth = (3.4 - i * 0.2) * s; ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]); ctx.stroke(); }
-    ctx.fillStyle = C_SCARF; ctx.beginPath(); ctx.ellipse(nx, ny, 4.2 * s, 2.2 * s, 0, 0, Math.PI * 2); ctx.fill();
-  }
-  function bolt(ctx, x0, y0, x1, y1, a) {
-    const n = 8; ctx.beginPath(); ctx.moveTo(x0, y0);
-    for (let i = 1; i < n; i++) { const u = i / n; ctx.lineTo(x0 + (x1 - x0) * u + (Math.random() - 0.5) * 14, y0 + (y1 - y0) * u + (Math.random() - 0.5) * 14); }
-    ctx.lineTo(x1, y1); FK.glow(ctx, '#ffe14d', a); ctx.lineWidth = 3; ctx.stroke(); FK.glow(ctx, '#ffffff', a); ctx.lineWidth = 1.2; ctx.stroke();
+    for (let i = 0; i < pts.length - 1; i++) { ctx.strokeStyle = i % 2 ? c2 : c1; ctx.lineWidth = ((gold ? 4.6 : 3.4) - i * 0.2) * s; ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]); ctx.stroke(); }
+    if (gold) {   // flames licking off the end
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 3; i++) { const e = pts[8], ph = (t * 3 + i / 3) % 1; ctx.fillStyle = i % 2 ? 'rgba(255,138,26,0.6)' : 'rgba(255,224,90,0.6)'; ctx.beginPath(); ctx.arc(e[0] - ph * 6 * s, e[1] - ph * 5 * s, (1 - ph) * 2.4 * s, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
+    ctx.fillStyle = c1; ctx.beginPath(); ctx.ellipse(nx, ny, 4.2 * s, 2.2 * s, 0, 0, Math.PI * 2); ctx.fill();
   }
 })();

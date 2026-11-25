@@ -3,7 +3,8 @@
  * its moves, its animation and its look.
  *
  *  - PPParry: the parry outside Smash (Guardian's Counter and any fighter's _parryT). A close attacker is
- *    countered; a shot, or a hit from range, is reflected back at the nearest foe as a homing bolt.
+ *    countered; a shot, or a hit from range, is reflected back at the nearest foe as a homing bolt. With _dodgeT
+ *    set as well it is a pure dodge instead (L-Brother's flinch): the hit misses and nothing is sent back.
  *    (Smash has its own version in smash.js.)
  *  - FKit.define(spec): registers a fighter. It owns the state swap for a second fighter (Smash CPU), the
  *    S button (S + direction, ground and air, held S charges), the per-frame tick, drawing hooks, the capsule
@@ -403,6 +404,7 @@
       FK.hitstop(0.08); FK.shake(6); FK.tone(1200, { dur: 0.12, vol: 0.18 }); FK.tone(1800, { dur: 0.2, vol: 0.12, delay: 0.03 });
       const melee = !proj && near && nd < 2.8;
       p._parryFar = !melee; p._parryDir = near ? (Math.sign(FK.ex(near) - cx) || 1) : FK.face(p);
+      if (p._dodgeT > 0) { p._dodgeT = 0; FK.msg('😱 FLINCH! Dodged it.'); return; }   // a pure dodge (L-Brother's flinch): no counter, no reflect
       if (melee) {
         if (p._parryGrab) {}   // a grappler's parry turns into its own grab
         else if (window.selectedCharacter === 'cb_protagonist' && window.protagFireRetaliateCounter) window.protagFireRetaliateCounter();
@@ -556,6 +558,7 @@
       S.selfMove = false;
       if (S.atkCD > 0) S.atkCD = Math.max(0, S.atkCD - dt);
       if (p._parryT > 0) p._parryT = Math.max(0, p._parryT - dt);
+      if (p._dodgeT > 0) p._dodgeT = Math.max(0, p._dodgeT - dt);
       if (p._armorT > 0) p._armorT = Math.max(0, p._armorT - dt);
       if (p._grabInv > 0) p._grabInv = Math.max(0, p._grabInv - dt);
       if (window._fighterPass && p._parried > 0) p._parried -= dt;   // (yours wears off in PPParry's tick)
