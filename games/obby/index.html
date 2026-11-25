@@ -12617,7 +12617,7 @@ function resetPlayer() {
         performProtagAttackRelease(heldMs);
       }
     };
-    // Flick to aim. Thumb on ⚔️, then flick up or down = up/down attack; a tap = normal attack.
+    // Flick to aim. Thumb on ⚔️, then flick up, down, left or right = that direction's attack; a tap = normal attack.
     //  - Nothing fires on touch-down. It fires the moment the thumb has moved FLICK_PX (aimed if the move
     //    is mostly up or down), on release if it never moved (a tap), or after the flick window if the
     //    thumb is just resting there (so holding / charging still works). Window 0 = off, instant attack.
@@ -12626,14 +12626,16 @@ function resetPlayer() {
     //    the engine reads the direction only when that move starts (and a charged move when it's released),
     //    by which time the thumb is usually gone. So each press carries its aim and gets it back then.
     const FLICK_PX = 10;
-    const fl = { id: null, x0: 0, y0: 0, fired: false, timer: 0, aim: null };
+    const fl = { id: null, x0: 0, y0: 0, ax: 0, ay: 0, fired: false, timer: 0, aim: null, box: null };
     const withAim = (aim, fn) => {
       if (!aim) return fn();
-      const pu = mobileKeys.up, pd = mobileKeys.down;
+      const pu = mobileKeys.up, pd = mobileKeys.down, pl = mobileKeys.left, pr = mobileKeys.right;
       mobileKeys.up = aim === 'up'; mobileKeys.down = aim === 'down';
-      try { return fn(); } finally { mobileKeys.up = pu; mobileKeys.down = pd; }
+      if (aim === 'left' || aim === 'right') { mobileKeys.left = aim === 'left'; mobileKeys.right = aim === 'right'; player.lastMoveDir = player.dashDir = aim === 'left' ? -1 : 1; }   // a side flick: the side move, that way
+      try { return fn(); } finally { mobileKeys.up = pu; mobileKeys.down = pd; mobileKeys.left = pl; mobileKeys.right = pr; }
     };
     let pressAim = null;          // the aim of the ⚔️ press being handled right now
+    let pressBox = null;          // { aim } of that press: a later flick while it charges changes it (re-aim a charge)
     let strikeHooked = false;
     const hookStrike = () => {
       if (strikeHooked || !window.PPStrike) return;
@@ -12648,8 +12650,8 @@ function resetPlayer() {
         return spec;
       };
       S.press = function (resolve, chargeable) {
-        const aim = pressAim;
-        return origPress.call(this, aim ? () => aimSpec(aim, withAim(aim, resolve)) : resolve, chargeable);
+        const box = pressBox;   // read when the move resolves (a charge: when it is let go), so a re-aim counts
+        return origPress.call(this, box ? () => aimSpec(box.aim, withAim(box.aim, resolve)) : resolve, chargeable);
       };
       S.start = function (spec) {
         return origStart.call(this, pressAim ? aimSpec(pressAim, spec) : spec);
@@ -12664,8 +12666,8 @@ function resetPlayer() {
     const WAIT_MAX = 600;
     const waiting = { on: false, aim: null, until: 0, released: false };
     const pressNow = aim => {
-      pressAim = aim;
-      try { withAim(aim, () => doAction(NOEV)); } finally { pressAim = null; }
+      pressAim = aim; pressBox = fl.box = { aim };
+      try { withAim(aim, () => doAction(NOEV)); } finally { pressAim = null; pressBox = null; }
     };
     const pollWaiting = () => {
       if (!waiting.on) return;
@@ -12695,16 +12697,23 @@ function resetPlayer() {
       if (fl.id !== null) return;
       const t = e.changedTouches[0];
       const win = window._settingFlickWindow | 0;
-      fl.id = t.identifier; fl.x0 = t.clientX; fl.y0 = t.clientY; fl.fired = false; fl.aim = null;
+      fl.id = t.identifier; fl.x0 = fl.ax = t.clientX; fl.y0 = fl.ay = t.clientY; fl.fired = false; fl.aim = null; fl.box = null;
       if (win <= 0) { flickFire(null); return; }
       fl.timer = setTimeout(() => flickFire(null), win);
     }, { passive: false });
     slashBtnEl.addEventListener('touchmove', e => {
       e.preventDefault();
-      const t = findT(e.changedTouches); if (!t || fl.fired) return;
-      const dx = t.clientX - fl.x0, dy = t.clientY - fl.y0;
-      if (dx * dx + dy * dy < FLICK_PX * FLICK_PX) return;
-      flickFire(Math.abs(dy) >= Math.abs(dx) * 0.7 ? (dy < 0 ? 'up' : 'down') : null);
+      const t = findT(e.changedTouches); if (!t) return;
+      const dx = t.clientX - fl.ax, dy = t.clientY - fl.ay, aimOf = () => Math.abs(dy) >= Math.abs(dx) * 0.7 ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right');
+      if (!fl.fired) {
+        if (dx * dx + dy * dy < FLICK_PX * FLICK_PX) return;
+        fl.ax = t.clientX; fl.ay = t.clientY; flickFire(aimOf()); return;
+      }
+      // already pressed and still held (charging): a new flick re-aims it; the move it lets loose is the new direction's
+      if (dx * dx + dy * dy < (FLICK_PX * 1.8) * (FLICK_PX * 1.8)) return;
+      const a = aimOf(); fl.ax = t.clientX; fl.ay = t.clientY;
+      if (a === fl.aim) return;
+      fl.aim = a; if (fl.box) fl.box.aim = a; if (waiting.on) waiting.aim = a; setHold(a);
     }, { passive: false });
     const flickRelease = e => {
       const t = findT(e.changedTouches); if (!t) return;
