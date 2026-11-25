@@ -208,6 +208,9 @@
 
     if (!document.getElementById('qrl-css')){ var st = el('style', { id:'qrl-css' }); st.textContent = CSS; document.head.appendChild(st); }
     root = el('div', { id:'qrl' }); if (opts.accent) root.style.setProperty('--qrl-acc', opts.accent);
+    // Typing a code must not move the game underneath: keys pressed in our boxes stop here, so a game's
+    // controls (W, A, S, D, space...) never see them and never swallow the letter.
+    ['keydown', 'keyup', 'keypress'].forEach(function(t){ root.addEventListener(t, function(e){ var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA')) e.stopPropagation(); }); });
     document.body.appendChild(root);
 
     function screen(kids){ stopCam(); root.innerHTML = ''; kids.forEach(function(k){ if (k) root.appendChild(k); }); }
