@@ -14,7 +14,9 @@
  *    top of the wall and you VAULT over it. Works on the stage's sides in Smash too.
  *  - KITE RIDE: hold jump while falling to hang from the kite: you float, steer and get a short lift.
  *
- * 8 MOVES (S / ⚔️ + a direction). Hold S to charge any of them into a stronger version.
+ * 8 MOVES (S / ⚔️ + a direction). Hold S to charge any of them into a stronger version. A FULL charge is her own
+ * special instead (ground / air): neutral EYE OF THE STORM / KITE CONSTELLATION, side GALE WALL / SONIC BOOM,
+ * up CYCLONE PILLAR / THERMAL, down DOWNBURST / HAILSTORM.
  *  Ground: neutral KITE LASH (2 hits: down, then a snap back up), side KITE REEL (long range, many hits,
  *          drags the foe to you), up UPDRAFT VENT (lasting launcher you can ride), down DOWNBURST (charged: TWISTER).
  *  Air:    neutral PINWHEEL (many hits, holds foes in the wheel), side SLIPSTREAM, up JETSTREAM, down DIVE KICK (spike, pogo).
@@ -186,7 +188,7 @@
     }
   }
   function resetKit() {
-    fx.length = 0; vents.length = 0; twisters.length = 0; trail.length = 0;
+    fx.length = 0; cs.length = 0; vents.length = 0; twisters.length = 0; trail.length = 0;
     slip = dive = carry = wr = ride = null;
     atkCD = 0; airUpUsed = airSideUsed = false; tw = 0; twHold = 0; wrStam = 1; wrLastSide = 0; rideLift = 0.35;
     kite = null; lastPX = lastPY = null;
@@ -261,6 +263,88 @@
     },
   };
 
+  // ---------------------------------------------------------------- CHARGED SPECIALS (hold S to full)
+  // Each is a little piece of weather of its own (cs), stepped and drawn here, kept per fighter (Smash CPU) in swap().
+  const cs = [];
+  function nearestFoe(x, y, R) { let b = null, bd = R; for (const e of foes()) { const d = Math.hypot(ex(e) - x, ey(e) - y); if (d < bd) { bd = d; b = e; } } return b; }
+  const CHARGED = {
+    neutral(p, f, air) {
+      if (air) { for (let i = 0; i < 5; i++) cs.push({ k: 'star', a: i / 5 * Math.PI * 2, t: 0, x: pcx(p), y: pcy(p), e: null, life: 2.2 }); chime(5); return 'KITE CONSTELLATION'; }
+      cs.push({ k: 'eye', t: 0, life: 1.3, cool: new Map() }); whoosh(true, true); return 'EYE OF THE STORM';
+    },
+    side(p, f, air) {
+      if (air) { const x0 = pcx(p); let d = 0; while (d < 7 && !blocked(p.x + f * (d + 0.25), p.y + 0.02, p.w, p.h - 0.04)) d += 0.25; p.x += f * d; p.vx = f * 4; p.vy = Math.min(p.vy, -2); airSideUsed = true; cs.push({ k: 'boom', t: 0, x0, x1: pcx(p), y: pcy(p), f, done: false }); noise({ dur: 0.15, cut: 6000, q: 1, vol: 0.25 }); return 'SONIC BOOM'; }
+      cs.push({ k: 'wall', t: 0, x: pcx(p) + f * 0.8, y: p.y + p.h, f, life: 1.1, carry: new Set() }); whoosh(false, true); return 'GALE WALL';
+    },
+    up(p, f, air) {
+      if (air) { airUpUsed = true; cs.push({ k: 'thermal', t: 0, life: 1.4 }); tone(300, { dur: 1.2, vol: 0.08, slide: 700 }); return 'THERMAL'; }
+      const x = pcx(p) + f * 2.2; cs.push({ k: 'cyclone', t: 0, x, fy: p.y + p.h, life: 3.2, cool: new Map() }); whoosh(true, true); return 'CYCLONE PILLAR';
+    },
+    down(p, f, air) {
+      if (air) { cs.push({ k: 'hail', t: 0, x: pcx(p), y: p.y - 3, life: 1.6, n: 0 }); return 'HAILSTORM'; }
+      const e = nearestFoe(pcx(p), pcy(p), 8), x = e ? ex(e) : pcx(p) + f * 3;
+      cs.push({ k: 'burst', t: 0, x, fy: e ? e.y + (e.h || 0.9) : p.y + p.h, e, done: false }); tone(200, { dur: 0.5, vol: 0.12, slide: 60 }); return 'DOWNBURST';
+    },
+  };
+  function stepCS(p, dt) {
+    const enemies = foes();
+    for (let i = cs.length - 1; i >= 0; i--) {
+      const c = cs[i]; c.t += dt; let gone = false;
+      if (c.k === 'eye') {   // foes pulled into an orbit round her, shredded, then flung away
+        for (const [e, v] of c.cool) { if (v - dt <= 0) c.cool.delete(e); else c.cool.set(e, v - dt); }
+        for (const e of within(pcx(p), pcy(p), 3.6)) { if (!canDrag(e)) continue; const a = Math.atan2(ey(e) - pcy(p), ex(e) - pcx(p)) + dt * 6; drag(e, pcx(p) + Math.cos(a) * 1.6, pcy(p) + Math.sin(a) * 1.3, 18, dt); if (!c.cool.has(e)) { c.cool.set(e, 0.15); hit(e, 0.6, { stun: 0.3, noWind: true }); } }
+        if (c.t >= c.life) { for (const e of within(pcx(p), pcy(p), 3)) hit(e, 4, { kx: (Math.sign(ex(e) - pcx(p)) || 1) * 14, ky: -10, stun: 0.5, big: true }); chime(3); shake(6); gone = true; }
+      } else if (c.k === 'wall') {   // a wall of wind that pushes everything ahead of it and slams it at the end
+        const nx = c.x + c.f * 12 * dt, stop = blocked(nx - 0.2, c.y - 1.6, 0.4, 1.4);
+        if (!stop) c.x = nx;
+        for (const e of enemies) if (Math.abs(ex(e) - c.x) < 0.9 && ey(e) > c.y - 2.4 && ey(e) < c.y + 0.3) c.carry.add(e);
+        for (const e of c.carry) if (!e.dead && canDrag(e)) drag(e, c.x + c.f * 0.7, ey(e) - 0.02, 20, dt);
+        if (stop || c.t >= c.life) { for (const e of c.carry) if (!e.dead) hit(e, stop ? 6 : 4, { kx: c.f * (stop ? 3 : 14), ky: -11, stun: 0.6, big: true }); shake(stop ? 8 : 4); gone = true; }
+      } else if (c.k === 'cyclone') {   // a standing tornado: spins foes upward over and over; she can ride it up too
+        for (const [e, v] of c.cool) { if (v - dt <= 0) c.cool.delete(e); else c.cool.set(e, v - dt); }
+        for (const e of enemies) if (Math.abs(ex(e) - c.x) < 0.9 && ey(e) < c.fy + 0.3 && ey(e) > c.fy - 4.5 && !c.cool.has(e)) { c.cool.set(e, 0.35); hit(e, 1.2, { kx: (Math.random() - 0.5) * 4, ky: -14, stun: 0.4, noWind: true }); }
+        if (Math.abs(pcx(p) - c.x) < 0.9 && pcy(p) < c.fy + 0.3 && pcy(p) > c.fy - 4.5) { p.vy = Math.min(p.vy, -9); p.onGround = false; airUpUsed = false; }
+        if (c.t >= c.life) gone = true;
+      } else if (c.k === 'burst') {   // DOWNBURST: a column of air slams down from the sky, then spreads along the floor
+        if (c.e && !c.e.dead && c.t < 0.4) { c.x = ex(c.e); c.fy = c.e.y + (c.e.h || 0.9); }
+        if (c.t >= 0.4 && !c.done) { c.done = true; for (const e of enemies) if (Math.abs(ex(e) - c.x) < 1.1 && ey(e) < c.fy + 0.2) hit(e, 6, { kx: 0, ky: 16, stun: 0.7, big: true }); for (const e of within(c.x, c.fy - 0.4, 2.8)) if (Math.abs(ex(e) - c.x) >= 1.1) hit(e, 2.5, { kx: (Math.sign(ex(e) - c.x) || 1) * 10, ky: -5, stun: 0.4 }); shake(9); noise({ dur: 0.4, cut: 500, q: 1, vol: 0.3 }); }
+        if (c.t > 0.8) gone = true;
+      } else if (c.k === 'star') {   // KITE CONSTELLATION: phantom kites circle her, then dart at the nearest foes
+        if (c.t < 0.5) { c.a += dt * 7; c.x = pcx(p) + Math.cos(c.a) * 1.4; c.y = pcy(p) + Math.sin(c.a) * 1.1; }
+        else { if (!c.e || c.e.dead) c.e = nearestFoe(c.x, c.y, 10); if (c.e) { const dx = ex(c.e) - c.x, dy = ey(c.e) - c.y, d = Math.hypot(dx, dy) || 1; c.x += dx / d * 20 * dt; c.y += dy / d * 20 * dt; if (d < 0.6) { hit(c.e, 2.5, { kx: Math.sign(dx || 1) * 7, ky: -6, stun: 0.4, big: true }); gone = true; } } else gone = c.t > 1; }
+        if (c.t >= c.life) gone = true;
+      } else if (c.k === 'boom') {   // SONIC BOOM: the shockwave catches up a moment after she has passed
+        if (c.t >= 0.3 && !c.done) { c.done = true; const lo = Math.min(c.x0, c.x1) - 0.6, hi = Math.max(c.x0, c.x1) + 0.6; for (const e of enemies) if (ex(e) > lo && ex(e) < hi && Math.abs(ey(e) - c.y) < 1.4) hit(e, 5, { kx: c.f * 12, ky: -9, stun: 0.6, big: true }); noise({ dur: 0.35, cut: 300, q: 1, vol: 0.35 }); shake(8); }
+        if (c.t > 0.6) gone = true;
+      } else if (c.k === 'thermal') {   // THERMAL: a warm updraft lifts her high; it throws foes below her up
+        p.vy = Math.max(-8, Math.min(p.vy, -6)); p.onGround = false;
+        for (const e of enemies) if (Math.abs(ex(e) - pcx(p)) < 1 && ey(e) > pcy(p) && ey(e) < pcy(p) + 4) { if (!c.h) c.h = new Set(); if (!c.h.has(e)) { c.h.add(e); hit(e, 2.5, { kx: 0, ky: -15, stun: 0.5 }); } }
+        if (c.t >= c.life) gone = true;
+      } else if (c.k === 'hail') {   // HAILSTORM: a little cloud over the spot, hail hammering down below it
+        if (Math.floor(c.t / 0.1) !== c.n) { c.n = Math.floor(c.t / 0.1); const x = c.x + (Math.random() - 0.5) * 3; cs.push({ k: 'stone', t: 0, x, y: c.y + 0.4, vy: 14 }); }
+        if (c.t >= c.life) gone = true;
+      } else if (c.k === 'stone') {
+        c.y += c.vy * dt;
+        for (const e of enemies) if (Math.abs(ex(e) - c.x) < 0.5 && Math.abs(ey(e) - c.y) < 0.6) { hit(e, 1.2, { kx: 0, ky: 6, stun: 0.3, noWind: true }); gone = true; break; }
+        if (blocked(c.x - 0.05, c.y, 0.1, 0.1) || c.t > 1.5) gone = true;
+      }
+      if (gone) cs.splice(i, 1);
+    }
+  }
+  function drawCS(ctx, SX, SY, T, now, p) {
+    for (const c of cs) {
+      if (c.k === 'eye') { const x = SX(pcx(p)), y = SY(pcy(p)); for (let i = 0; i < 3; i++) crescent(ctx, x, y, T * (1.2 + i * 0.6), now * (6 - i) + i, now * (6 - i) + i + 2.2, 4, i % 2 ? C_SKY : C_MINT, 0.6); }
+      else if (c.k === 'wall') { const x = SX(c.x), y = SY(c.y); for (let i = 0; i < 6; i++) { const yy = y - i * T * 0.4, ph = Math.sin(now * 20 + i) * 4; glow(ctx, i % 2 ? C_SKY : C_WHITE, 0.55); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - c.f * T * 0.6 + ph, yy); ctx.quadraticCurveTo(x + c.f * T * 0.3, yy - T * 0.2, x + c.f * T * 0.1 + ph, yy - T * 0.35); ctx.stroke(); } }
+      else if (c.k === 'cyclone') { const x = SX(c.x), y = SY(c.fy), a = Math.min(1, c.t / 0.2) * Math.min(1, (c.life - c.t) / 0.4); for (let i = 0; i < 9; i++) { const yy = y - i * T * 0.5, w = T * (0.3 + i * 0.12); glow(ctx, i % 2 ? C_SKY : C_MINT, 0.5 * a); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(x + Math.sin(now * 5 + i) * 4, yy, w, T * 0.14, 0, now * 9 + i, now * 9 + i + 4.5); ctx.stroke(); } }
+      else if (c.k === 'burst') { const x = SX(c.x), y = SY(c.fy); if (!c.done) { glow(ctx, C_WHITE, 0.25 + c.t); ctx.fillRect(x - T * 0.9, y - T * 8 * (c.t / 0.4), T * 1.8, T * 8 * (c.t / 0.4)); ctx.beginPath(); ctx.ellipse(x, y, T * 1.1, T * 0.25, 0, 0, Math.PI * 2); ctx.stroke(); } else { const u = (c.t - 0.4) / 0.4; glow(ctx, C_SKY, 0.8 * (1 - u)); ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(x, y, T * (1 + u * 2.5), T * 0.3, 0, 0, Math.PI * 2); ctx.stroke(); } }
+      else if (c.k === 'star') drawKite(ctx, SX(c.x), SY(c.y), now * 6, T * 0.6, now, 0.9);
+      else if (c.k === 'boom') { const y = SY(c.y), a = c.done ? 1 - (c.t - 0.3) / 0.3 : 0.3; glow(ctx, C_WHITE, a); ctx.lineWidth = c.done ? 6 : 2; ctx.beginPath(); ctx.moveTo(SX(c.x0), y); ctx.lineTo(SX(c.x1), y); ctx.stroke(); if (c.done) for (let i = 0; i < 4; i++) { const xx = SX(c.x0 + (c.x1 - c.x0) * (i + 0.5) / 4); ctx.beginPath(); ctx.arc(xx, y, T * (0.5 + (c.t - 0.3) * 4), 0, Math.PI * 2); ctx.stroke(); } }
+      else if (c.k === 'thermal') { const x = SX(pcx(p)), y = SY(p.y + p.h); for (let i = 0; i < 5; i++) { const ph = (now * 2 + i / 5) % 1; glow(ctx, '#ffb38a', 0.5 * (1 - ph)); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y + T * (3 - ph * 3), T * (0.5 + ph * 0.4), T * 0.12, 0, 0, Math.PI * 2); ctx.stroke(); } }
+      else if (c.k === 'hail') { const x = SX(c.x), y = SY(c.y), a = Math.min(1, (c.life - c.t) / 0.3); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.85 * a; ctx.fillStyle = '#9aa6b8'; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(x + (i - 2) * T * 0.45, y + Math.sin(i * 2) * T * 0.15, T * 0.45, 0, Math.PI * 2); ctx.fill(); } }
+      else if (c.k === 'stone') { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#e6f6ff'; ctx.beginPath(); ctx.arc(SX(c.x), SY(c.y), T * 0.1, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+
   const _prevSlash = window.performSlash;
   window.performSlash = function () {
     if (window.selectedCharacter !== ID) { if (_prevSlash) return _prevSlash.apply(this, arguments); return; }
@@ -281,7 +365,7 @@
       pw = pw || 0;
       if (!kite) kite = newKite(q);
       atkCD = sel.mv.cd;
-      const own = ACT[sel.key](q, sel.f, pw);
+      const dk = sel.key.split('_')[1], own = pw >= 0.95 && CHARGED[dk] ? CHARGED[dk](q, sel.f, sel.key.indexOf('air') === 0) : ACT[sel.key](q, sel.f, pw);
       const name = own || (pw > 0.3 ? sel.mv.big : sel.mv.name.toUpperCase());
       label(q, name, pw > 0.3 || own ? C_GOLD : C_MINT, pw > 0.3);
       msg('🪁 ' + name + '!');
@@ -446,6 +530,7 @@
     if (!kite) kite = newKite(p);
 
     if (atkCD > 0) atkCD = Math.max(0, atkCD - dt);
+    stepCS(p, dt);
     if (p.onGround) { airUpUsed = false; airSideUsed = false; wrStam = 1; wrLastSide = 0; rideLift = 0.35; wr = null; }
 
     // TAILWIND: builds while you run one way, fades when you stop or turn
@@ -746,6 +831,7 @@
     ctx.save();
     ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.shadowBlur = 0;
 
+    try { drawCS(ctx, SX, SY, T, now, p); } catch (e) {}
     // afterimages
     for (const g of trail) { const u = g.t / 0.22; ghost(ctx, SX(g.x), SY(g.y), g.w * T, g.h * T, 0.35 * (1 - u), u < 0.4 ? C_SKY : C_MINT); }
 
@@ -895,13 +981,13 @@
   (window._fighterPlugins = window._fighterPlugins || []).push({ name: 'gale', char: ID,
     swap(s) {
       const o = { active, atkCD, tw, twSaid, twHold, airUpUsed, airSideUsed, lastDir, lastPX, lastPY, prevJump, kite, wr, wrStam, wrLastSide, ride, rideLift, slip, dive, carry,
-        kiteBusy: kiteBusy(), fx: fx.splice(0), vents: vents.splice(0), twisters: twisters.splice(0), trail: trail.splice(0) };
+        kiteBusy: kiteBusy(), fx: fx.splice(0), vents: vents.splice(0), twisters: twisters.splice(0), trail: trail.splice(0), cs: cs.splice(0) };
       s = s || { active: true };
       active = !!s.active; atkCD = s.atkCD || 0; tw = s.tw || 0; twSaid = s.twSaid || 0; twHold = s.twHold || 0; airUpUsed = !!s.airUpUsed; airSideUsed = !!s.airSideUsed; lastDir = s.lastDir || 1;
       lastPX = s.lastPX != null ? s.lastPX : null; lastPY = s.lastPY != null ? s.lastPY : null; prevJump = !!s.prevJump;
       kite = s.kite || null; wr = s.wr || null; wrStam = s.wrStam == null ? 1 : s.wrStam; wrLastSide = s.wrLastSide || 0; ride = s.ride || null; rideLift = s.rideLift == null ? 0.35 : s.rideLift;
       slip = s.slip || null; dive = s.dive || null; carry = s.carry || null;
-      if (s.fx) fx.push(...s.fx); if (s.vents) vents.push(...s.vents); if (s.twisters) twisters.push(...s.twisters); if (s.trail) trail.push(...s.trail);
+      if (s.fx) fx.push(...s.fx); if (s.vents) vents.push(...s.vents); if (s.twisters) twisters.push(...s.twisters); if (s.trail) trail.push(...s.trail); if (s.cs) cs.push(...s.cs);
       statKey = -1; if (window._gtCharStatCache && window._gtCharStatCache[ID]) window._gtCharStatCache[ID] = stats();   // speed follows whoever's turn it is
       return o;
     },
