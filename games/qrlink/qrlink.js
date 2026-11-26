@@ -414,10 +414,43 @@
       if (finished) return;
       if (!c.dataChannel || !c.peerConnection) { quickFail({ message: 'no data channel' }); return; }
       finished = true; pc = c.peerConnection; dc = c.dataChannel;
+      var pr = peer; peer = null;
+      // From here the link is ours, not PeerJS's. PeerJS would otherwise still close it on its own
+      // (a "leave" or "expire" note from the broker, its own ICE watcher), which dropped links a moment
+      // after they opened. makeConn watches the connection itself.
+      c.close = function(){};
       var conn = makeConn(pc, dc); conn.role = role;
-      var pr = peer; peer = null; setTimeout(function(){ try { pr.disconnect(); } catch(e){} }, 1500);   // the link is direct now; keep it, drop the broker
+      setTimeout(function(){ release(pr, c); }, 1500);   // a moment more for late addresses, then drop the broker for good
       teardown();
       if (opts.onConnected) opts.onConnected(conn, role);
+    }
+    // Let go of a PeerJS object without touching the link it made: unhook it from the connection, then destroy it,
+    // so no half-closed broker session or stale handlers are left behind for the next game.
+    function release(pr, c){
+      try { var lp = c.peerConnection; if (lp) { lp.onicecandidate = null; lp.oniceconnectionstatechange = null; lp.ondatachannel = null; lp.ontrack = null; } } catch(e){}
+      try { if (pr && pr._removeConnection) pr._removeConnection(c); } catch(e){}
+      try { if (pr && pr._connections) pr._connections.delete(c.peer); } catch(e){}
+      try { c._negotiator = null; c.provider = null; } catch(e){}
+      try { if (pr) pr.destroy(); } catch(e){}
+    }
+    // The broker's socket can drop while a phone waits (the app went to the background to send the code in a
+    // chat, the phone switched networks, the free broker hiccuped). Reconnect with the same ID, so the room
+    // code stays the same, instead of giving up on the first drop.
+    function keepBroker(p, onGiveUp){
+      var tries = 0, timer = null;
+      function again(){
+        if (p !== peer || finished || p.destroyed) return;
+        if (!p.disconnected) { tries = 0; return; }
+        if (++tries > 6) { onGiveUp({ type: 'network', message: 'lost the link service and could not get it back' }); return; }
+        clearTimeout(timer);
+        timer = setTimeout(function(){ if (p === peer && !finished && p.disconnected && !p.destroyed) { try { p.reconnect(); } catch(e){} } }, Math.min(4000, 400 * tries));
+      }
+      p.on('disconnected', again);
+      p.on('open', function(){ tries = 0; });
+      function vis(){ if (document.visibilityState === 'visible') again(); }
+      document.addEventListener('visibilitychange', vis);
+      p.on('close', function(){ clearTimeout(timer); document.removeEventListener('visibilitychange', vis); });
+      return again;
     }
     function quickFail(e){
       try { if (peer) peer.destroy(); } catch(err){} peer = null;
@@ -434,8 +467,9 @@
       loadLib('peerjs.min.js', 'Peer').then(function next(){
         if (!root.parentNode || finished) return;
         var code = makeCode(), p = freshPeer(peerId(code)), shown = false;
+        var reconnect = keepBroker(p, quickFail);
         p.on('open', function(){
-          if (p !== peer) return; shown = true;
+          if (p !== peer || shown) return; shown = true;
           var qr = el('div',{cls:'qr small'});
           loadLib('qrcode.min.js', 'qrcode').then(function(){ qr.appendChild(drawQR('PPL2|' + app + '|' + code)); }).catch(function(){ qr.style.display = 'none'; });
           screen([el('h2',{text:'Your room code'}), el('div',{cls:'code', text:code}),
@@ -446,8 +480,9 @@
         p.on('connection', function(c){ if (c.open) linked(c, 'host'); else c.on('open', function(){ linked(c, 'host'); }); });
         p.on('error', function(e){
           if (p !== peer) return;
-          if (e && e.type === 'unavailable-id' && ++tries < 5) { next(); return; }   // that code is taken right now: another one
-          if (!shown || (e && /network|server-error|socket|disconnected/.test(e.type || ''))) quickFail(e);
+          if (e && e.type === 'unavailable-id' && !shown && ++tries < 5) { next(); return; }   // that code is taken right now: another one
+          if (shown && e && /network|socket|disconnected|unavailable-id|server-error/.test(e.type || '')) { reconnect(); return; }   // the code is on screen: get the broker back, keep the code
+          if (!shown) quickFail(e);
         });
         setTimeout(function(){ if (p === peer && !shown && !finished) quickFail({ message: 'no answer from the link service in 10 s' }); }, 10000);
       }).catch(function(e){ quickFail(e); });
@@ -480,18 +515,29 @@
       busy('Joining ' + code + '…');
       loadLib('peerjs.min.js', 'Peer').then(function(){
         if (!root.parentNode || finished) return;
-        var p = freshPeer(null), asked = false;
-        p.on('open', function(){
-          if (p !== peer) return; asked = true;
+        var p = freshPeer(null), asked = 0, answerTimer = null;
+        var reconnect = keepBroker(p, quickFail);
+        function ask(){   // offer a link to the host; if no answer comes, ask again (the first offer can get lost)
+          if (p !== peer || finished) return;
+          if (++asked > 3) { quickFail({ message: 'the host did not answer' }); return; }
           var c = p.connect(peerId(code), { reliable: true, serialization: 'raw' });
-          c.on('open', function(){ linked(c, 'guest'); });
-        });
+          if (!c) { reconnect(); answerTimer = setTimeout(ask, 2000); return; }
+          c.on('open', function(){ clearTimeout(answerTimer); linked(c, 'guest'); });
+          clearTimeout(answerTimer);
+          answerTimer = setTimeout(function(){
+            if (p !== peer || finished) return;
+            try { c.close(); } catch(e){}
+            ask();
+          }, 10000);
+        }
+        p.on('open', function(){ if (p === peer && !asked) ask(); });
         p.on('error', function(e){
-          if (p !== peer) return;
-          if (e && e.type === 'peer-unavailable') { try { p.destroy(); } catch(err){} peer = null; quickJoin('No game with code ' + code + '. Check the code on the host’s phone.'); return; }
-          quickFail(e);
+          if (p !== peer || finished) return;
+          if (e && e.type === 'peer-unavailable') { clearTimeout(answerTimer); try { p.destroy(); } catch(err){} peer = null; quickJoin('No game with code ' + code + '. Check the code on the host’s phone.'); return; }
+          if (asked && e && /network|socket|disconnected|server-error/.test(e.type || '')) { reconnect(); return; }
+          clearTimeout(answerTimer); quickFail(e);
         });
-        setTimeout(function(){ if (p === peer && !finished) quickFail({ message: asked ? 'the host did not answer in 15 s' : 'no answer from the link service in 15 s' }); }, 15000);
+        setTimeout(function(){ if (p === peer && !finished && !asked) quickFail({ message: 'no answer from the link service in 15 s' }); }, 15000);
       }).catch(function(e){ quickFail(e); });
     }
 
