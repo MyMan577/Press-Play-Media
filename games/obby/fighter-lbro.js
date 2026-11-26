@@ -5,7 +5,7 @@
  * hangs in the air for a moment). He trembles when foes are close.
  *
  * WHAT MAKES HIM DIFFERENT: FEAR IS A RESOURCE
- *  - FLINCH (passive): when a hit is about to land while he isn't attacking, he yelps "EEP!" and leaps out of the way
+ *  - FLINCH (passive): when a hit is about to land while he isn't attacking and he's jumpy (the sweat drop), he yelps "EEP!" and hops out of the way
  *    untouched. Then it has to come back (6 s: the sweat drop by his head shows it is ready). Nobody else dodges by
  *    themselves.
  *  - NERVE: every flinch gives him a point of Nerve (up to 3, the pips over his head), so does a successful Duck & Cover
@@ -33,7 +33,8 @@
   const C_GOLD = '#ffcf3a', C_GOLD2 = '#ff8a1a', C_NERVE = '#ffd84a', C_SWEAT = '#8fd8ff';
   const P = { hip: 11.5, torso: 11, neck: -1, head: 6.8, ua: 5.4, fa: 5.4, th: 5.8, sh: 5.8 };   // a tall, lanky grown man
   const U = 30, pose = FK.pose, { ex, ey, pcx, pcy } = FK;
-  const FLINCH_CD = 6, NERVE_MAX = 3, BRAVE_T = 9, HITS_PER_NERVE = 6;
+  // the flinch: after each one it takes FLINCH_CD to come back, and then only FLINCH_CHANCE of the time (else he tries again FLINCH_RETRY later)
+  const FLINCH_CD = 10, FLINCH_CHANCE = 0.5, FLINCH_RETRY = 3, NERVE_MAX = 3, BRAVE_T = 9, HITS_PER_NERVE = 6;
   const GADGETS = {
     balloon: { cost: 1, icon: '🎈', name: 'BALLOON' },
     horn:    { cost: 2, icon: '📯', name: 'AIR HORN' },
@@ -358,8 +359,11 @@
       if (Math.floor(S.flutT * 14) !== S.flutD) { S.flutD = Math.floor(S.flutT * 14); FK.tone(260 + S.flutT * 200, { dur: 0.05, vol: 0.05, type: 'square' }); }
     }
     // FLINCH: ready, not attacking, not brave: any hit that would land is dodged (FKit / Smash treat _dodgeT as a pure dodge)
-    if (S.flinchCD > 0) S.flinchCD = Math.max(0, S.flinchCD - dt);
-    if (S.flinchCD <= 0 && !S.seq && !brave(S) && !(p.hitstun > 0)) { p._parryT = Math.max(p._parryT || 0, 0.05); p._dodgeT = Math.max(p._dodgeT || 0, 0.05); }
+    if (S.flinchCD > 0) {
+      S.flinchCD = Math.max(0, S.flinchCD - dt);
+      if (S.flinchCD <= 0) { S.jumpy = Math.random() < FLINCH_CHANCE; if (!S.jumpy) S.flinchCD = FLINCH_RETRY; }   // not always scared
+    }
+    if (S.flinchCD <= 0 && S.jumpy !== false && !S.seq && !brave(S) && !(p.hitstun > 0)) { p._parryT = Math.max(p._parryT || 0, 0.05); p._dodgeT = Math.max(p._dodgeT || 0, 0.05); }
     if (p._parried > 0 && !S.parrySeen) {
       S.parrySeen = true;
       const d = p._parryDir || FK.face(p);
@@ -369,9 +373,9 @@
         if (e) { const nx = ex(e) + (Math.sign(ex(e) - pcx(p)) || d) * ((e.w || 0.9) / 2 + p.w / 2 + 0.15) - p.w / 2; if (!FK.blocked(nx, p.y, p.w, p.h)) { p.x = nx; S.selfMove = true; } }
         p.dashDir = -q.f2 || 1; p.lastMoveDir = p.dashDir;
         FK.label(S, p, 'SIDESTEP!', C_NERVE, true); nerve(S, p, 1); FK.whoosh(false, false);
-      } else {   // FLINCH: EEP! and a leap away from whatever it was
-        S.flinchCD = FLINCH_CD; S.eepT = 0.4;
-        p.vx = -d * 8; p.vy = -8.5; p.onGround = false; S.selfMove = true;
+      } else {   // FLINCH: EEP! and a hop away from whatever it was
+        S.flinchCD = FLINCH_CD; S.jumpy = false; S.eepT = 0.4;
+        p.vx = -d * 4; p.vy = -5;   // a small hop back, not a leap across the screen p.onGround = false; S.selfMove = true;
         FK.label(S, p, 'EEP!', C_SWEAT, true); yelp(); nerve(S, p, 1, 'FLINCH');
         S.fx.push({ k: 'drops', x: pcx(p), y: p.y, t: 0, life: 0.5 });
       }
@@ -432,7 +436,7 @@
     id: ID, plug: 'lbro',
     def: { name: 'L-Brother', icon: '🪠', tier: 'prismatic', color: C_JAK, color2: C_NERVE,
       ability: 'Scared of everything: he FLINCHES out of hits by himself, turns fear into NERVE, and spends it on pocket gadgets (Balloon, Air Horn, Spring Trap, Brave Heart)',
-      desc: 'The younger brother: tall, thin, jumpy and scared of everything, with a knit beanie, a long scarf and a plunger on a cord. Hold jump while falling to FLUTTER. FLINCH: when a hit is about to land while he isn\'t attacking, he yelps and leaps out of the way (then 6 s to come back: the sweat drop shows it is ready). Every flinch, every Duck & Cover that works and every 6 hits give him NERVE (3 pips over his head). Spend it with K / 🎒: 🎈 Balloon (1, float up out of trouble), 📯 Air Horn with ←/→ (2, blasts everyone back, dazed), 🪤 Spring Trap with ↓ (2, flings the first foe to step on it), 💛 Brave Heart with ↑ (3, 9 s of courage: +40% damage, super armor on his moves, and BRAVE versions of them). Moves: Jitter Jab, Plunger Line, Stilt Kick, Duck & Cover; in the air Pinwheel, Long Leg (the longest kick there is: the toe tips), Scarf Copter and Plunger Pogo.' },
+      desc: 'The younger brother: tall, thin, jumpy and scared of everything, with a knit beanie, a long scarf and a plunger on a cord. Hold jump while falling to FLUTTER. FLINCH: when a hit is about to land while he isn\'t attacking, he may yelp and hop out of the way (then 10 s to come back, and only some of the time: the sweat drop shows it is ready). Every flinch, every Duck & Cover that works and every 6 hits give him NERVE (3 pips over his head). Spend it with K / 🎒: 🎈 Balloon (1, float up out of trouble), 📯 Air Horn with ←/→ (2, blasts everyone back, dazed), 🪤 Spring Trap with ↓ (2, flings the first foe to step on it), 💛 Brave Heart with ↑ (3, 9 s of courage: +40% damage, super armor on his moves, and BRAVE versions of them). Moves: Jitter Jab, Plunger Line, Stilt Kick, Duck & Cover; in the air Pinwheel, Long Leg (the longest kick there is: the toe tips), Scarf Copter and Plunger Pogo.' },
     stats: { speed: 1.08, jump: 1.25, maxJumps: 2, maxDashes: 1, hp: 3 },
     statMod: S => brave(S) ? { speed: 1.2, jump: 1.3 } : {},
     moves: MOVES, mfd: MFD,
@@ -552,7 +556,7 @@
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(hr * 0.45, -hr * 0.98, hr * 0.27, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = hat2; ctx.font = `900 ${hr * 0.4}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('L', hr * 0.45, -hr * 0.96);
       // the sweat drop: his flinch is ready
-      if (S && S.flinchCD <= 0 && !B) { const dy = Math.sin(t * 3) * hr * 0.1; ctx.fillStyle = C_SWEAT; ctx.beginPath(); ctx.moveTo(-hr * 0.95, -hr * 0.6 + dy); ctx.quadraticCurveTo(-hr * 1.25, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.05 + dy); ctx.quadraticCurveTo(-hr * 0.68, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.6 + dy); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(-hr * 1.0, -hr * 0.22 + dy, hr * 0.06, 0, Math.PI * 2); ctx.fill(); }
+      if (S && S.flinchCD <= 0 && S.jumpy !== false && !B) { const dy = Math.sin(t * 3) * hr * 0.1; ctx.fillStyle = C_SWEAT; ctx.beginPath(); ctx.moveTo(-hr * 0.95, -hr * 0.6 + dy); ctx.quadraticCurveTo(-hr * 1.25, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.05 + dy); ctx.quadraticCurveTo(-hr * 0.68, -hr * 0.1 + dy, -hr * 0.95, -hr * 0.6 + dy); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(-hr * 1.0, -hr * 0.22 + dy, hr * 0.06, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
       // front arm with the plunger (unless it is out on its cord)
       FK.limb(ctx, K.aF, 3.6 * s, C_JAK, 3.2 * s);
