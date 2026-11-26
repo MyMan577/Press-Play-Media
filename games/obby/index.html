@@ -35427,47 +35427,63 @@ window._claimLBro = function() {
     easy: ['enemy_boss'], medium: ['enemy_boss'],
     hard: ['enemy_golem', 'enemy_warlord'], insane: ['enemy_brute', 'enemy_warlord', 'enemy_glacier'],
   };
+  // Characters built for big fights (Necromancer and his skeleton army) get the heavy bosses.
+  const BIG_BOSSES = {
+    easy: ['enemy_golem', 'enemy_warlord'], medium: ['enemy_brute', 'enemy_glacier', 'enemy_serpent', 'enemy_warlord'],
+    hard: ['enemy_dreadscorpion', 'enemy_lich', 'enemy_tempest', 'enemy_brute'],
+    insane: ['enemy_dreadscorpion', 'enemy_ember_drake', 'enemy_stormcaller', 'enemy_voidwalker', 'enemy_eye'],
+  };
 
   // Rooms built around one character's own ability, used when the course is locked to them.
-  // up: height of their plain double jump; extra: what their S + up special adds on top.
-  // (Measured in the game, with no upgrades.)
+  // Cliff heights were tuned in the game: higher than the character's best climb with a
+  // run-up, slide-jump and wall jump, and lower than what the ability reaches.
   const CHAR_ROOMS = {
     cloner:       { rooms: ['cloneRoom'], noFight: true },
-    quarry:       { rooms: ['blockCliff'], up: 6.43 },
-    frostqueen:   { rooms: ['iceCliff'], up: 5.3 },
-    swordsman:    { rooms: ['breakPlug'] },
-    cb_fizz:      { rooms: ['recoveryCliff'], up: 4.74, extra: 6.1 },
-    cb_peach_ref: { rooms: ['recoveryCliff'], up: 5.59, extra: 4.6 },
-    cb_sleight:   { rooms: ['recoveryCliff'], up: 5.86, extra: 3.6 },
-    cb_luigi_ref: { rooms: ['recoveryCliff'], up: 6.81, extra: 3.2 },
-    cb_chameleon: { rooms: ['recoveryCliff'], up: 5.12, extra: 3.0 },
-    cb_mario_ref: { rooms: ['recoveryCliff'], up: 5.52, extra: 2.7 },
-    cb_kodiak:    { rooms: ['recoveryCliff'], up: 3.78, extra: 2.5 },
-    cb_valka:     { rooms: ['recoveryCliff'], up: 5.79, extra: 2.2 },
+    quarry:       { rooms: ['abilityCliff'], cliff: 8, face: 'solid', title: '🪨 Block Climb' },
+    boomerang:    { rooms: ['recallPit'] },
+    kangaroo:     { rooms: ['glideChannel'] },
+    glitch:       { rooms: ['glitchLab'] },
+    cb_valka:     { rooms: ['recoveryGap'], gap: 20, lip: 2 },
+    cb_luigi_ref: { rooms: ['recoveryGap'], gap: 20, lip: 2 },
+    frostqueen:   { rooms: ['abilityCliff'], cliff: 12, title: '❄️ Ice Climb' },
+    swordsman:    { rooms: ['swordModes', 'breakPlug'] },
+    horse:        { rooms: ['horseTunnel'] },
+    bull:         { rooms: ['dashChasm'] },
+    moose:        { rooms: ['spikeCurtains'] },
+    commander:    { rooms: ['droneVault'] },
+    cb_fizz:      { rooms: ['abilityCliff'], cliff: 13, title: '🥊 Recovery Climb' },
+    cb_peach_ref: { rooms: ['abilityCliff'], cliff: 13, title: '🥊 Recovery Climb' },
+    cb_sleight:   { rooms: ['abilityCliff'], cliff: 13, title: '🥊 Recovery Climb' },
+    cb_chameleon: { rooms: ['abilityCliff'], cliff: 11, title: '🥊 Recovery Climb' },
+    cb_kodiak:    { rooms: ['abilityCliff'], cliff: 8, title: '🥊 Recovery Climb' },
+    cb_mario_ref: { rooms: ['abilityCliff'], cliff: 14, title: '🔧 Jack Shaft' },
   };
   const ROOM_TITLES = {
-    cloneRoom: '🧬 Clone Run', blockCliff: '🪨 Block Climb', iceCliff: '❄️ Ice Climb',
-    recoveryCliff: '🥊 Recovery Climb', breakPlug: '⚔️ Break Through',
+    cloneRoom: '🧬 Clone Run', abilityCliff: '🧗 Ability Climb', breakPlug: '⚔️ Break Through', swordModes: '⚔️ Three Modes',
+    horseTunnel: '🐎 Sprint Tunnel', dashChasm: '🐂 Dash Chasm', spikeCurtains: '🦌 Spike Curtains', droneVault: '🎯 Drone Vault',
+    recallPit: '🪃 Recall Pit', glideChannel: '🦘 Glide Channel', glitchLab: '🕶️ Glitch Lab', recoveryGap: '🥊 Recovery Gap',
   };
-  // The rooms a lock can use: only those every locked character can do. The cliff height has
-  // to beat each one's plain jump and still be reachable with their special.
+  // The rooms a lock can use: only those every locked character can do (a cliff only when they
+  // all share its height and face).
   function profileFor(ids) {
-    const prof = { rooms: [], noFight: false, cliff: {} };
+    const prof = { rooms: [], noFight: false, cliff: 0, face: 'faker', boss: null };
     if (!ids || !ids.length) return prof;
     let rooms = null;
-    for (const id of ids) {
-      const c = CHAR_ROOMS[id] || { rooms: [] };
+    const defs = ids.map(id => CHAR_ROOMS[id] || { rooms: [] });
+    for (const c of defs) {
       rooms = rooms === null ? c.rooms.slice() : rooms.filter(r => c.rooms.includes(r));
       if (c.noFight) prof.noFight = true;
     }
     rooms = rooms || [];
-    const ups = ids.map(id => CHAR_ROOMS[id] || {});
-    if (rooms.includes('blockCliff')) prof.cliff.blockCliff = 8;
-    if (rooms.includes('iceCliff')) prof.cliff.iceCliff = 8;
-    if (rooms.includes('recoveryCliff')) {
-      const H = Math.max(...ups.map(c => Math.ceil(c.up + 1.2)));
-      const ok = ups.every(c => H <= c.up + 0.7 * c.extra) && H <= 9;
-      if (ok) prof.cliff.recoveryCliff = H; else rooms = rooms.filter(r => r !== 'recoveryCliff');
+    if (rooms.includes('abilityCliff')) {
+      const same = defs.every(c => c.cliff === defs[0].cliff && (c.face || 'faker') === (defs[0].face || 'faker'));
+      if (same) { prof.cliff = defs[0].cliff; prof.face = defs[0].face || 'faker'; }
+      else rooms = rooms.filter(r => r !== 'abilityCliff');
+    }
+    if (defs.length === 1 && defs[0].bigBoss) prof.bigBoss = true;
+    if (rooms.includes('recoveryGap')) {
+      if (defs.every(c => c.gap === defs[0].gap && c.lip === defs[0].lip)) { prof.gap = defs[0].gap; prof.lip = defs[0].lip; }
+      else rooms = rooms.filter(r => r !== 'recoveryGap');
     }
     prof.rooms = rooms;
     return prof;
@@ -35528,7 +35544,9 @@ window._claimLBro = function() {
     moverBridge: 20, conveyorRun: 20, crumbleBridge: 22, iceSlide: 22, windLift: 12,
     rest: 10, arena: 38, bossArena: 40,
     chimney: 18, sawGauntlet: 26, laserLock: 30,
-    cloneRoom: 26, blockCliff: 16, iceCliff: 16, recoveryCliff: 16, breakPlug: 18,
+    cloneRoom: 26, abilityCliff: 16, breakPlug: 18, swordModes: 34,
+    horseTunnel: 34, dashChasm: 44, spikeCurtains: 38, droneVault: 22,
+    recallPit: 24, glideChannel: 40, glitchLab: 32, recoveryGap: 40,
   };
 
   function generateCourse(opts) {
@@ -35546,7 +35564,7 @@ window._claimLBro = function() {
     // runs in lanes that snake upward: right along the bottom, up a climbing tower at the
     // edge, left along the next lane, and so on. Lanes are 15 rows apart and each keeps
     // to a 10-row band, so no lane can be jumped into from the one below.
-    const LANE_BASE = [58, 43, 28, 13];
+    const LANE_BASE = [60, 36, 12];
     const X_MIN = 2, X_MAX = WORLD_W - 3, TOWER_ROOM = 10;
 
     const vertMult = VERT_MULT[opts.verticality] || 1;
@@ -35589,7 +35607,10 @@ window._claimLBro = function() {
     // (ahead = in the lane's direction); y is the row that platform stands on.
     const st = { x: 0, y: LANE_BASE[0], dir: 1, lane: 0, last: null, platforms: 0, sinceCP: 0 };
     function col(f) { return st.x + st.dir * f; }
-    function band() { const b = LANE_BASE[st.lane]; return [b - 5, b + 4]; }
+    function band() { const b = LANE_BASE[st.lane]; return [b - 4, b + 4]; }
+    // Rooms may reach a little past the band: floors down to base + 6 (never below row 66),
+    // tops up to base - 9. Lanes stay at least 14 rows apart even then.
+    function roomFloorFor(H) { const base = LANE_BASE[st.lane]; return Math.min(66, base + 6, Math.max(st.y, base - 9 + H)); }
     function clampY(y) { const b = band(); return Math.max(b[0], Math.min(b[1], y)); }
     function room() { return st.dir > 0 ? (X_MAX - TOWER_ROOM) - st.x : st.x - (X_MIN + TOWER_ROOM); }
     function gapCols(gap) { const out = []; for (let i = 0; i < gap; i++) out.push(col(i)); return out; }
@@ -35929,7 +35950,10 @@ window._claimLBro = function() {
           addTile(at(i), Fl - 1, t, t === 'laser' ? { active: true } : undefined));
         for (let i = 10; i <= 12; i++) addTile(at(i), R0, 'oneWayD');                          // the hatch
         addTile(at(13), R0, 'solid'); addTile(at(13), R0 - 1, 'spike');
-        for (let r = R0 - 8; r <= Fl - 4; r++) addTile(at(14), r, 'solid');                   // tall wall over the door
+        const wallTop = Math.max(1, R0 - 12);                                                   // taller than Cloner's best climb
+        addTile(at(14), wallTop, 'solid');
+        for (let r = wallTop + 1; r <= R0 - 1; r++) addTile(at(14), r, 'faker');               // ghost face: no wall jumps
+        for (let r = R0; r <= Fl - 4; r++) addTile(at(14), r, 'solid');
         gate.forEach(k => { const r = +k.split(',')[1]; addTile(at(14), r, 'laser', { linkedPlate: sw, active: true }); });
         if (opts.checkpoints) { addTile(at(2), R0 - 1, 'checkpoint'); st.sinceCP = 0; }
         if (opts.coins) addTile(at(17), Fl - 1, 'coin');
@@ -35940,34 +35964,195 @@ window._claimLBro = function() {
       },
       // Block Climb (Quarry), Ice Climb (Frost Queen), Recovery Climb (fighters): a cliff
       // taller than their double jump. Stack thrown blocks, stand on ice blocks, or use S + up.
-      blockCliff(P) { abilityCliff(P, 'blockCliff'); },
-      iceCliff(P) { abilityCliff(P, 'iceCliff'); },
-      recoveryCliff(P) { abilityCliff(P, 'recoveryCliff'); },
+      abilityCliff(P) { abilityCliff(P); },
       // Break Through (Swordsman): a wall with one breakable block. Battle mode (yellow) breaks it.
       breakPlug(P) {
         const b = band();
         const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + 7)));
         const floor = plat(f.gap, f.y, 12, 'solid');
         const F = floor.y;
-        for (let r = F - 7; r <= F - 2; r++) addTile(floor.cells[8], r, 'solid');
+        addTile(floor.cells[8], F - 7, 'solid');
+        for (let r = F - 6; r <= F - 2; r++) addTile(floor.cells[8], r, 'faker');   // ghost face: no rebounding over it
         addTile(floor.cells[8], F - 1, 'breakable');
         floor.cells.forEach(c => floor.used.add(c));
         links.push({ kind: 'break', from: [floor.cells[5], F], to: [floor.cells[10], F] });
         if (opts.coins) addTile(floor.cells[10], F - 1, 'coin');
       },
+      // Sprint Tunnel (Horse): a one-tile tunnel of slow zones over ghost floor that drops
+      // away as soon as you stand on it. Only Horse's speed gets through before it falls.
+      horseTunnel(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        const entry = plat(f.gap, f.y, 5, 'solid');
+        const F = entry.y;
+        if (opts.checkpoints) { addTile(entry.cells[1], F - 1, 'checkpoint'); entry.used.add(entry.cells[1]); st.sinceCP = 0; }
+        const L = 22;
+        for (let i = 0; i < L; i++) {
+          const c = col(i);
+          addTile(c, F - 2, 'solid'); addTile(c, F - 3, 'spike');
+          addTile(c, F - 1, 'speedSlow'); addTile(c, F, 'faker'); addTile(c, F + 3, 'lava');
+        }
+        st.x = col(L);
+        const out = plat(0, F, 5, 'solid', { kind: 'horse' });
+        links.push({ kind: 'horse', from: [entry.cells[3], F], to: [out.cells[2], F] });
+        if (opts.coins) addTile(out.cells[2], F - 1, 'coin');
+      },
+      // Dash Chasm (Bull): a chasm far past any jump. Chain his ten dashes across it.
+      dashChasm(P) {
+        const f = fit(rnd(1, 2), st.y + rnd(-1, 1));
+        const entry = plat(f.gap, f.y, 6, 'solid');
+        const F = entry.y;
+        if (opts.checkpoints) { addTile(entry.cells[1], F - 1, 'checkpoint'); entry.used.add(entry.cells[1]); st.sinceCP = 0; }
+        const W = 30;
+        for (let i = 0; i < W; i++) addTile(col(i), F + 4, 'lava');
+        const out = plat(W, F, 6, 'solid', { kind: 'dash' });
+        links.push({ kind: 'dash', from: [entry.cells[4], F], to: [out.cells[2], F] });
+        if (opts.coins) addTile(out.cells[2], F - 1, 'coin');
+      },
+      // Spike Curtains (Moose): walls of spikes floor to ceiling. Dash through each one; his
+      // dashes come back on their own while he waits between them.
+      spikeCurtains(P) {
+        const f = fit(rnd(1, 2), clampY(Math.max(st.y, band()[0] + 3)));
+        const L = 34;
+        const floor = plat(f.gap, f.y, L, 'solid');
+        const F = floor.y;
+        if (opts.checkpoints) { addTile(floor.cells[1], F - 1, 'checkpoint'); st.sinceCP = 0; }
+        for (let i = 3; i <= L - 3; i++) { addTile(floor.cells[i], F - 4, 'solid'); addTile(floor.cells[i], F - 5, 'spike'); }
+        [8, 15, 22, 29].forEach(i => { for (let r = F - 3; r <= F - 1; r++) addTile(floor.cells[i], r, 'spike'); });
+        floor.cells.forEach(c => floor.used.add(c));
+        links.push({ kind: 'moose', from: [floor.cells[2], F], to: [floor.cells[L - 2], F] });
+      },
+      // Three Modes (Swordsman): blue mode walks through an updraft that throws anyone else into
+      // spikes; red mode rebounds up a tall wall; yellow mode breaks the block at the top.
+      swordModes(P) {
+        const f = fit(rnd(1, 2), roomFloorFor(9 + 7));
+        const floor = plat(f.gap, f.y, 15, 'solid');
+        const F = floor.y;
+        if (opts.checkpoints) { addTile(floor.cells[1], F - 1, 'checkpoint'); st.sinceCP = 0; }
+        for (let i = 3; i <= 11; i++) { addTile(floor.cells[i], F - 4, 'solid'); addTile(floor.cells[i], F - 5, 'spike'); }
+        for (let i = 4; i <= 10; i++) addTile(floor.cells[i], F - 3, 'spike');
+        for (let i = 5; i <= 9; i++) { addTile(floor.cells[i], F - 2, 'windUp', { active: true }); addTile(floor.cells[i], F - 1, 'windUp', { active: true }); }
+        floor.cells.forEach(c => floor.used.add(c));
+        const H = 9, wallX = col(0);
+        for (let r = F - H + 1; r <= F - 1; r++) addTile(wallX, r, 'solid');                 // solid: red mode rebounds off it
+        const top = plat(0, F - H, 12, 'solid', { kind: 'sword' });
+        const T = top.y;
+        addTile(top.cells[7], T - 7, 'solid');
+        for (let r = T - 6; r <= T - 2; r++) addTile(top.cells[7], r, 'faker');
+        addTile(top.cells[7], T - 1, 'breakable');
+        top.cells.forEach(c => top.used.add(c));
+        links.push({ kind: 'sword', from: [floor.cells[2], F], to: [floor.cells[13], F] },
+                   { kind: 'sword', from: [floor.cells[13], F], to: [top.cells[3], T] },
+                   { kind: 'break', from: [top.cells[4], T], to: [top.cells[10], T] });
+      },
+      // Drone Vault (Commander, Operator): the key is sealed in a box. Fly a drone in (they go
+      // through walls) to grab it, then take the door. Fits well inside a tank of flight fuel.
+      droneVault(P) {
+        const f = fit(rnd(1, 2), roomFloorFor(12));
+        const floor = plat(f.gap, f.y, 16, 'solid', { kind: 'arena' });
+        const F = floor.y, at = (i) => floor.cells[i];
+        if (opts.checkpoints) { addTile(at(1), F - 1, 'checkpoint'); st.sinceCP = 0; }
+        addTile(at(8), F - 12, 'solid');
+        for (let r = F - 11; r <= F - 1; r++) addTile(at(8), r, 'faker');                    // the gate wall
+        for (let i = 10; i <= 14; i++) { addTile(at(i), F - 11, 'solid'); addTile(at(i), F - 7, 'solid'); }
+        for (let r = F - 10; r <= F - 8; r++) { addTile(at(10), r, 'solid'); addTile(at(14), r, 'solid'); }
+        addTile(at(12), F - 9, 'key');
+        const pairId = 'gen_vault_' + st.x + '_' + opts.seed;
+        addTile(at(7), F - 1, 'door1', { pairId });
+        addTile(at(11), F - 1, 'door1', { pairId });
+        floor.cells.forEach(c => floor.used.add(c));
+        links.push({ kind: 'drone', from: [at(3), F], to: [at(12), F] });
+      },
+      // Recall Pit (Boomerang): the key lies at the bottom of a pit behind a trapdoor. Dash to
+      // plant your marker, drop in, grab the key and get recalled back up. (Dropping in without
+      // a marker isn't a dead end: a tunnel and shaft lead back up to the start.)
+      recallPit(P) {
+        const f = fit(rnd(3, 4), roomFloorFor(12));                                           // the jump spans the escape shaft
+        const floor = plat(f.gap, f.y, 17, 'solid');                                         // room cells 2..18 (0..1: the shaft)
+        const F = floor.y, at = (i) => floor.cells[0] + st.dir * (i - 2);
+        if (opts.checkpoints) { addTile(at(3), F - 1, 'checkpoint'); st.sinceCP = 0; }
+        for (let r = F + 1; r <= F + 5; r++) { addTile(at(-1), r, 'solid'); }               // escape shaft (cells 0..1)
+        for (let i = 0; i <= 5; i++) addTile(at(i), F + 5, 'solid');
+        for (let i = 2; i <= 5; i++) addTile(at(i), F + 3, 'solid');
+        [7, 8].forEach(i => { byKey.delete(at(i) + ',' + F); });
+        for (let k = tiles.length - 1; k >= 0; k--) { const t = tiles[k]; if (t.y === F && (t.x === at(7) || t.x === at(8)) && t.type === 'solid') tiles.splice(k, 1); }
+        addTile(at(7), F, 'oneWayD'); addTile(at(8), F, 'oneWayD');                          // the trapdoor
+        for (let r = F + 1; r <= F + 3; r++) addTile(at(6), r, 'solid');                     // pit wall (open at F+4 to the tunnel)
+        for (let r = F + 1; r <= F + 5; r++) addTile(at(9), r, 'solid');
+        for (let i = 6; i <= 9; i++) addTile(at(i), F + 5, 'solid');
+        addTile(at(7), F + 4, 'key'); addTile(at(8), F + 4, 'key');
+        addTile(at(14), F - 12, 'solid');
+        for (let r = F - 11; r <= F - 1; r++) addTile(at(14), r, 'faker');
+        const pairId = 'gen_recall_' + st.x + '_' + opts.seed;
+        addTile(at(13), F - 1, 'door1', { pairId }); addTile(at(16), F - 1, 'door1', { pairId });
+        floor.cells.forEach(c => floor.used.add(c));
+        links.push({ kind: 'recall', from: [at(4), F], to: [at(17), F] });
+      },
+      // Glide Channel (Kangaroo): a long channel between two lines of lava that slopes gently
+      // down. Hold jump to float through it; anyone else drops into the lower line.
+      glideChannel(P) {
+        const f = fit(rnd(1, 2), clampY(Math.min(st.y, LANE_BASE[st.lane])));
+        const start = plat(f.gap, f.y, 6, 'solid');
+        const Fs = start.y;
+        if (opts.checkpoints) { addTile(start.cells[1], Fs - 1, 'checkpoint'); start.used.add(start.cells[1]); st.sinceCP = 0; }
+        const L = 24, per = 6;
+        for (let i = 0; i < L; i++) { const k = Math.floor(i / per); addTile(col(i), Fs - 7 + k, 'lava'); addTile(col(i), Fs + 2 + k, 'lava'); }
+        const kEnd = Math.floor((L - 1) / per);
+        const land = plat(L, Fs + 1 + kEnd, 7, 'solid', { kind: 'glide' });
+        links.push({ kind: 'glide', from: [start.cells[3], Fs], to: [land.cells[3], land.y] });
+      },
+      // Glitch Lab (Glitch): a laser door held by a plate you can't stand on and still pass,
+      // and a key sealed in a box. Hack until the cube sits on the plate and the AI clone
+      // brings the key.
+      glitchLab(P) {
+        const f = fit(rnd(1, 2), roomFloorFor(16));
+        const floor = plat(f.gap, f.y, 27, 'solid', { kind: 'arena' });
+        const F = floor.y, at = (i) => floor.cells[i];
+        if (opts.checkpoints) { addTile(at(1), F - 1, 'checkpoint'); st.sinceCP = 0; }
+        const gate = [F - 4, F - 3, F - 2, F - 1].map(r => at(9) + ',' + r);
+        addTile(at(4), F - 1, 'plate', { linkedLasers: gate, groupOn: true });
+        gate.forEach(k => addTile(at(9), +k.split(',')[1], 'laser', { linkedPlate: at(4) + ',' + (F - 1), active: true }));
+        for (let i = 6; i <= 12; i++) addTile(at(i), F - 5, 'solid');
+        addTile(at(9), F - 16, 'solid'); for (let r = F - 15; r <= F - 6; r++) addTile(at(9), r, 'faker');
+        for (let i = 14; i <= 18; i++) { addTile(at(i), F - 9, 'solid'); addTile(at(i), F - 5, 'solid'); }
+        for (let r = F - 8; r <= F - 6; r++) { addTile(at(14), r, 'solid'); addTile(at(18), r, 'solid'); }
+        addTile(at(16), F - 7, 'key');
+        addTile(at(20), F - 16, 'solid'); for (let r = F - 15; r <= F - 1; r++) addTile(at(20), r, 'faker');
+        const pairId = 'gen_glitch_' + st.x + '_' + opts.seed;
+        addTile(at(19), F - 1, 'door1', { pairId }); addTile(at(22), F - 1, 'door1', { pairId });
+        floor.cells.forEach(c => floor.used.add(c));
+        links.push({ kind: 'glitch', from: [at(2), F], to: [at(24), F] });
+      },
+      // Recovery Gap (fighters whose run-up already climbs as high as their special): a gap
+      // just past their best jump, so they reach the far wall in the air and only S + up
+      // carries them onto the lip. A safety net below with steps back up means a miss is a retry.
+      recoveryGap(P) {
+        const G = prof.gap || 20, lip = prof.lip || 2;
+        const f = fit(rnd(1, 2), clampY(Math.min(st.y, LANE_BASE[st.lane] + 1)));
+        const entry = plat(f.gap, f.y, 8, 'solid');
+        const F = entry.y;
+        if (opts.checkpoints) { addTile(entry.cells[1], F - 1, 'checkpoint'); entry.used.add(entry.cells[1]); st.sinceCP = 0; }
+        for (let i = 0; i <= G - 5; i++) addTile(col(i), F + 6, 'solid');                      // the net
+        for (let i = G - 4; i <= G - 1; i++) addTile(col(i), F + 6, 'lava');                   // no run-up at the wall's foot
+        addTile(col(1), F + 4, 'solid'); addTile(col(2), F + 4, 'solid');                      // steps back up
+        addTile(col(-1), F + 2, 'solid'); addTile(col(0), F + 2, 'solid');
+        for (let r = F - lip + 1; r <= F + 6; r++) addTile(col(G), r, 'faker');
+        const top = plat(G, F - lip, 7, 'solid', { kind: 'recovery' });
+        links.push({ kind: 'recovery', from: [entry.cells[5], F], to: [top.cells[3], top.y] });
+      },
     };
 
-    function abilityCliff(P, kind) {
-      const b = band();
-      const H = prof.cliff[kind] || 8;
-      const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + H)));
+    // A cliff the locked character can only climb with their ability. The face is ghost blocks
+    // (fakers: no wall jump off them) except for Quarry, whose thrown blocks need solid stone.
+    function abilityCliff(P) {
+      const H = prof.cliff || 10;
+      const f = fit(rnd(1, 2), roomFloorFor(H));
       const F = f.y;
-      const floor = plat(f.gap, F, 6, 'solid');
+      const floor = plat(f.gap, F, 7, 'solid');
       floor.cells.forEach(c => floor.used.add(c));
       const wallX = col(0);
-      for (let r = F - H + 1; r <= F - 1; r++) addTile(wallX, r, 'solid');
-      const top = plat(0, F - H, rnd(5, 6), 'solid', { kind: kind });
-      links.push({ kind: kind, from: [floor.cells[3], F], to: [top.cells[2], F - H] });
+      for (let r = F - H + 1; r <= F - 1; r++) addTile(wallX, r, prof.face === 'solid' ? 'solid' : 'faker');
+      const top = plat(0, F - H, rnd(5, 6), 'solid', { kind: 'abilityCliff' });
+      links.push({ kind: 'abilityCliff', from: [floor.cells[3], F], to: [top.cells[2], F - H] });
       if (opts.coins) addTile(top.cells[3], F - H - 1, 'coin');
     }
 
@@ -36013,7 +36198,7 @@ window._claimLBro = function() {
       let count;
       if (boss) {
         count = 1;
-        addTile(at(LW + 10), F - 1, pick(BOSSES[diffName]), { dropItem: 'key' });
+        addTile(at(LW + 10), F - 1, pick((prof.bigBoss ? BIG_BOSSES : BOSSES)[diffName]), { dropItem: 'key' });
         addTile(at(ledges[1][0] + 1), ledgeY - 1, 'hpPickup');
       } else {
         const Ro = ARENA_ROSTER[diffName];
