@@ -380,6 +380,7 @@
     SM.active = false; SM.phase = 'off';
     if (foe && foe.ent) { foe.ent.dead = true; var i = g.enemies.indexOf(foe.ent); if (i >= 0) g.enemies.splice(i, 1); }
     releaseLedge(me); releaseLedge(foe);
+    if (g && g.player) g.player.hitstun = 0;   // outside Smash nothing is ever in hitstun
     if (backup) {
       if (SM.cfg && (SM.cfg.stage !== 'course' || SM.cfg.courseJson)) { try { g.importLevel(backup.json); } catch (e) {} }
       else { var w = W(); if (w) w.goal = backup.goal; }
@@ -600,8 +601,8 @@
     if (st._parryT > 0 || (chr === 'cb_protagonist' && st._protagRetaliateTimer > 0)) {
       var far = Math.hypot(ax - vx, ay - vy) > 2.6, d = sgn(ax - vx) || 1;
       st._parryT = 0; st._protagRetaliateTimer = 0; st._parried = 0.45; st._parryFar = far; st._parryDir = d;
-      side.invuln = Math.max(side.invuln || 0, 0.45); side.hitstun = 0;
-      if (st._dodgeT > 0) { st._dodgeT = 0; addFx('ring', vx, vy, '#8fd8ff'); showBanner('FLINCH!', 0.45); return true; }   // a pure dodge (L-Brother): no counter, no reflect
+      side.invuln = Math.max(side.invuln || 0, st._dodgeT > 0 ? 0.25 : 0.45); side.hitstun = 0;
+      if (st._dodgeT > 0) { st._dodgeT = 0; addFx('ring', vx, vy, '#8fd8ff'); return true; }   // (his own EEP! shows it: no banner across the screen)   // a pure dodge (L-Brother): no counter, no reflect
       window._ppHitstop = Math.max(window._ppHitstop || 0, 0.1); g.shake(7);
       addFx('ring', vx, vy, '#ffffff'); addFx('burst', vx, vy, far ? '#7cdbff' : '#ffd166', 18);
       showBanner(far ? 'REFLECT!' : 'PARRY!', 0.55);
@@ -673,6 +674,7 @@
     }
     me.kvx = Ln.vx; P.vx = Ln.vx; P.vy = Ln.vy; me.hitstun = Ln.stun; me.flash = 0.14;
     if (h.stun) me.hitstun = Math.max(me.hitstun, Math.min(1.1, h.stun * 0.45));   // stun / freeze specials hold you a bit longer
+    P.hitstun = me.hitstun;   // fighters' own code reads p.hitstun to drop the move they're in (a hit beats it)
     if (Ln.vy < -2 || Ln.L > 14) { P.onGround = false; P.y -= 0.06; }
     releaseLedge(me); me.dodge = 0; me.guarding = false;
     P.isDashing = false;
@@ -716,6 +718,7 @@
       if (P.onGround && m._prevVy > (m.spiked ? 10 : 16)) { P.vy = -m._prevVy * (m.spiked ? BAL.spikeBounce : 0.45); P.onGround = false; g.shake(m.spiked ? 6 : 4); addFx('ring', P.x + P.w / 2, P.y + P.h, m.spiked ? '#ff3b6b' : '#fff'); m.spiked = false; }
       if (m.hitstun <= 0) { m.hitstun = 0; m.spiked = false; }
     }
+    P.hitstun = m.hitstun;
     if (P.onGround) { m.airDodged = false; }
     // shield + dodge (X key / on-screen button)
     var wantG = (held('x') || guardBtn) && SM.phase === 'fight';
@@ -1539,6 +1542,7 @@
   (window.__fighterHubs = window.__fighterHubs || []).push(function (dt) {
     if (!SM.active || !foe || !foe.F || SM.phase !== 'fight' || foe.respawnHold > 0) return;
     var st0 = foe.F.st, bx = st0.x, by = st0.y;
+    st0.hitstun = foe.hitstun > 0 ? foe.hitstun : 0;
     G().fighterHub(foe.F, Math.min(dt, 0.033));
     var st1 = foe.F.st;                                                   // a plugin moved it (Chroma's tongue pull): keep that
     if (Math.abs(st1.x - bx) > 1e-4 || Math.abs(st1.y - by) > 1e-4) { foe.x = st1.x; foe.y = st1.y; foe.vx = st1.vx; foe.vy = st1.vy; }
@@ -1712,6 +1716,7 @@
     t._held = true; t._thrown = false;
     t.x = P.x; t.y = P.y; f._tgtX = t.x; f._tgtY = t.y; t.w = P.w; t.h = P.h; t.hp = BIG; t.vx = 0; t.vy = 0; t.hitFlash = 0; t.dead = false; t.stunTimer = 0;
     var jump = (inp.jump || f.recJump) && !(A && A.type === 'charge'); f.recJump = false;   // the game counts its own jumps
+    F.st.hitstun = f.hitstun > 0 ? f.hitstun : 0;
     g.fighterRun(F, function () {
       if (jump) g.fighterJump();
       if (dash) g.fighterDash();

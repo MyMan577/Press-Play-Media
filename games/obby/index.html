@@ -3010,7 +3010,7 @@ input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; u
     { id: 'janny', name: 'Jumping Janny', emoji: '🦘', color: '#ffd166', desc: '1 Huge Jump, 6 Dashes, Slow', stats: { speed: 0.8, jump: 3.5, maxJumps: 1, maxDashes: 6 } },
     { id: 'sandy', name: 'Summoning Sandy', emoji: '🧙‍♀️', color: '#9cff9a', desc: 'Summons Beans on Jump', stats: { speed: 1.0, jump: 1.0, maxJumps: 2, maxDashes: 2 } },
     { id: 'gomen', name: 'Golemic Gomen', emoji: '🗿', color: '#8d6e63', desc: 'No Jump/Dash, Ignores Wind', stats: { speed: 0.6, jump: 0.0, maxJumps: 0, maxDashes: 0 } },
-    { id: 'sally', name: 'Super Sally', emoji: '🦸‍♀️', color: '#7cdbff', desc: 'Fly for 3s (50s CD)', stats: { speed: 1.0, jump: 1.0, maxJumps: 2, maxDashes: 3 } }
+    { id: 'sally', name: 'Super Sally', emoji: '🦸‍♀️', color: '#7cdbff', desc: 'Fly for 3s, once per checkpoint', stats: { speed: 1.0, jump: 1.0, maxJumps: 2, maxDashes: 3 } }
  ];
 
 
@@ -5258,10 +5258,11 @@ function performJump() {
     
     
     if (selectedCharacter === 'cosplayer' && cosplayerForms[player.cosplayerFormIndex].id === 'sally') {
-      if (player.sallyFlightCooldown <= 0 && jumpCount >= 1 && !player.sallyIsFlying) {
+      if (player.sallyCharges === undefined) player.sallyCharges = 1;
+      if ((player.sallyCharges > 0 || _flightFree()) && jumpCount >= 1 && !player.sallyIsFlying) {
         player.sallyIsFlying = true;
         player.sallyFlightTimer = hasUpgrade('co2') ? 5.0 : 3.0;
-        player.sallyFlightCooldown = 50.0;
+        if (!_flightFree()) player.sallyCharges--;
         player.vy = -5; 
         setMessage(`🦸‍♀️ SUPER SALLY FLYING!`);
         
@@ -9126,7 +9127,8 @@ function activateDash() {
     
     frostBlocks.push({
       x: Math.round(player.x),
-      y: Math.round(player.y + player.h),
+      // just under her feet (rounding could put it inside her body, and she fell through it)
+      y: Math.ceil(player.y + player.h - 0.15),
       w: 1.0, h: 1.0,
       timer: hasUpgrade('fq1') ? 10.0 : 5.0,
       id: Date.now()
@@ -9539,6 +9541,29 @@ function snapCamToPlayer() {
   cam.x = clamp(player.x * TILE - viewW * 0.5, 0, Math.max(0, WORLD_W * TILE - viewW));
   cam.y = clamp(player.y * TILE - viewH * 0.45, 0, Math.max(0, WORLD_H * TILE - viewH));
 }
+// Flight limits. Commander's and Operator's drones burn flight fuel whenever you steer one,
+// and Super Sally has one flight. Both refill only at a checkpoint, a respawn or a restart,
+// never over time, so resting somewhere can't buy endless flying. (Smash keeps its own rules.)
+function flightFuelMax() {
+  if (selectedCharacter === 'commander') return hasUpgrade('cm2') ? 6 : 4;
+  if (selectedCharacter === 'operator') return hasUpgrade('op2') ? 6 : 4;
+  return 0;
+}
+function refillFlight() { player.flightFuel = flightFuelMax(); player.sallyCharges = 1; }
+const _flightFree = () => !!(window.__smash && window.__smash.active);
+// Steering a drone this frame: burns fuel and reports whether it may still be steered.
+function droneSteerAllowed(dt, steering) {
+  if (_flightFree()) return true;
+  if (player.flightFuel === undefined) refillFlight();
+  if (player.flightFuel <= 0) {
+    if (steering && !player._fuelWarned) { player._fuelWarned = true; setMessage('🔋 Out of flight fuel - reach a checkpoint to refill it.'); }
+    return false;
+  }
+  if (steering) player.flightFuel = Math.max(0, player.flightFuel - dt);
+  return true;
+}
+window._refillFlight = () => refillFlight();
+
 function resetPlayer() {
   
   if (recordGhosts && currentRunFrames.length > 10) {
@@ -9615,6 +9640,7 @@ function resetPlayer() {
   player.sallyFlightTimer = 0;
   player.sallyFlightCooldown = 0;
   player.sallyIsFlying = false;
+  refillFlight(); player._fuelWarned = false;
 
   
   clonerClones = [];
@@ -13721,18 +13747,20 @@ function applyTileEffect(tile) {
         if (player.sallyFlightCooldown > 0) player.sallyFlightCooldown -= dt;
         if (player.sallyIsFlying) {
           player.sallyFlightTimer -= dt;
-          player.vy *= 0.9; 
-          player.vx *= 0.95;
+          // per 60 Hz frame, so she flies the same on a 120 Hz screen
+          const _k = dt * 60;
+          player.vy *= Math.pow(0.9, _k);
+          player.vx *= Math.pow(0.95, _k);
           
           
-          if (keys.has('w') || keys.has('arrowup')) player.vy -= 2;
-          if (keys.has('s') || keys.has('arrowdown')) player.vy += 2;
-          if (keys.has('a') || keys.has('arrowleft')) player.vx -= 2;
-          if (keys.has('d') || keys.has('arrowright')) player.vx += 2;
+          if (keys.has('w') || keys.has('arrowup')) player.vy -= 2 * _k;
+          if (keys.has('s') || keys.has('arrowdown')) player.vy += 2 * _k;
+          if (keys.has('a') || keys.has('arrowleft')) player.vx -= 2 * _k;
+          if (keys.has('d') || keys.has('arrowright')) player.vx += 2 * _k;
           
           if (player.sallyFlightTimer <= 0) {
             player.sallyIsFlying = false;
-            setMessage(`🦸‍♀️ Flight Ended! Cooldown: 50s`);
+            setMessage(`🦸‍♀️ Flight over - your next flight is at a checkpoint.`);
           }
         }
       }
@@ -14413,7 +14441,7 @@ function applyTileEffect(tile) {
       if (isRespawning) { 
         player.respawnTimer -= dt; 
         if (player.respawnTimer <= 0) { 
-          if (player.respawnTarget) { player.x = player.respawnTarget.x; player.y = player.respawnTarget.y; player.respawnTarget = null; player.dashCharges = player.maxDashes; player.hp = player.maxHp; player.hpInvuln = 0; if (_music.dangerActive) { _music.dangerActive = false; _music.play('play'); } enemies.length = 0; enemyProjectiles.length = 0; for (const tile of world.tiles.values()) { if (tile.type && tile.type.startsWith('enemy_')) { const en = spawnEnemy(tile.type, tile.x, tile.y); if (tile.dropItem) en.dropItem = tile.dropItem; enemies.push(en); } if (tile.type && tile.type.startsWith('door')) { tile.unlocked = false; } } for (const [id, tile] of collectedTiles) { world.tiles.set(id, {...tile}); } collectedTiles.clear(); player.keys = 0; levelCoins = 0; player.coins = 0; } else resetPlayer(); 
+          if (player.respawnTarget) { player.x = player.respawnTarget.x; player.y = player.respawnTarget.y; player.respawnTarget = null; player.dashCharges = player.maxDashes; refillFlight(); player._fuelWarned = false; player.hp = player.maxHp; player.hpInvuln = 0; if (_music.dangerActive) { _music.dangerActive = false; _music.play('play'); } enemies.length = 0; enemyProjectiles.length = 0; for (const tile of world.tiles.values()) { if (tile.type && tile.type.startsWith('enemy_')) { const en = spawnEnemy(tile.type, tile.x, tile.y); if (tile.dropItem) en.dropItem = tile.dropItem; enemies.push(en); } if (tile.type && tile.type.startsWith('door')) { tile.unlocked = false; } } for (const [id, tile] of collectedTiles) { world.tiles.set(id, {...tile}); } collectedTiles.clear(); player.keys = 0; levelCoins = 0; player.coins = 0; } else resetPlayer(); 
         } 
         
       } else {
@@ -14962,6 +14990,7 @@ function applyTileEffect(tile) {
                  
                  const dashBonus = Math.ceil(player.maxDashes * 0.5);
                  player.dashCharges = Math.min(player.maxDashes, player.dashCharges + dashBonus);
+                 refillFlight(); player._fuelWarned = false;
                  setMessage(`🚩 Checkpoint! ❤️ Full HP! +${dashBonus} dash${dashBonus !== 1 ? 'es' : ''} ⚡`);
                  
                  
@@ -15931,14 +15960,17 @@ if (d.type === 'rc') {
     const left = keys.has('f');
     const right = keys.has('h');
 
-    if (up) d.vy -= 1.5;
-    if (down) d.vy += 1.5;
-    if (left) d.vx -= 1.5;
-    if (right) d.vx += 1.5;
+    const _k = dt * 60;   // per 60 Hz frame, so it feels the same at 120 Hz
+    if (droneSteerAllowed(dt, up || down || left || right)) {
+      if (up) d.vy -= 1.5 * _k;
+      if (down) d.vy += 1.5 * _k;
+      if (left) d.vx -= 1.5 * _k;
+      if (right) d.vx += 1.5 * _k;
+    }
 
 
-d.vx *= 0.85;
-d.vy *= 0.85;
+d.vx *= Math.pow(0.85, _k);
+d.vy *= Math.pow(0.85, _k);
     d.x += d.vx * dt;
     d.y += d.vy * dt;
 
@@ -16159,18 +16191,21 @@ d.vy *= 0.85;
       for (let i = commanderDrones.length - 1; i >= 0; i--) {
         const d = commanderDrones[i];
         d.timer -= dt;
+        const _k = dt * 60;   // steering is per 60 Hz frame, so it feels the same at 120 Hz
         if (d.isControlled) {
           
           const up = keys.has('t'); const down = keys.has('g');
           const left = keys.has('f'); const right = keys.has('h');
-          if (up) d.vy -= 2.5;
-          if (down) d.vy += 2.5;
-          if (left) d.vx -= 2.5;
-          if (right) d.vx += 2.5;
-          d.vx *= 0.82; d.vy *= 0.82;
+          if (droneSteerAllowed(dt, up || down || left || right)) {
+            if (up) d.vy -= 2.5 * _k;
+            if (down) d.vy += 2.5 * _k;
+            if (left) d.vx -= 2.5 * _k;
+            if (right) d.vx += 2.5 * _k;
+          }
+          d.vx *= Math.pow(0.82, _k); d.vy *= Math.pow(0.82, _k);
         } else {
           
-          d.vx *= 0.9; d.vy *= 0.9;
+          d.vx *= Math.pow(0.9, _k); d.vy *= Math.pow(0.9, _k);
         }
         d.x += d.vx * dt;
         d.y += d.vy * dt;
@@ -26167,7 +26202,7 @@ function resolveCollisions(axis, dt) {
     if (selectedCharacter === 'cosplayer') {
       const form = cosplayerForms[player.cosplayerFormIndex];
       cosplayerInfo = `<br>Form: <b style="color:${form.color}">${form.emoji} ${form.name}</b>`;
-      if (player.sallyFlightCooldown > 0) cosplayerInfo += `<br>Fly CD: <b>${Math.ceil(player.sallyFlightCooldown)}s</b>`;
+      if (form.id === 'sally') cosplayerInfo += `<br>Flights: <b>${player.sallyCharges ?? 1}</b> <span style="opacity:.7">(refill at checkpoints)</span>`;
     }
 
     
@@ -26231,6 +26266,10 @@ function resolveCollisions(axis, dt) {
     if (selectedCharacter === 'commander') {
       _hudH += `<br>🎯 Drones: <b>${commanderDrones.length}/3</b>`;
       if (commanderDrones.length > 0) _hudH += ` <span style="color:#f97316">(FTGH control)</span>`;
+    }
+    if ((selectedCharacter === 'commander' || selectedCharacter === 'operator') && !_flightFree()) {
+      const _fm = flightFuelMax(), _ff = player.flightFuel ?? _fm;
+      _hudH += `<br>🔋 Flight fuel: <b style="color:${_ff > 0 ? '#9cff9a' : '#ff6b6b'}">${_ff.toFixed(1)}s</b> / ${_fm}s`;
     }
     
     if (selectedCharacter === 'quarry' && quarryBlocks.length > 0) {
@@ -35383,6 +35422,56 @@ window._claimLBro = function() {
     insane: { count: 4, late: 4, pool: ['enemy_charger', 'enemy_shielder', 'enemy_slasher', 'enemy_vampire', 'enemy_berserker'], champion: 'enemy_boss' },
   };
   const ARENAS_PER_LENGTH = { short: 1, medium: 1, long: 2, marathon: 3 };
+  // Boss rooms: one big fighter that drops the only key.
+  const BOSSES = {
+    easy: ['enemy_boss'], medium: ['enemy_boss'],
+    hard: ['enemy_golem', 'enemy_warlord'], insane: ['enemy_brute', 'enemy_warlord', 'enemy_glacier'],
+  };
+
+  // Rooms built around one character's own ability, used when the course is locked to them.
+  // up: height of their plain double jump; extra: what their S + up special adds on top.
+  // (Measured in the game, with no upgrades.)
+  const CHAR_ROOMS = {
+    cloner:       { rooms: ['cloneRoom'], noFight: true },
+    quarry:       { rooms: ['blockCliff'], up: 6.43 },
+    frostqueen:   { rooms: ['iceCliff'], up: 5.3 },
+    swordsman:    { rooms: ['breakPlug'] },
+    cb_fizz:      { rooms: ['recoveryCliff'], up: 4.74, extra: 6.1 },
+    cb_peach_ref: { rooms: ['recoveryCliff'], up: 5.59, extra: 4.6 },
+    cb_sleight:   { rooms: ['recoveryCliff'], up: 5.86, extra: 3.6 },
+    cb_luigi_ref: { rooms: ['recoveryCliff'], up: 6.81, extra: 3.2 },
+    cb_chameleon: { rooms: ['recoveryCliff'], up: 5.12, extra: 3.0 },
+    cb_mario_ref: { rooms: ['recoveryCliff'], up: 5.52, extra: 2.7 },
+    cb_kodiak:    { rooms: ['recoveryCliff'], up: 3.78, extra: 2.5 },
+    cb_valka:     { rooms: ['recoveryCliff'], up: 5.79, extra: 2.2 },
+  };
+  const ROOM_TITLES = {
+    cloneRoom: '🧬 Clone Run', blockCliff: '🪨 Block Climb', iceCliff: '❄️ Ice Climb',
+    recoveryCliff: '🥊 Recovery Climb', breakPlug: '⚔️ Break Through',
+  };
+  // The rooms a lock can use: only those every locked character can do. The cliff height has
+  // to beat each one's plain jump and still be reachable with their special.
+  function profileFor(ids) {
+    const prof = { rooms: [], noFight: false, cliff: {} };
+    if (!ids || !ids.length) return prof;
+    let rooms = null;
+    for (const id of ids) {
+      const c = CHAR_ROOMS[id] || { rooms: [] };
+      rooms = rooms === null ? c.rooms.slice() : rooms.filter(r => c.rooms.includes(r));
+      if (c.noFight) prof.noFight = true;
+    }
+    rooms = rooms || [];
+    const ups = ids.map(id => CHAR_ROOMS[id] || {});
+    if (rooms.includes('blockCliff')) prof.cliff.blockCliff = 8;
+    if (rooms.includes('iceCliff')) prof.cliff.iceCliff = 8;
+    if (rooms.includes('recoveryCliff')) {
+      const H = Math.max(...ups.map(c => Math.ceil(c.up + 1.2)));
+      const ok = ups.every(c => H <= c.up + 0.7 * c.extra) && H <= 9;
+      if (ok) prof.cliff.recoveryCliff = H; else rooms = rooms.filter(r => r !== 'recoveryCliff');
+    }
+    prof.rooms = rooms;
+    return prof;
+  }
 
   // ---- Can a player make this jump? ----
   // Worked out from the game's own movement: run 9.5 tiles/s x speed, jump 14 tiles/s x jump,
@@ -35437,7 +35526,9 @@ window._claimLBro = function() {
   const PIECE_ROOM = {
     hop: 12, stairs: 20, drop: 12, spikeRun: 18, lavaMoat: 20, springLaunch: 14,
     moverBridge: 20, conveyorRun: 20, crumbleBridge: 22, iceSlide: 22, windLift: 12,
-    rest: 10, arena: 34,
+    rest: 10, arena: 38, bossArena: 40,
+    chimney: 18, sawGauntlet: 26, laserLock: 30,
+    cloneRoom: 26, blockCliff: 16, iceCliff: 16, recoveryCliff: 16, breakPlug: 18,
   };
 
   function generateCourse(opts) {
@@ -35445,6 +35536,7 @@ window._claimLBro = function() {
     // The characters this course must work for (a character lock), else a plain character.
     const PHYS_LIST = (opts.phys && opts.phys.length) ? opts.phys : [DEFAULT_PHYS];
     const reach = (g, c, l) => PHYS_LIST.every(ph => canReach(g, c, l, ph));
+    const prof = profileFor(opts.chars);
     const diffName = DIFFS[opts.difficulty] ? opts.difficulty : 'medium';
     const diff = DIFFS[diffName];
     const target = LENGTHS[opts.length] || LENGTHS.medium;
@@ -35470,6 +35562,9 @@ window._claimLBro = function() {
     const moversOut = [];
     const jumps = [];
     const pieces = [];
+    // moves the plain jump check doesn't cover (wall jumps, a clone run, a block climb...):
+    // each was proved in the game by a test run, and the course check accepts them as links
+    const links = [];
 
     function addTile(px, py, type, extra) {
       px = Math.round(px); py = Math.round(py);
@@ -35759,49 +35854,187 @@ window._claimLBro = function() {
       // The Colosseum: a walled arena. You walk in through a one-way gate, and the only
       // way out is a door that needs a key from every fighter inside. Spikes line the
       // roof so it can't be climbed over.
-      arena(P, arenaIdx) {
-        const base = LANE_BASE[st.lane];
+      arena(P, arenaIdx) { return buildArena(P, arenaIdx, false); },
+      bossArena(P, arenaIdx) { return buildArena(P, arenaIdx, true); },
+
+      // Wall-jump chimney: two walls three tiles apart; kick from one to the other to the top.
+      chimney(P) {
         const b = band();
-        const F = Math.max(base - 1, Math.min(b[1], st.y));
-        for (let guard = 0; guard < 8 && Math.abs(st.y - F) > 2; guard++) {
-          const f = fit(2, st.y + Math.sign(F - st.y) * 2);
-          plat(f.gap, f.y, 2, 'solid');
+        const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + 7)));
+        const F = f.y;
+        const H = Math.max(5, Math.min(9, F - b[0]));
+        const floor = plat(f.gap, F, 7, 'solid');
+        floor.cells.forEach(c => floor.used.add(c));
+        for (let r = F - H - 3; r <= F - 4; r++) addTile(floor.cells[3], r, 'solid');   // back wall, open at the bottom
+        const wallX = col(0);
+        for (let r = F - H + 1; r <= F - 1; r++) addTile(wallX, r, 'solid');            // front wall
+        const top = plat(0, F - H, rnd(4, 6), 'solid', { kind: 'chimney' });
+        links.push({ kind: 'chimney', from: [floor.cells[5], F], to: [top.cells[1], F - H] });
+        if (opts.coins) addTile(floor.cells[5], F - Math.round(H / 2), 'coin');
+        decorate(top, P);
+      },
+
+      // Saw gauntlet: a low corridor with saws dropping through it; time the gaps.
+      sawGauntlet(P) {
+        const b = band();
+        const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + 2)));
+        const n = Math.max(2, Math.min(6, 2 + Math.round(P.hazard * 10)));
+        const L = 4 + n * 3;
+        const floor = plat(f.gap, f.y, L, 'solid');
+        const F = floor.y;
+        for (let i = 1; i <= L - 2; i++) { addTile(floor.cells[i], F - 5, 'solid'); addTile(floor.cells[i], F - 6, 'spike'); }
+        for (let k = 0; k < n; k++) {
+          addTile(floor.cells[3 + k * 3], F - 4, 'sawV', { sawOffset: +(rng() * 3).toFixed(2), sawDir: chance(0.5) ? 1 : -1, sawRange: 3 });
         }
-        const APPROACH = 6, INNER = 12, EXIT = 5;
-        const LW = APPROACH, RW = APPROACH + INNER + 1, LEN = RW + 1 + EXIT;
-        const floor = plat(fit(rnd(1, 2), F).gap, F, LEN, 'solid', { kind: 'arena' });
-        const at = (i) => floor.cells[i];
-        const H = 7;
-        // walls and roof
-        for (let r = F - H; r <= F - 1; r++) {
-          if (r >= F - 2) addTile(at(LW), r, st.dir > 0 ? 'oneWayR' : 'oneWayL');
-          else addTile(at(LW), r, 'solid');
-          addTile(at(RW), r, 'solid');
-        }
-        for (let i = LW + 1; i < RW; i++) addTile(at(i), F - H, 'solid');
-        for (let i = LW; i <= RW; i++) addTile(at(i), F - H - 1, 'spike');
-        for (let i = LW; i <= RW; i++) floor.used.add(at(i));
-        // the fighters
-        const late = opts.ramp ? P.t > 0.6 : true;
-        const R = ARENA_ROSTER[diffName];
-        const count = late ? R.late : R.count;
-        const spots = count === 4 ? [LW + 5, LW + 7, LW + 9, LW + 11] : [LW + 7, LW + 10];
-        spots.forEach((i, k) => {
-          let type = pick(R.pool);
-          if (R.champion && k === spots.length - 1 && late) type = R.champion;
-          addTile(at(i), F - 1, type, { dropItem: 'key' });
-        });
-        // the way out
-        const pairId = 'gen_arena_' + arenaIdx + '_' + opts.seed;
-        const door = 'door' + count;
-        addTile(at(RW - 1), F - 1, door, { pairId: pairId });
-        addTile(at(RW + 3), F - 1, door, { pairId: pairId });
-        if (opts.checkpoints) { addTile(at(2), F - 1, 'checkpoint'); st.sinceCP = 0; }
-        if (opts.coins) addTile(at(RW + 5 <= LEN - 1 ? RW + 5 : LEN - 1), F - 1, 'coin');
-        st.platforms += 2;
-        return { fighters: count };
+        floor.cells.forEach(c => floor.used.add(c));
+        if (opts.coins) addTile(floor.cells[L - 2], F - 1, 'coin');
+      },
+
+      // Laser lock: a sealed room. Climb to the switch inside to shut the laser door out.
+      laserLock(P, idx) {
+        const R = roomFrame(P, { inner: 10, H: 9, minFloor: 1, exit: 'laser' });
+        const c = Math.max(1, Math.min(3, maxClimb(1, PHYS_LIST)));
+        const mirror = chance(0.5);
+        const i1 = mirror ? R.LW + 7 : R.LW + 3, i2 = mirror ? R.LW + 4 : R.LW + 6;
+        for (let k = 0; k < 2; k++) { addTile(R.at(i1 + k), R.F - c, 'solid'); addTile(R.at(i2 + k), R.F - 2 * c, 'solid'); }
+        const sw = R.at(i2 + (mirror ? 0 : 1));
+        addTile(sw, R.F - 2 * c - 1, 'switch', { linkedLasers: R.gate, groupOn: true });
+        R.gate.forEach(k => { byKey.get(k).linkedPlate = sw + ',' + (R.F - 2 * c - 1); });
+        links.push({ kind: 'laserLock', from: [R.at(R.LW + 2), R.F], to: [R.at(R.RW + 2), R.F] });
+        return R;
+      },
+
+      // ---- Character rooms ----
+      // Clone Run (Cloner): drop in through the hatch. The switch sits at the end of a low
+      // tunnel of lava, spikes and lasers that only the clone survives. Face the door and dash:
+      // the clone runs back down the tunnel, trips the switch and falls into the pit after it.
+      cloneRoom(P) {
+        const b = band();
+        const F = b[1], Rr = F - 5;
+        for (let guard = 0; guard < 8 && st.y - Rr > 2; guard++) { const f = fit(2, st.y - 2); plat(f.gap, f.y, 2, 'solid'); }
+        const f = fit(rnd(1, 2), Rr);
+        const roof = plat(f.gap, f.y, 10, 'solid', { kind: 'jump' });
+        const R0 = roof.y, Fl = R0 + 5;
+        const at = (i) => roof.cells[0] + st.dir * i;
+        roof.cells.forEach(c => roof.used.add(c));
+        for (let r = R0 + 1; r <= Fl + 2; r++) addTile(at(0), r, 'solid');                    // left wall and pit wall
+        for (let i = 3; i <= 19; i++) addTile(at(i), Fl, 'solid');                             // floor
+        addTile(at(1), Fl + 2, 'solid'); addTile(at(2), Fl + 2, 'solid');                     // pit bottom
+        addTile(at(3), Fl + 1, 'solid'); addTile(at(3), Fl + 2, 'solid');
+        for (let i = 1; i <= 9; i++) addTile(at(i), Fl - 2, 'solid');                          // tunnel ceiling
+        const sw = at(3) + ',' + (Fl - 1);
+        const gate = [Fl - 3, Fl - 2, Fl - 1].map(r => at(14) + ',' + r);
+        addTile(at(3), Fl - 1, 'switch', { linkedLasers: gate, groupOn: true });
+        [['lava', 4], ['lava', 5], ['spike', 6], ['laser', 7], ['lava', 8], ['spike', 9]].forEach(([t, i]) =>
+          addTile(at(i), Fl - 1, t, t === 'laser' ? { active: true } : undefined));
+        for (let i = 10; i <= 12; i++) addTile(at(i), R0, 'oneWayD');                          // the hatch
+        addTile(at(13), R0, 'solid'); addTile(at(13), R0 - 1, 'spike');
+        for (let r = R0 - 8; r <= Fl - 4; r++) addTile(at(14), r, 'solid');                   // tall wall over the door
+        gate.forEach(k => { const r = +k.split(',')[1]; addTile(at(14), r, 'laser', { linkedPlate: sw, active: true }); });
+        if (opts.checkpoints) { addTile(at(2), R0 - 1, 'checkpoint'); st.sinceCP = 0; }
+        if (opts.coins) addTile(at(17), Fl - 1, 'coin');
+        links.push({ kind: 'clone', from: [at(5), R0], to: [at(11), Fl] }, { kind: 'clone', from: [at(11), Fl], to: [at(16), Fl] });
+        st.x = at(20); st.y = Fl;
+        st.last = { cells: [15, 16, 17, 18, 19].map(at), y: Fl, mat: 'solid', used: new Set() };
+        st.platforms += 3; st.sinceCP += 3;
+      },
+      // Block Climb (Quarry), Ice Climb (Frost Queen), Recovery Climb (fighters): a cliff
+      // taller than their double jump. Stack thrown blocks, stand on ice blocks, or use S + up.
+      blockCliff(P) { abilityCliff(P, 'blockCliff'); },
+      iceCliff(P) { abilityCliff(P, 'iceCliff'); },
+      recoveryCliff(P) { abilityCliff(P, 'recoveryCliff'); },
+      // Break Through (Swordsman): a wall with one breakable block. Battle mode (yellow) breaks it.
+      breakPlug(P) {
+        const b = band();
+        const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + 7)));
+        const floor = plat(f.gap, f.y, 12, 'solid');
+        const F = floor.y;
+        for (let r = F - 7; r <= F - 2; r++) addTile(floor.cells[8], r, 'solid');
+        addTile(floor.cells[8], F - 1, 'breakable');
+        floor.cells.forEach(c => floor.used.add(c));
+        links.push({ kind: 'break', from: [floor.cells[5], F], to: [floor.cells[10], F] });
+        if (opts.coins) addTile(floor.cells[10], F - 1, 'coin');
       },
     };
+
+    function abilityCliff(P, kind) {
+      const b = band();
+      const H = prof.cliff[kind] || 8;
+      const f = fit(rnd(1, 2), clampY(Math.max(st.y, b[0] + H)));
+      const F = f.y;
+      const floor = plat(f.gap, F, 6, 'solid');
+      floor.cells.forEach(c => floor.used.add(c));
+      const wallX = col(0);
+      for (let r = F - H + 1; r <= F - 1; r++) addTile(wallX, r, 'solid');
+      const top = plat(0, F - H, rnd(5, 6), 'solid', { kind: kind });
+      links.push({ kind: kind, from: [floor.cells[3], F], to: [top.cells[2], F - H] });
+      if (opts.coins) addTile(top.cells[3], F - H - 1, 'coin');
+    }
+
+    // A sealed room: walk in through a one-way gate; a spiked roof keeps everyone from going over.
+    // exit 'door' (keys) or 'laser' (a laser door, R.gate, for the room to link to its switch).
+    function roomFrame(P, o) {
+      const base = LANE_BASE[st.lane];
+      const b = band();
+      const F = Math.max(base + (o.minFloor || 0), Math.min(b[1], st.y));
+      for (let guard = 0; guard < 8 && Math.abs(st.y - F) > 2; guard++) {
+        const f = fit(2, st.y + Math.sign(F - st.y) * 2);
+        plat(f.gap, f.y, 2, 'solid');
+      }
+      const APPROACH = 6, EXIT = 5, H = o.H;
+      const LW = APPROACH, RW = APPROACH + o.inner + 1, LEN = RW + 1 + EXIT;
+      const floor = plat(fit(rnd(1, 2), F).gap, F, LEN, 'solid', { kind: 'arena' });
+      const at = (i) => floor.cells[i];
+      const gate = [];
+      for (let r = F - H; r <= F - 1; r++) {
+        if (r >= F - 2) addTile(at(LW), r, st.dir > 0 ? 'oneWayR' : 'oneWayL');
+        else addTile(at(LW), r, 'solid');
+        if (o.exit === 'laser' && r >= F - 3) { addTile(at(RW), r, 'laser', { active: true }); gate.push(at(RW) + ',' + r); }
+        else addTile(at(RW), r, 'solid');
+      }
+      for (let i = LW + 1; i < RW; i++) addTile(at(i), F - H, 'solid');
+      for (let i = LW; i <= RW; i++) addTile(at(i), F - H - 1, 'spike');
+      for (let i = LW; i <= RW; i++) floor.used.add(at(i));
+      if (opts.checkpoints) { addTile(at(2), F - 1, 'checkpoint'); st.sinceCP = 0; }
+      if (opts.coins) addTile(at(LEN - 1), F - 1, 'coin');
+      st.platforms += 2;
+      return { F, H, LW, RW, LEN, at, gate, floor };
+    }
+
+    // Colosseum: ledges inside, fighters on the floor and gunners up on the ledges.
+    // A boss room has one big fighter holding the only key, and a heart on a ledge.
+    function buildArena(P, arenaIdx, boss) {
+      const R = roomFrame(P, { inner: boss ? 18 : 14, H: boss ? 9 : 8, minFloor: boss ? 1 : 0, exit: 'door' });
+      const { F, LW, RW, at } = R;
+      const ledges = boss ? [[LW + 3, LW + 5], [LW + 14, LW + 16]] : [[LW + 3, LW + 5], [LW + 10, LW + 12]];
+      const ledgeY = F - Math.max(2, Math.min(4, maxClimb(1, PHYS_LIST)));
+      ledges.forEach(([a, z]) => { for (let i = a; i <= z; i++) addTile(at(i), ledgeY, 'solid'); });
+      const late = opts.ramp ? P.t > 0.6 : true;
+      let count;
+      if (boss) {
+        count = 1;
+        addTile(at(LW + 10), F - 1, pick(BOSSES[diffName]), { dropItem: 'key' });
+        addTile(at(ledges[1][0] + 1), ledgeY - 1, 'hpPickup');
+      } else {
+        const Ro = ARENA_ROSTER[diffName];
+        count = late ? Ro.late : Ro.count;
+        const ranged = ['enemy_shooter', 'enemy_turret'];
+        const spots = count === 4
+          ? [[LW + 7, F - 1, 0], [LW + 9, F - 1, 0], [LW + 4, ledgeY - 1, 1], [LW + 11, ledgeY - 1, 1]]
+          : [[LW + 8, F - 1, 0], [LW + 11, ledgeY - 1, 1]];
+        spots.forEach(([i, r, high], k) => {
+          let type = high && diffName !== 'easy' ? pick(ranged) : pick(Ro.pool);
+          if (Ro.champion && k === 0 && late) type = Ro.champion;
+          addTile(at(i), r, type, { dropItem: 'key' });
+        });
+      }
+      const pairId = 'gen_arena_' + arenaIdx + '_' + opts.seed;
+      const door = 'door' + count;
+      addTile(at(RW - 1), F - 1, door, { pairId: pairId });
+      addTile(at(RW + 3), F - 1, door, { pairId: pairId });
+      links.push({ kind: 'arena', from: [at(LW + 2), F], to: [at(RW + 3), F] });
+      return { fighters: count };
+    }
 
     // Turn around at the end of a lane: a zig-zag tower of steps up to the next lane.
     function tower() {
@@ -35866,6 +36099,10 @@ window._claimLBro = function() {
       if (opts.only && PIECES[opts.only]) return lastName === opts.only ? 'hop' : opts.only;
       const haz = Math.min(1.2, P.hazard * 3 + 0.25);
       const w = [['hop', 3], ['stairs', 1.3], ['drop', 0.6]];
+      if (opts.maneuver !== false) { w.push(['chimney', 1.0]); if (opts.hazards) w.push(['sawGauntlet', 0.9 * haz]); }
+      if (opts.puzzles !== false && P.t > 0.1) w.push(['laserLock', 0.8]);
+      // the locked character's own rooms come up often
+      prof.rooms.forEach(r => w.push([r, 2.4]));
       if (opts.hazards) { w.push(['spikeRun', 1.4 * haz]); w.push(['lavaMoat', 1.2 * haz]); }
       if (opts.springs) w.push(['springLaunch', 1.1]);
       if (opts.moving) { w.push(['moverBridge', 1.1]); w.push(['conveyorRun', 0.8]); }
@@ -35883,7 +36120,11 @@ window._claimLBro = function() {
       const t = Math.min(1, st.platforms / target);
       const P = params(t);
       let name;
-      if (arenaMarks.length && st.platforms >= arenaMarks[0]) name = 'arena';
+      if (arenaMarks.length && st.platforms >= arenaMarks[0]) {
+        // no fights for characters built for puzzles (Cloner): their own room instead
+        if (prof.noFight) name = prof.rooms[0] || 'laserLock';
+        else name = arenaMarks.length === 1 && (opts.length === 'long' || opts.length === 'marathon' || diffName === 'hard' || diffName === 'insane') ? 'bossArena' : 'arena';
+      }
       else if (opts.only === 'arena' && lastName !== 'arena' && lastName !== 'rest') name = 'arena';
       else if (opts.checkpoints && st.sinceCP >= opts.checkpointEvery) name = 'rest';
       else name = choosePiece(P);
@@ -35894,7 +36135,10 @@ window._claimLBro = function() {
       }
       const startX = st.x, startY = st.y;
       const res = PIECES[name](P, arenasBuilt);
-      if (name === 'arena') { arenaMarks.shift(); arenasBuilt++; fighters += res.fighters; }
+      if (arenaMarks.length && st.platforms >= arenaMarks[0] && (name === 'arena' || name === 'bossArena' || prof.noFight)) {
+        arenaMarks.shift();
+        if (name === 'arena' || name === 'bossArena') { arenasBuilt++; fighters += res.fighters; }
+      }
       pieces.push({ name: name, x: startX, y: startY, endX: st.x, endY: st.y, dir: st.dir });
       lastName = name;
     }
@@ -35923,6 +36167,8 @@ window._claimLBro = function() {
       fighters: fighters,
       pieces: pieces,
       jumps: jumps,
+      links: links,
+      profile: prof,
       verified: bad.length === 0,
       badJumps: bad,
       checkedJumps: checked,
@@ -36012,6 +36258,8 @@ window._claimLBro = function() {
               <button data-val="checkpoints" class="active">🚩 Checkpoints</button>
               <button data-val="enemies">👾 Patrol Enemies</button>
               <button data-val="arena" class="active">⚔️ Colosseum</button>
+              <button data-val="maneuver" class="active">🧗 Maneuvering</button>
+              <button data-val="puzzles" class="active">🧩 Puzzles</button>
             </div>
             <div class="spacer"></div>
             <div class="row" id="obGenCPRow">
@@ -36020,7 +36268,9 @@ window._claimLBro = function() {
               <span class="hint" id="obGenCPFreqVal" style="margin:0; min-width:16px; text-align:right;">6</span>
             </div>
             <div class="hint" style="margin-top:8px;">Patrol enemy danger scales with Difficulty - Easy stays mostly harmless, Insane leans deadly.</div>
-            <div class="hint" style="margin-top:6px;">⚔️ Colosseum: walled arenas along the course. Beat every fighter inside to earn the keys for the exit door.</div>
+            <div class="hint" style="margin-top:6px;">⚔️ Colosseum: walled arenas along the course. Beat every fighter inside to earn the keys for the exit door. Long courses (and Hard/Insane) end their run of fights with a boss room.</div>
+            <div class="hint" style="margin-top:6px;">🧗 Maneuvering: wall-jump chimneys and saw gauntlets. 🧩 Puzzles: sealed rooms you leave by finding the switch for the laser door.</div>
+            <div class="hint" style="margin-top:6px;">Lock the course to one character (below) and it gets rooms built around their ability - Cloner's clone runs, Quarry's block climbs, Frost Queen's ice climbs, Swordsman's break-throughs and the fighters' recovery climbs.</div>
           </div>
 
           <div class="section">
@@ -36229,7 +36479,8 @@ window._claimLBro = function() {
       windUp: '#7cdbff', windRight: '#7cdbff', coin: '#ffd166',
       checkpoint: '#9cff9a', goal: '#ff6b6b',
       enemy_patrol_safe: '#22c55e', enemy_patrol_hurt: '#eab308', enemy_patrol_kill: '#dc2626',
-      door2: '#f59e0b', door4: '#f59e0b', oneWayR: '#38bdf8', oneWayL: '#38bdf8',
+      door1: '#f59e0b', door2: '#f59e0b', door4: '#f59e0b', oneWayR: '#38bdf8', oneWayL: '#38bdf8', oneWayD: '#4ade80',
+      sawV: '#ff6b6b', laser: '#ff2d55', switch: '#9cff9a', breakable: '#a16207', hpPickup: '#ff6b9d',
     };
     let previewOpts = null; 
 
@@ -36248,6 +36499,8 @@ window._claimLBro = function() {
         checkpointEvery: parseInt(cpFreq.value, 10) || 6,
         enemies: featureOn('enemies'),
         arena: featureOn('arena'),
+        maneuver: featureOn('maneuver'),
+        puzzles: featureOn('puzzles'),
         verticality: currentVal(vertGroup),
         platformWidth: currentVal(widthGroup),
         gapSize: currentVal(gapGroup),
