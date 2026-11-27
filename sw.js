@@ -1,4 +1,4 @@
-const CACHE_NAME = 'press-play-media-v80';
+const CACHE_NAME = 'press-play-media-v81';
 // The app and the scripts it loads at start. Games, alarm.html, pp-sr-models.js and CREDITS.txt are cached the first time they are opened.
 const CORE_ASSETS = [
   './',
