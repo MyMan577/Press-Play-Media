@@ -11356,6 +11356,7 @@ function updateHud(){
   btnAttack.innerHTML = `<span class="icon">${isRangedWeapon ? '🔫' : '⚔'}</span>${state.weaponReloading ? 'Reloading' : (isRangedWeapon ? 'Shoot' : 'Spear')}`;
   if(state.weaponReloading) btnAttack.classList.add('disabled');
   gtHud();
+  mythStoryCheck();
 }
 function setButtonsEnabled(on){
   [btnAttack,btnGuard,btnCharge,btnSkills].forEach(b=>b.classList.toggle('disabled', !on || state.over));
@@ -15716,6 +15717,7 @@ function gtShatter(){
   spawnParticles(enemy.x, enemy.y - 70, 30, { color: GT.cfg.particleColor, speed: 5, spread: 6.28, size: 5, glow: true });
   gtBanner('WARD SHATTERED!', cancelled ? `${GT.trial.cata.name} collapses! It staggers - +50% damage for 2 rounds` : 'It staggers - +50% damage for 2 rounds', '#ffe066');
   log(`The ward shatters! ${GT.cfg.name} staggers${cancelled ? ` and ${GT.trial.cata.name} collapses` : ''}!`);
+  if(GT.wardsBroken === 1) setTimeout(()=>{ if(gtOn() && !state.over) mythicCameo(GT.trial.bgArea); }, 2400);
   updateHud();
 }
 
@@ -16013,6 +16015,357 @@ function gtRecordClear(){
   return GT.result;
 }
 function gtBest(id){ return (state.guardianBest && state.guardianBest[id]) || { tier: 0, grades: {} }; }
+
+// ==== MYTHIC SPIRITS ======================================================
+// Ten rare beings, each tied to one Area: world myths (fairy, kitsune, phoenix,
+// oni, yeti, seraph) and creatures that matter in this land (sasquatch, the
+// elder loon and raven, the Kermode spirit bear). They turn up three ways:
+//  - as rare encounters in their Area (spare one to bond with it),
+//  - as a "mythic sighting" that helps Kanata once in some story boss fights,
+//  - the same in Guardian Trials, the first time a ward is shattered.
+// registerMythic() fills every table a spirit needs from one object.
+const MYTHICS = [];
+const MYTHIC_SPAWN_CHANCE = 0.07;
+function registerMythic(c){
+  MYTHICS.push(c);
+  ENEMY_DEFS[c.id] = {
+    element: c.element, name: c.name, hp: c.hp, dmgMult: c.dmgMult, shakeRanged: c.shake || 12,
+    draw: c.art.enemy, mythic: true,
+    encounterLog: '✦ A mythic encounter! ' + c.log.encounter,
+    wasted: c.log.wasted.map((txt,i)=>({ txt, pose: ['eye','stumble','reload'][i%3] })),
+    rangedLog: c.log.ranged, rangedBrace: c.log.rangedBrace,
+    lungeLog: c.log.lunge, lungeBrace: c.log.lungeBrace,
+    victoryLog: c.log.victory
+  };
+  SPIRIT_BONDS[c.id] = {
+    element: c.element, name: c.name + ' Spirit', short: c.name.replace(/^The /,''), icon: c.icon,
+    rgb: c.rgb, particleColor: c.color, dmgMin: c.bond[0], dmgMax: c.bond[1], spiritCap: c.bond[2],
+    mythic: true,
+    callLog: `The ${c.name} Spirit answers your call!`,
+    unlockDesc: `A rare mythic being of ${getAreaById(c.area).name}. Spare it in battle to bond with it.`,
+    capDesc: 'Mythic - a heavy gauge, but nothing ordinary hits like this.',
+    draw: c.art.spirit
+  };
+  GOLD_BY_ENEMY[c.id] = c.gold;
+  SPIRIT_DATA_XPNEXT_DEFAULTS[c.id] = c.xpNext;
+  TROPHY_DEFS[c.id] = c.trophy;
+  SPIRIT_SPECIALS[c.id] = c.special;
+  SPIRIT_SKILLS[c.id] = c.moves;
+}
+function mythHeal(pct){ state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*pct)); spawnParticles(hero.x, hero.y-40, 22, {color:'#4ade80', speed:3, spread:6.28, size:3, up:1}); updateHud(); }
+function mythMove(id, element, name, lvl, cost, desc, fn){ return { id, element, name, lvl, cost, desc, action: fn }; }
+
+// ---- Art (drawn facing +x at the origin, ground at y = 0) ----
+function mythShapeFairy(t, charge, swing){
+  const y = -58 + Math.sin(t*0.005)*6, x = charge*20;
+  sctx.save(); sctx.translate(x, y);
+  const g = sctx.createRadialGradient(0,0,2,0,0,34); g.addColorStop(0,'rgba(220,255,200,0.7)'); g.addColorStop(1,'rgba(220,255,200,0)');
+  sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0,0,34,0,Math.PI*2); sctx.fill();
+  const f = Math.sin(t*0.04)*0.5;
+  sctx.fillStyle = 'rgba(200,240,255,0.55)';
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx,sy],i)=>{ sctx.save(); sctx.rotate(sy*(0.5+f*(i<2?1:-1))*0.6 + (sx<0?Math.PI:0)); sctx.beginPath(); sctx.ellipse(12,0,13 - (i%2)*3,5,0,0,Math.PI*2); sctx.fill(); sctx.restore(); });
+  sctx.fillStyle = '#f3ffe8'; sctx.beginPath(); sctx.ellipse(0,0,4,9,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(1,-12,4,0,Math.PI*2); sctx.fill();
+  sctx.strokeStyle = '#bfffa0'; sctx.lineWidth = 1.5; sctx.beginPath(); sctx.moveTo(3,-15); sctx.quadraticCurveTo(10,-24,6,-28); sctx.stroke();
+  if(swing>0.1){ sctx.fillStyle = 'rgba(230,255,180,0.9)'; for(let i=0;i<6;i++){ const a=i/6*Math.PI*2+t*0.01; sctx.beginPath(); sctx.arc(Math.cos(a)*20*swing, Math.sin(a)*20*swing, 2, 0, Math.PI*2); sctx.fill(); } }
+  sctx.restore();
+  if(Math.random()<0.15) spawnParticles(enemy.x, enemy.y - enemy.scale*60, 1, {color:'#e6ffb4', speed:0.6, spread:6.28, size:2, glow:true, life:40});
+}
+function mythShapeLoon(t, charge, swing){
+  sctx.save(); sctx.translate(charge*14, Math.sin(t*0.003)*1.5);
+  sctx.strokeStyle = 'rgba(160,200,230,0.5)'; sctx.lineWidth = 2;
+  sctx.beginPath(); sctx.ellipse(0,2,54,6,0,0,Math.PI*2); sctx.stroke();
+  sctx.fillStyle = '#16191c'; sctx.beginPath(); sctx.ellipse(-4,-12,40,14,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e8eef2'; for(let r=0;r<2;r++) for(let i=0;i<7;i++){ sctx.fillRect(-30+i*8 + r*4, -18 + r*6, 3, 3); }
+  sctx.fillStyle = '#16191c'; sctx.beginPath(); sctx.moveTo(22,-16); sctx.quadraticCurveTo(30,-40,34,-46); sctx.lineTo(44,-44); sctx.quadraticCurveTo(36,-30,32,-12); sctx.fill();
+  sctx.save(); sctx.translate(38,-48); sctx.rotate(swing*-0.4);
+  sctx.fillStyle = '#0e1a14'; sctx.beginPath(); sctx.ellipse(0,0,10,8,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#2a2f33'; sctx.beginPath(); sctx.moveTo(8,-2); sctx.lineTo(24,1); sctx.lineTo(8,3); sctx.fill();
+  gtGlowEye(3,-2,2,'#ff3b3b'); sctx.restore();
+  sctx.strokeStyle = '#e8eef2'; sctx.lineWidth = 1.5; for(let i=0;i<4;i++){ sctx.beginPath(); sctx.moveTo(30+i*1.5,-34+i*2); sctx.lineTo(36+i*1.5,-36+i*2); sctx.stroke(); }
+  sctx.restore();
+}
+function mythShapeKitsune(t, charge, swing){
+  const x = charge*12;
+  for(let i=0;i<9;i++){
+    const a = -2.6 + i*0.2 + Math.sin(t*0.003+i)*0.08;
+    sctx.save(); sctx.translate(-26+x,-26); sctx.rotate(a);
+    sctx.fillStyle = '#f4e6c8'; sctx.beginPath(); sctx.ellipse(22,0,24,6.5,0,0,Math.PI*2); sctx.fill();
+    sctx.fillStyle = `rgba(120,190,255,${0.55+Math.sin(t*0.01+i)*0.3})`; sctx.beginPath(); sctx.arc(44,0,4.5,0,Math.PI*2); sctx.fill();
+    sctx.restore();
+  }
+  sctx.fillStyle = '#d8c39a';
+  drawLimb(-18+x,-16,-20+x,10,6); drawLimb(-6+x,-16,-6+x,10,6); drawLimb(14+x,-16,16+x,10,6); drawLimb(24+x,-16,26+x,10,6);
+  sctx.fillStyle = '#f4e6c8'; sctx.beginPath(); sctx.ellipse(4+x,-24,28,11,0,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(34+x,-34); sctx.rotate(swing*-0.3);
+  sctx.fillStyle = '#f4e6c8'; sctx.beginPath(); sctx.ellipse(0,0,10,8,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(6,-2); sctx.lineTo(20,3); sctx.lineTo(6,6); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(-6,-5); sctx.lineTo(-4,-18); sctx.lineTo(1,-7); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(1,-7); sctx.lineTo(5,-18); sctx.lineTo(7,-4); sctx.fill();
+  sctx.strokeStyle = '#d0202a'; sctx.lineWidth = 1.6; sctx.beginPath(); sctx.moveTo(2,-5); sctx.lineTo(9,-3); sctx.moveTo(-3,2); sctx.lineTo(4,3); sctx.stroke();
+  gtGlowEye(5,-2,1.8,'#7fc4ff'); sctx.restore();
+}
+function mythShapePhoenix(t, charge, swing){
+  const y = -40 + Math.sin(t*0.004)*5, flap = Math.sin(t*0.009)*0.6 + swing*0.6;
+  sctx.save(); sctx.translate(charge*16, y);
+  for(let i=0;i<4;i++){ sctx.strokeStyle = ['#ff4d1a','#ff8a1a','#ffc21a','#ff6a1a'][i]; sctx.lineWidth = 3; sctx.beginPath(); sctx.moveTo(-14,0); sctx.quadraticCurveTo(-40,10+i*6, -66 - i*4, -4 + i*10 + Math.sin(t*0.006+i)*5); sctx.stroke(); }
+  sctx.save(); sctx.rotate(-0.3 - flap); sctx.fillStyle = '#ff7a1a';
+  sctx.beginPath(); sctx.moveTo(0,-4); sctx.quadraticCurveTo(-20,-46,-50,-52); sctx.lineTo(-36,-36); sctx.lineTo(-44,-26); sctx.lineTo(-24,-18); sctx.closePath(); sctx.fill(); sctx.restore();
+  sctx.fillStyle = '#ff5a14'; sctx.beginPath(); sctx.ellipse(0,0,20,10,-0.2,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#ffb02e'; sctx.beginPath(); sctx.ellipse(18,-10,8,7,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#ffe27a'; sctx.beginPath(); sctx.moveTo(24,-12); sctx.lineTo(32,-9); sctx.lineTo(24,-7); sctx.fill();
+  for(let i=0;i<3;i++){ sctx.beginPath(); sctx.moveTo(14+i*2,-15); sctx.lineTo(8+i*4,-28 + Math.sin(t*0.02+i)*2); sctx.lineTo(18+i*2,-14); sctx.fill(); }
+  gtGlowEye(20,-11,1.6,'#fff2b0');
+  sctx.save(); sctx.rotate(0.2 + flap); sctx.fillStyle = '#ffa31a';
+  sctx.beginPath(); sctx.moveTo(4,-4); sctx.quadraticCurveTo(-14,-50,-44,-60); sctx.lineTo(-32,-44); sctx.lineTo(-42,-34); sctx.lineTo(-18,-20); sctx.closePath(); sctx.fill(); sctx.restore();
+  sctx.restore();
+  if(Math.random()<0.3) spawnParticles(enemy.x + (Math.random()-0.5)*40, enemy.y - enemy.scale*50, 1, {color: Math.random()<0.5?'#ffb02e':'#ff5a14', speed:0.8, spread:1, size:2.5, glow:true, grav:-0.04, life:45, angle:-Math.PI/2});
+}
+function mythShapeBiped(o){
+  return function(t, charge, swing){
+    const x = charge*14, bob = Math.sin(t*0.003)*1.5;
+    sctx.fillStyle = o.dark;
+    drawLimb(-10+x,-44,-14+x,0,o.leg); drawLimb(8+x,-44,12+x,0,o.leg);
+    sctx.fillStyle = o.body;
+    sctx.beginPath(); sctx.ellipse(x,-66+bob,o.w,o.h,0,0,Math.PI*2); sctx.fill();
+    if(o.fur){ for(let i=0;i<9;i++){ const a=-0.2+i*0.45; sctx.beginPath(); sctx.moveTo(x+Math.cos(a)*o.w*0.9, -66+bob+Math.sin(a)*o.h*0.9); sctx.lineTo(x+Math.cos(a)*(o.w+7), -66+bob+Math.sin(a)*(o.h+7)); sctx.lineTo(x+Math.cos(a+0.2)*o.w*0.9, -66+bob+Math.sin(a+0.2)*o.h*0.9); sctx.fill(); } }
+    if(o.belt){ sctx.fillStyle = o.belt; sctx.fillRect(x-o.w*0.9,-50+bob,o.w*1.8,10); sctx.fillStyle = '#111'; for(let i=0;i<4;i++) sctx.fillRect(x-o.w*0.8+i*o.w*0.45,-50+bob,3,10); }
+    sctx.fillStyle = o.body;
+    drawLimb(x-o.w*0.6,-78+bob,x-o.w-6,-40+bob,o.arm);
+    // reaching arm (attacks)
+    drawLimb(x+o.w*0.6,-78+bob,x+o.w+10+swing*14,-52+bob-swing*20,o.arm);
+    if(o.club){ sctx.save(); sctx.translate(x+o.w+10+swing*14,-52+bob-swing*20); sctx.rotate(-0.9 - swing*0.9); sctx.fillStyle = '#3a2a1e'; sctx.fillRect(-3,-46,7,50); sctx.fillStyle = '#8a8a8a'; for(let i=0;i<5;i++){ sctx.beginPath(); sctx.arc(-3,-40+i*8,1.8,0,Math.PI*2); sctx.arc(4,-36+i*8,1.8,0,Math.PI*2); sctx.fill(); } sctx.restore(); }
+    sctx.fillStyle = o.head; sctx.beginPath(); sctx.ellipse(x+6,-98+bob,o.hw,o.hw*1.05,0,0,Math.PI*2); sctx.fill();
+    if(o.face){ sctx.fillStyle = o.face; sctx.beginPath(); sctx.ellipse(x+11,-96+bob,o.hw*0.55,o.hw*0.6,0,0,Math.PI*2); sctx.fill(); }
+    if(o.horns){ sctx.fillStyle = '#f0e2c0'; sctx.beginPath(); sctx.moveTo(x,-108+bob); sctx.lineTo(x-4,-124+bob); sctx.lineTo(x+4,-109+bob); sctx.moveTo(x+12,-108+bob); sctx.lineTo(x+16,-124+bob); sctx.lineTo(x+16,-107+bob); sctx.fill(); }
+    gtGlowEye(x+14,-99+bob,1.8,o.eye);
+  };
+}
+function mythShapeRaven(t, charge, swing){
+  sctx.save(); sctx.translate(charge*14,0);
+  sctx.strokeStyle = '#1a1a20'; sctx.lineWidth = 3;
+  sctx.beginPath(); sctx.moveTo(-2,-14); sctx.lineTo(-4,0); sctx.moveTo(8,-14); sctx.lineTo(10,0); sctx.stroke();
+  sctx.fillStyle = '#121218'; sctx.beginPath(); sctx.moveTo(-26,-30); sctx.lineTo(-46,-18); sctx.lineTo(-24,-22); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(0,-32,26,18,-0.3,0,Math.PI*2); sctx.fill();
+  sctx.strokeStyle = 'rgba(120,140,255,0.45)'; sctx.lineWidth = 2; sctx.beginPath(); sctx.ellipse(-2,-34,18,10,-0.3,Math.PI*1.1,Math.PI*1.9); sctx.stroke();
+  sctx.save(); sctx.translate(-4,-36); sctx.rotate(-0.2 - swing*0.9); sctx.fillStyle = '#0c0c12';
+  sctx.beginPath(); sctx.moveTo(0,0); sctx.quadraticCurveTo(-24,-10,-40,4); sctx.lineTo(-24,6); sctx.closePath(); sctx.fill(); sctx.restore();
+  sctx.save(); sctx.translate(22,-50); sctx.rotate(swing*0.3);
+  sctx.fillStyle = '#121218'; sctx.beginPath(); sctx.ellipse(0,0,12,10,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#25252e'; sctx.beginPath(); sctx.moveTo(8,-4); sctx.quadraticCurveTo(26,-2,24,6); sctx.lineTo(8,5); sctx.fill();
+  gtGlowEye(4,-3,2,'#e8e8f0'); sctx.restore();
+  sctx.restore();
+}
+function mythShapeKermode(t, charge, swing){
+  const x = charge*12;
+  sctx.fillStyle = '#d6cdb8';
+  drawLimb(-24+x,-16,-26+x,10,11); drawLimb(-8+x,-16,-8+x,10,11); drawLimb(16+x,-18,18+x,10,11); drawLimb(30+x,-18,32+x,10,11);
+  sctx.fillStyle = '#f2ecdc'; sctx.beginPath(); sctx.ellipse(2+x,-32,38,22,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(-10+x,-44,20,12,0,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(40+x,-36); sctx.rotate(swing*-0.25);
+  sctx.fillStyle = '#f2ecdc'; sctx.beginPath(); sctx.ellipse(0,0,13,11,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(12,4,9,7,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(-6,-10,4.5,0,Math.PI*2); sctx.arc(4,-11,4.5,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#2a2420'; sctx.beginPath(); sctx.arc(20,3,2.5,0,Math.PI*2); sctx.fill();
+  gtGlowEye(6,-2,1.8,'#3a2a20'); sctx.restore();
+  if(Math.random()<0.04) spawnParticles(enemy.x, enemy.y - enemy.scale*40, 1, {color:'#fff8e0', speed:0.4, spread:6.28, size:2, glow:true, life:60, grav:-0.02});
+}
+function mythShapeSeraph(t, charge, swing){
+  const y = -14 + Math.sin(t*0.003)*4;
+  sctx.save(); sctx.translate(charge*12, y);
+  sctx.strokeStyle = `rgba(255,236,160,${0.25+Math.sin(t*0.004)*0.1})`; sctx.lineWidth = 2;
+  for(let i=0;i<10;i++){ const a=i/10*Math.PI*2+t*0.0005; sctx.beginPath(); sctx.moveTo(Math.cos(a)*30, -80+Math.sin(a)*30); sctx.lineTo(Math.cos(a)*58, -80+Math.sin(a)*58); sctx.stroke(); }
+  [[1,-70,0.9],[1,-58,0.5],[-1,-70,0.9],[-1,-58,0.5]].forEach(([sx,wy,sz],i)=>{
+    sctx.save(); sctx.translate(0,wy); sctx.scale(sx,1); sctx.rotate(-0.4 - Math.sin(t*0.004 + i)*0.15 - swing*0.4);
+    sctx.fillStyle = i%2 ? 'rgba(240,244,255,0.75)' : 'rgba(255,255,255,0.92)';
+    sctx.beginPath(); sctx.moveTo(4,0); sctx.quadraticCurveTo(34*sz,-30*sz,60*sz,-26*sz); sctx.lineTo(48*sz,-14*sz); sctx.lineTo(56*sz,-6*sz); sctx.lineTo(40*sz,2); sctx.closePath(); sctx.fill(); sctx.restore();
+  });
+  sctx.fillStyle = '#f6f2ea'; sctx.beginPath(); sctx.moveTo(-12,-72); sctx.lineTo(12,-72); sctx.lineTo(20,0); sctx.lineTo(-20,0); sctx.closePath(); sctx.fill();
+  sctx.fillStyle = '#e8c15a'; sctx.fillRect(-12,-50,24,4);
+  sctx.fillStyle = '#f6f2ea'; drawLimb(8,-66,22+swing*12,-46-swing*16,6);
+  sctx.fillStyle = '#ffe9c8'; sctx.beginPath(); sctx.arc(2,-82,9,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.strokeStyle = '#ffd76a'; sctx.lineWidth = 3; sctx.shadowColor = '#ffd76a'; sctx.shadowBlur = 12;
+  sctx.beginPath(); sctx.ellipse(2,-96,11,3.5,0,0,Math.PI*2); sctx.stroke(); sctx.restore();
+  if(swing>0.2){ sctx.fillStyle = `rgba(255,245,200,${swing*0.8})`; sctx.beginPath(); sctx.moveTo(22,-50); sctx.lineTo(90,-70); sctx.lineTo(90,-30); sctx.closePath(); sctx.fill(); }
+  sctx.restore();
+}
+const MYTH_ART = {
+  fairy: gtDrawers(mythShapeFairy, 1.2, 1.1),
+  loon: gtDrawers(mythShapeLoon, 1.1, 0.95),
+  kitsune: gtDrawers(mythShapeKitsune, 1.15, 1.0),
+  phoenix: gtDrawers(mythShapePhoenix, 1.2, 1.0),
+  sasquatch: gtDrawers(mythShapeBiped({ body:'#4a3423', dark:'#33231a', head:'#4a3423', face:'#6b5040', eye:'#ffd98a', w:20, h:28, hw:11, leg:11, arm:9, fur:true }), 1.05, 0.75),
+  oni: gtDrawers(mythShapeBiped({ body:'#b83a2a', dark:'#7a2418', head:'#c9452f', face:null, eye:'#ffe36a', w:19, h:24, hw:11, leg:11, arm:9, belt:'#e8b830', club:true, horns:true }), 1.05, 0.75),
+  yeti: gtDrawers(mythShapeBiped({ body:'#eef3f6', dark:'#c9d6de', head:'#eef3f6', face:'#7fa3bf', eye:'#2a5aa0', w:23, h:30, hw:12, leg:12, arm:10, fur:true }), 1.05, 0.75),
+  raven: gtDrawers(mythShapeRaven, 1.2, 1.0),
+  kermode: gtDrawers(mythShapeKermode, 1.15, 1.0),
+  seraph: gtDrawers(mythShapeSeraph, 1.05, 0.8)
+};
+
+// ---- The ten ----
+registerMythic({ id:'wisp_fairy', area:'frontier_trail', element:'air', name:'Wisp Fairy', icon:'🧚', rgb:'210,255,180', color:'#dfffb0',
+  hp:42, dmgMult:1.05, gold:40, xpNext:90, bond:[22,30,110], art:MYTH_ART.fairy,
+  log:{ encounter:'A light bobs between the trees - too bright for a firefly. A tiny winged figure turns and looks right at you.',
+    wasted:['The fairy giggles and loops around a branch.','It hides in a flower for a moment.','It scatters glittering dust at nothing.'],
+    ranged:'The fairy flings a burst of stinging light!', rangedBrace:'You shield your eyes behind the spear!',
+    lunge:'The fairy zips straight at your face!', lungeBrace:'You swat it away with the spear shaft!',
+    victory:'The fairy drifts up into the canopy and winks out.' },
+  trophy:{ name:'Fairy Dust', icon:'✨', dropChance:0.5, desc:'+40% rare-encounter chance for your next 8 battles.', effect:()=>{ setBuff('rare',1.4,8); log('The dust glitters. Something rare may find you.'); } },
+  special:{ name:'Glamour', desc:'Heals Kanata 20% Max HP and he dodges the next attack.', apply:()=>{ mythHeal(0.2); state.dodgeGuaranteed = true; log('Fairy light wraps around Kanata - the foe can\'t see him clearly!'); } },
+  moves:[ mythMove('fairy_ring','air','Fairy Ring',3,40,'Heals 25% Max HP.', cb=>{ log('A ring of tiny lights circles Kanata.'); mythHeal(0.25); wait(600,cb); }),
+          mythMove('pixie_bolt','air','Pixie Bolt',7,70,'Deals 6x spear damage and always strikes first.', cb=>{ log('A bolt of fairy light strikes!'); executeSpiritMove(kanataSkillDamage(6),cb); }) ] });
+
+registerMythic({ id:'elder_loon', area:'frontier_trail', element:'frost', name:'Elder Loon', icon:'🦆', rgb:'190,215,235', color:'#cfe4f2',
+  hp:48, dmgMult:1.1, gold:45, xpNext:95, bond:[24,32,115], art:MYTH_ART.loon,
+  log:{ encounter:'A haunting call echoes across the lake. An enormous loon, older than any you have seen, glides out of the mist.',
+    wasted:['The Loon dives and surfaces somewhere else.','It calls out across the water.','It preens its checkered back.'],
+    ranged:'The Elder Loon\'s call rolls over you like icy water!', rangedBrace:'You steady yourself behind the spear!',
+    lunge:'The Loon lunges with its dagger beak!', lungeBrace:'You turn the beak aside!',
+    victory:'The Elder Loon slips under the water without a ripple.' },
+  trophy:{ name:'Loon Feather', icon:'🪶', dropChance:0.5, desc:'+3 Max HP.', effect:()=>{ state.hpBonus += 3; log('The feather is sleek and cold. +3 Max HP.'); } },
+  special:{ name:'Lake Call', desc:'Weakens the enemy\'s next attack by 50%.', apply:()=>{ state.enemyWeakenNext = 0.5; log('The Loon\'s call unsettles the foe!'); } },
+  moves:[ mythMove('still_water','frost','Still Water',3,40,'Auto-guards the next attack and heals 10% Max HP.', cb=>{ log('The lake goes still around Kanata.'); state.autoGuardNext = true; mythHeal(0.1); wait(600,cb); }),
+          mythMove('deep_dive','frost','Deep Dive',7,70,'Deals 6x spear damage and always strikes first.', cb=>{ log('The Loon Spirit dives and strikes from below!'); executeSpiritMove(kanataSkillDamage(6),cb); }) ] });
+
+registerMythic({ id:'kitsune', area:'smoldering_grove', element:'spirit', name:'Kitsune', icon:'🦊', rgb:'140,200,255', color:'#9fd0ff',
+  hp:72, dmgMult:1.3, gold:60, xpNext:110, bond:[30,40,125], art:MYTH_ART.kitsune,
+  log:{ encounter:'Blue fire flickers among the burned trees. A white fox with nine tails sits in the ash, watching you with clever eyes.',
+    wasted:['The Kitsune splits into three foxes, then one again.','It tilts its head, amused.','Foxfire dances on the tips of its tails.'],
+    ranged:'The Kitsune hurls a ball of blue foxfire!', rangedBrace:'You catch the foxfire on the spear - it fizzles!',
+    lunge:'The Kitsune vanishes and strikes from behind!', lungeBrace:'You spin and block just in time!',
+    victory:'The Kitsune bows its head, and all nine tails fade into blue smoke.' },
+  trophy:{ name:'Foxfire Ember', icon:'🔵', dropChance:0.5, desc:'+4 Max HP.', effect:()=>{ state.hpBonus += 4; log('The ember burns cold and blue. +4 Max HP.'); } },
+  special:{ name:'Nine Tails', desc:'Stuns the enemy and Kanata dodges the next attack.', apply:()=>{ state.enemyStunned = true; state.dodgeGuaranteed = true; log('Nine illusions confuse the foe completely!'); } },
+  moves:[ mythMove('foxfire','spirit','Foxfire',3,45,'Burns the enemy for 3 turns.', cb=>{ log('Blue foxfire clings to the foe!'); state.enemyPoisonTurns = 3; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, kanataSkillDamage(1.4)); spawnParticles(enemy.x, enemy.y-40, 20, {color:'#9fd0ff', speed:3, spread:6.28, size:3, glow:true}); wait(600,cb); }),
+          mythMove('illusion_strike','spirit','Illusion Strike',7,80,'Deals 7x spear damage and always strikes first.', cb=>{ log('Nine foxes strike at once - only one is real!'); executeSpiritMove(kanataSkillDamage(7),cb); }) ] });
+
+registerMythic({ id:'phoenix', area:'smoldering_grove', element:'fire', name:'Phoenix', icon:'🐦‍🔥', rgb:'255,140,40', color:'#ffa030',
+  hp:78, dmgMult:1.35, gold:65, xpNext:115, bond:[32,42,130], art:MYTH_ART.phoenix,
+  log:{ encounter:'A heap of ash stirs and bursts into flame. A bird of fire rises out of it, and the burned grove glows around it.',
+    wasted:['The Phoenix shakes sparks from its wings.','It circles once overhead.','Its flames burn low, then flare again.'],
+    ranged:'The Phoenix sweeps a wing and sends a wave of flame!', rangedBrace:'You duck behind the spear as the flames pass!',
+    lunge:'The Phoenix dives, wreathed in fire!', lungeBrace:'You knock it aside - your hands sting from the heat!',
+    victory:'The Phoenix sinks into the ash, already glowing to rise again.' },
+  trophy:{ name:'Phoenix Plume', icon:'🔥', dropChance:0.5, desc:'+4 Max HP.', effect:()=>{ state.hpBonus += 4; log('The plume is warm as a hearth. +4 Max HP.'); } },
+  special:{ name:'Rebirth Flame', desc:'Heals Kanata 30% Max HP.', apply:()=>{ mythHeal(0.3); log('Phoenix fire mends Kanata\'s wounds!'); } },
+  moves:[ mythMove('rising_ember','fire','Rising Ember',3,45,'Heals 20% Max HP and Kanata\'s next attack deals +50%.', cb=>{ log('Embers rise around Kanata.'); mythHeal(0.2); state.atkMultNext = 1.5; wait(600,cb); }),
+          mythMove('sunfire_dive','fire','Sunfire Dive',7,85,'Deals 7.5x spear damage and always strikes first.', cb=>{ log('The Phoenix Spirit dives like a falling sun!'); executeSpiritMove(kanataSkillDamage(7.5),cb); }) ] });
+
+registerMythic({ id:'sasquatch', area:'far_frontier', element:'ground', name:'Sasquatch', icon:'🦶', rgb:'140,100,70', color:'#a07a58',
+  hp:95, dmgMult:1.45, gold:80, xpNext:130, bond:[36,48,140], art:MYTH_ART.sasquatch, shake:16,
+  log:{ encounter:'Huge footprints in the mud. A smell of wet fur. Then something tall and covered in dark hair steps out from behind a cedar and stares at you.',
+    wasted:['The Sasquatch watches you, head tilted.','It knocks on a tree trunk - twice.','It sniffs the air, curious more than angry.'],
+    ranged:'The Sasquatch hurls a rock the size of a canoe paddle!', rangedBrace:'You deflect the rock off the spear!',
+    lunge:'The Sasquatch charges with long, ground-eating strides!', lungeBrace:'You brace - it\'s like stopping a falling tree!',
+    victory:'The Sasquatch steps back into the trees and is simply gone.' },
+  trophy:{ name:'Sasquatch Hair', icon:'🦶', dropChance:0.5, desc:'+5 Max HP.', effect:()=>{ state.hpBonus += 5; log('A long tuft of coarse dark hair. +5 Max HP.'); } },
+  special:{ name:'Forest Giant', desc:'Auto-guards the next attack and stuns the enemy.', apply:()=>{ state.autoGuardNext = true; state.enemyStunned = true; log('The Sasquatch looms over the foe - it freezes!'); } },
+  moves:[ mythMove('tree_knock','ground','Tree Knock',3,50,'Stuns the enemy (70%) and Kanata\'s next attack deals +40%.', cb=>{ log('Two loud knocks echo through the forest...'); if(rollEnemyStun(0.7)) state.enemyStunned = true; state.atkMultNext = 1.4; wait(600,cb); }),
+          mythMove('giant_stride','ground','Giant Stride',7,90,'Deals 8x spear damage and always strikes first.', cb=>{ log('The Sasquatch Spirit crosses the field in two strides!'); executeSpiritMove(kanataSkillDamage(8),cb); }) ] });
+
+registerMythic({ id:'oni', area:'ironworks_ruins', element:'fire', name:'Oni', icon:'👹', rgb:'220,70,50', color:'#e8553a',
+  hp:105, dmgMult:1.55, gold:90, xpNext:140, bond:[40,52,145], art:MYTH_ART.oni, shake:17,
+  log:{ encounter:'Something has made a lair in the foundry\'s heart: a horned, red-skinned demon with an iron club, laughing at the heat.',
+    wasted:['The Oni laughs and rests its club on its shoulder.','It picks its teeth with a nail.','It roars just to hear the echo.'],
+    ranged:'The Oni spits a gout of foundry fire!', rangedBrace:'You shield yourself behind the spear!',
+    lunge:'The Oni brings its iron club down!', lungeBrace:'The club slams into your spear shaft!',
+    victory:'The Oni drops its club, grumbles, and stomps off into the smoke.' },
+  trophy:{ name:'Oni Horn', icon:'👹', dropChance:0.5, desc:'+5 Max HP.', effect:()=>{ state.hpBonus += 5; log('The horn is hot to the touch. +5 Max HP.'); } },
+  special:{ name:'Demon Club', desc:'Deals 15% of the enemy\'s Max HP as bonus damage.', apply:()=>{ state.enemyHp = Math.max(0, state.enemyHp - Math.floor(state.enemyMax*0.15)); log('The Oni\'s club smashes down on the foe!'); } },
+  moves:[ mythMove('war_cry','fire','War Cry',3,50,'Kanata\'s next attack deals double damage.', cb=>{ log('A demonic war cry fills Kanata with fury!'); state.atkMultNext = 2; wait(600,cb); }),
+          mythMove('iron_kanabo','fire','Iron Club',7,95,'Deals 8.5x spear damage and always strikes first.', cb=>{ log('The Oni Spirit swings its iron club!'); executeSpiritMove(kanataSkillDamage(8.5),cb); }) ] });
+
+registerMythic({ id:'yeti', area:'frozen_shore', element:'frost', name:'Yeti', icon:'❄️', rgb:'210,230,245', color:'#dbeaf5',
+  hp:118, dmgMult:1.65, gold:100, xpNext:150, bond:[44,58,150], art:MYTH_ART.yeti, shake:18,
+  log:{ encounter:'A snowdrift stands up. A huge white-furred beast shakes the snow from its shoulders and bellows across the ice.',
+    wasted:['The Yeti scoops up snow and eats it.','It beats its chest, and snow slides off a ridge.','It squints at you through the blizzard.'],
+    ranged:'The Yeti hurls a boulder of packed ice!', rangedBrace:'The ice shatters against your spear!',
+    lunge:'The Yeti charges through the snow!', lungeBrace:'You brace as it crashes into you!',
+    victory:'The Yeti lopes away into the blizzard.' },
+  trophy:{ name:'Yeti Fur', icon:'❄️', dropChance:0.5, desc:'+6 Max HP.', effect:()=>{ state.hpBonus += 6; log('The fur is thick and frost-white. +6 Max HP.'); } },
+  special:{ name:'Avalanche', desc:'Stuns the enemy and weakens its next attack by 40%.', apply:()=>{ state.enemyStunned = true; state.enemyWeakenNext = 0.6; log('An avalanche buries the foe!'); } },
+  moves:[ mythMove('snow_hide','frost','Snow Hide',3,55,'Auto-guards the next attack and Kanata dodges the one after.', cb=>{ log('Kanata vanishes into a flurry of snow.'); state.autoGuardNext = true; state.dodgeGuaranteed = true; wait(600,cb); }),
+          mythMove('glacier_slam','frost','Glacier Slam',7,100,'Deals 9x spear damage and always strikes first.', cb=>{ log('The Yeti Spirit slams the ice apart!'); executeSpiritMove(kanataSkillDamage(9),cb); }) ] });
+
+registerMythic({ id:'elder_raven', area:'highland_pass', element:'air', name:'Elder Raven', icon:'🐦‍⬛', rgb:'130,140,220', color:'#8c96e0',
+  hp:125, dmgMult:1.7, gold:110, xpNext:155, bond:[46,60,150], art:MYTH_ART.raven,
+  log:{ encounter:'A raven lands on the rock beside you - but it is as big as a wolf, and its eyes are old and very clever.',
+    wasted:['The Raven makes a sound like laughter.','It steals a bead from your pack and drops it.','It hops closer, watching you sideways.'],
+    ranged:'The Elder Raven beats its wings and the wind howls at you!', rangedBrace:'You lean into the gust behind the spear!',
+    lunge:'The Raven darts in, beak first!', lungeBrace:'You flick the beak away!',
+    victory:'The Elder Raven croaks once, almost fondly, and flies off over the pass.' },
+  trophy:{ name:'Elder Raven Feather', icon:'🪶', dropChance:0.5, desc:'+40% gold for your next 8 battles.', effect:()=>{ setBuff('gold',1.4,8); log('The feather shines blue-black. Fortune favours you.'); } },
+  special:{ name:'Clever Trick', desc:'Steals 20-40 gold and Kanata dodges the next attack.', apply:()=>{ state.gold += 20+Math.floor(Math.random()*21); updateGoldDisplay(); state.dodgeGuaranteed = true; log('The Raven snatches something shiny and the foe loses track of you!'); } },
+  moves:[ mythMove('trickster_wind','air','Trickster Wind',3,55,'Refills 40% of the spirit gauge and the enemy\'s next attack is weakened by 30%.', cb=>{ log('A tricky wind spins the foe around!'); state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.4)); state.enemyWeakenNext = 0.7; updateHud(); wait(600,cb); }),
+          mythMove('black_wing','air','Black Wing',7,100,'Deals 9x spear damage and always strikes first.', cb=>{ log('The Raven Spirit strikes out of a shadow!'); executeSpiritMove(kanataSkillDamage(9),cb); }) ] });
+
+registerMythic({ id:'kermode_bear', area:'river_delta', element:'ground', name:'Kermode Spirit Bear', icon:'🐻‍❄️', rgb:'240,232,210', color:'#f2ecdc',
+  hp:138, dmgMult:1.75, gold:120, xpNext:160, bond:[50,64,155], art:MYTH_ART.kermode, shake:18,
+  log:{ encounter:'At the edge of the river stands a bear with a coat as white as cream - a black bear born white, rarer than almost anything in these woods.',
+    wasted:['The Spirit Bear scoops a fish from the river.','It sits back and watches you, calm.','It sniffs the wind from the sea.'],
+    ranged:'The Spirit Bear swipes the river and a wall of water hits you!', rangedBrace:'You brace behind the spear as the water crashes over!',
+    lunge:'The Spirit Bear charges along the bank!', lungeBrace:'You hold your ground against its weight!',
+    victory:'The Spirit Bear turns and walks into the rainforest, unhurried.' },
+  trophy:{ name:'White Bear Fur', icon:'🤍', dropChance:0.5, desc:'+7 Max HP.', effect:()=>{ state.hpBonus += 7; log('The fur is soft and pale. +7 Max HP.'); } },
+  special:{ name:'Spirit of the Rainforest', desc:'Heals Kanata 25% Max HP and auto-guards the next attack.', apply:()=>{ mythHeal(0.25); state.autoGuardNext = true; log('A calm settles over Kanata.'); } },
+  moves:[ mythMove('river_feast','ground','River Feast',3,55,'Heals 30% Max HP.', cb=>{ log('The Spirit Bear shares the river\'s bounty.'); mythHeal(0.3); wait(600,cb); }),
+          mythMove('white_maul','ground','White Maul',7,105,'Deals 9.5x spear damage and always strikes first.', cb=>{ log('The Spirit Bear rises and strikes!'); executeSpiritMove(kanataSkillDamage(9.5),cb); }) ] });
+
+registerMythic({ id:'seraph', area:'ancient_grove', element:'spirit', name:'Seraph', icon:'👼', rgb:'255,230,150', color:'#ffe696',
+  hp:150, dmgMult:1.85, gold:140, xpNext:170, bond:[54,70,160], art:MYTH_ART.seraph,
+  log:{ encounter:'Light pours down through the oldest trees, and in it hangs a winged figure with a ring of gold above its head. It raises a hand - a test, not a greeting.',
+    wasted:['The Seraph waits, perfectly still.','Its wings shift, scattering light.','It looks at you as if weighing something.'],
+    ranged:'The Seraph opens its hand and a beam of light strikes you!', rangedBrace:'You shield your eyes behind the spear!',
+    lunge:'The Seraph sweeps down on blazing wings!', lungeBrace:'You catch the blow on your spear - it rings like a bell!',
+    victory:'The Seraph lowers its hand and nods, then rises back into the light.' },
+  trophy:{ name:'Halo Shard', icon:'😇', dropChance:0.5, desc:'+40% XP for your next 8 battles.', effect:()=>{ setBuff('xp',1.4,8); log('The shard hums softly. Kanata feels he can learn anything.'); } },
+  special:{ name:'Judgement', desc:'Deals 18% of the enemy\'s Max HP as bonus damage and heals Kanata 15%.', apply:()=>{ state.enemyHp = Math.max(0, state.enemyHp - Math.floor(state.enemyMax*0.18)); mythHeal(0.15); log('A pillar of light judges the foe!'); } },
+  moves:[ mythMove('blessing','spirit','Blessing',3,60,'Heals 35% Max HP.', cb=>{ log('Warm light pours over Kanata.'); mythHeal(0.35); wait(600,cb); }),
+          mythMove('radiant_lance','spirit','Radiant Lance',7,110,'Deals 10x spear damage and always strikes first.', cb=>{ log('The Seraph Spirit hurls a lance of light!'); executeSpiritMove(kanataSkillDamage(10),cb); }) ] });
+
+// Rare encounter roll for an Area's regular fights.
+function rollMythicFor(areaId){
+  const here = MYTHICS.filter(m=>m.area === areaId);
+  if(!here.length || Math.random() >= MYTHIC_SPAWN_CHANCE * getBuffMult('rare')) return null;
+  return here[Math.floor(Math.random()*here.length)].id;
+}
+
+// ---- Mythic sightings: a being of the region steps in once to help ----
+const MYTH_BOSS_AREA = { surveyor:'smoldering_grove', captain:'far_frontier', harwick:'ironworks_ruins', voss:'frozen_shore', blackmoor:'highland_pass', crane:'river_delta', warden:'ancient_grove', sergeant:'frontier_trail' };
+const MYTH_CAMEO = {
+  wisp_fairy:   ['A Wisp Fairy darts in and sprinkles healing light!', ()=>mythHeal(0.2)],
+  elder_loon:   ['An Elder Loon calls across the water - the foe falters!', ()=>{ state.enemyWeakenNext = 0.5; }],
+  kitsune:      ['A Kitsune flickers past - the foe chases an illusion!', ()=>{ state.dodgeGuaranteed = true; state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.3)); }],
+  phoenix:      ['A Phoenix sweeps overhead, trailing healing fire!', ()=>mythHeal(0.25)],
+  sasquatch:    ['A Sasquatch hurls a boulder from the trees!', ()=>{ state.enemyHp = Math.max(1, state.enemyHp - Math.floor(state.enemyMax*0.06)); }],
+  oni:          ['An Oni bursts out of the smoke and clubs the foe!', ()=>{ state.enemyHp = Math.max(1, state.enemyHp - Math.floor(state.enemyMax*0.07)); }],
+  yeti:         ['A Yeti roars from the drifts - an avalanche pins the foe!', ()=>{ state.enemyStunned = true; }],
+  elder_raven:  ['An Elder Raven swoops in and steals the foe\'s focus!', ()=>{ state.spirit = state.spiritMax; }],
+  kermode_bear: ['A Kermode Spirit Bear watches from the river - Kanata feels calm and strong.', ()=>{ mythHeal(0.2); state.autoGuardNext = true; }],
+  seraph:       ['A Seraph appears in a shaft of light and blesses Kanata!', ()=>mythHeal(0.3)]
+};
+function mythicCameo(areaId){
+  const here = MYTHICS.filter(m=>m.area === areaId);
+  const m = here.length ? here[Math.floor(Math.random()*here.length)] : MYTHICS[Math.floor(Math.random()*MYTHICS.length)];
+  const [txt, fn] = MYTH_CAMEO[m.id];
+  fn();
+  spawnParticles(enemy.x*0.5 + hero.x*0.5, hero.y - 80, 40, {color: m.color, speed:4, spread:6.28, size:3.5, glow:true});
+  gtBanner(`✦ ${m.name.toUpperCase()} ✦`, txt, m.color);
+  log(`${txt} (Find it in ${getAreaById(m.area).name}.)`);
+  updateHud();
+}
+// Story boss fights: about half of them get one sighting, once the boss is
+// below half HP. Checked from updateHud, which runs after every hit.
+let mythStory = { key: null, rolled: false, done: false };
+function mythStoryCheck(){
+  if(state.inSideFight || state.inGuardianFight || state.inFlashback || state.over || state.enemyType === 'beaver') return;
+  const area = MYTH_BOSS_AREA[state.enemyType] || (BOSS_LEVELS[state.currentAreaId] != null ? 'frontier_trail' : null);
+  if(!area) return;
+  if(state.enemyHp >= state.enemyMax){ mythStory = { key: state.enemyType, rolled: false, done: false }; return; }
+  if(mythStory.key !== state.enemyType || mythStory.done || state.enemyHp > state.enemyMax*0.5 || state.enemyHp <= 0) return;
+  mythStory.done = true;
+  if(Math.random() < 0.5) setTimeout(()=>{ if(!state.over) mythicCameo(area); }, 700);
+}
 
 // ==== END GUARDIAN REGISTRY ==============================================
 
@@ -16672,8 +17025,11 @@ function startSideFight(areaId){
   if(Math.random() < spawnChance){
     id = 'golden_beaver'; // the Golden Beaver is always excluded from Invasive Species forcing
   } else {
+    const myth = rollMythicFor(area.id);
     const invasive = getActiveInvasiveSpecies(area.id);
-    if(invasive && Math.random() < INVASIVE_SPECIES_FORCE_CHANCE){
+    if(myth){
+      id = myth;
+    } else if(invasive && Math.random() < INVASIVE_SPECIES_FORCE_CHANCE){
       id = invasive.speciesId;
     } else {
       id = pool[Math.floor(Math.random()*pool.length)];
