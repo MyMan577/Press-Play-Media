@@ -14144,7 +14144,7 @@ function isUiTapTarget(target){
 }
 function tryOpenBuildingAt(clientX, clientY){
   if(!villageInteractive) return false;
-  if(!shopPanel.classList.contains('hidden') || !spiritDenPanel.classList.contains('hidden') || !trophyPanel.classList.contains('hidden') || !compendiumPanel.classList.contains('hidden') || !guardianSelectPanel.classList.contains('hidden') || !rebirthPanel.classList.contains('hidden') || !masteryPanel.classList.contains('hidden') || !invasivePanel.classList.contains('hidden') || !transferPanel.classList.contains('hidden') || !campfirePanel.classList.contains('hidden')) return false; // a panel is already open; don\'t re-hit-test buildings underneath it
+  if(!shopPanel.classList.contains('hidden') || !spiritDenPanel.classList.contains('hidden') || !trophyPanel.classList.contains('hidden') || !compendiumPanel.classList.contains('hidden') || !rebirthPanel.classList.contains('hidden') || !masteryPanel.classList.contains('hidden') || !invasivePanel.classList.contains('hidden') || !campfirePanel.classList.contains('hidden')) return false; // a panel is already open; don\'t re-hit-test buildings underneath it
   const r = stage.getBoundingClientRect();
   const id = hitTestVillageBuilding(clientX-r.left, clientY-r.top);
   if(id === 'butcher' || id === 'forge' || id === 'sleep'){ renderShop(id === 'sleep' ? 'tent' : id); shopJustOpenedAt = Date.now(); return true; }
