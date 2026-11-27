@@ -1270,6 +1270,7 @@
     <div id="villageActions" class="hidden">
       <div id="villageActionsMenu" class="villageActionsMenu collapsed">
         <div class="goBtn villageAction" id="villageFightBtn">Fight</div>
+        <div class="goBtn villageAction" id="villageGuardianBtn">Guardian Trials</div>
         <div class="goBtn villageAction" id="villageStoryBtn">Story</div>
         <div class="goBtn villageAction" id="villageCompendiumBtn" style="background: rgba(120,180,255,0.12); border-color: rgba(120,180,255,0.5);">📖 Bestiary</div>
         <div class="goBtn villageAction hidden" id="villageMasteryBtn" style="background: rgba(255,200,120,0.14); border-color: rgba(255,200,120,0.5);">🌟 Mastery</div>
@@ -1410,6 +1411,14 @@
     </div>
   </div>
 
+  <div id="guardianSelectPanel" class="hidden">
+    <div class="panelScroll">
+    <h1>GUARDIAN TRIALS</h1>
+    <p>Ancient, meaningful creatures - eagles, bison, and more. Beat one in fair combat and its spirit is yours to bond with, forever.</p>
+    <div id="guardianSelectItems"></div>
+    <div class="goBtn shopClose" id="guardianSelectCloseBtn">Back</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -3500,7 +3509,7 @@ const beaver = {
 
 function layout(){
   hero.homeX = W*0.20; hero.x = hero.homeX; hero.y = groundY()-H*0.055; hero.scale = H*0.00125;
-  enemy.homeX = W*0.82; enemy.x = enemy.homeX; enemy.y = groundY()-H*0.065; enemy.scale = H*0.00135;
+  enemy.homeX = W*(gtOn() ? 0.78 : 0.82); enemy.x = enemy.homeX; enemy.y = groundY()-H*0.065; enemy.scale = H*0.00135;
   beaver.x = W*0.12; beaver.y = groundY()-H*0.025; beaver.scale = H*0.00085;
   __lastGround = groundY();
 }
@@ -3776,6 +3785,65 @@ function drawMooseSpirit(t){
   sctx.restore();
 }
 
+// The Great Bison - a Guardian Trial boss. Deliberately drawn bulkier and
+// wider than the regular moose/elk enemies (broad shoulder hump, heavy
+// head, short curved horns) so it reads as a different weight class the
+// instant it appears on screen.
+function drawEnemyGreatBison(t){
+  if(enemy.dead>=1) return;
+  const s = enemy.scale*1.85;
+  sctx.save();
+  const deathDrop = ease(enemy.dead)*40;
+  const deathRot = ease(enemy.dead)*0.6;
+  sctx.translate(enemy.x + enemy.leanX, enemy.y + enemy.leanY + Math.sin(t*0.002+1)*2*s + deathDrop);
+  sctx.rotate(enemy.facing<0? deathRot : -deathRot);
+  sctx.globalAlpha = 1-enemy.dead*0.9;
+  sctx.scale(enemy.facingVis*s, s);
+
+  const charge = enemy.bayonetCharge;
+  const swing = enemy.gunFlash;
+
+  sctx.fillStyle = '#2b2119';
+  drawLimb(-24,-14,-28,20,11);
+  drawLimb(-10,-16,-14,20,11);
+  drawLimb(14+charge*10,-18,11+charge*10,20,11);
+  drawLimb(28+charge*10,-18,25+charge*10,20,11);
+
+  sctx.fillStyle = '#4a3524';
+  sctx.beginPath();
+  sctx.ellipse(2+charge*10,-34,42,26,0,0,Math.PI*2);
+  sctx.fill();
+  sctx.beginPath();
+  sctx.ellipse(14+charge*10,-48,26,18,0,0,Math.PI*2);
+  sctx.fill();
+
+  const hx = 34+charge*16, hy=-46;
+  sctx.save();
+  sctx.translate(hx,hy);
+  sctx.rotate(lerp(0,0.35,charge));
+  sctx.fillStyle = '#3a2a1c';
+  sctx.beginPath();
+  sctx.ellipse(0,0,16,13,0,0,Math.PI*2);
+  sctx.fill();
+  sctx.save();
+  sctx.rotate(lerp(-0.05,-0.5,swing));
+  sctx.fillStyle = '#d8cdb0';
+  sctx.beginPath();
+  sctx.moveTo(2,-10); sctx.quadraticCurveTo(14,-24,10,-14); sctx.lineTo(4,-6); sctx.fill();
+  sctx.beginPath();
+  sctx.moveTo(-2,-10); sctx.quadraticCurveTo(-14,-24,-10,-14); sctx.lineTo(-4,-6); sctx.fill();
+  sctx.restore();
+  sctx.restore();
+
+  if(enemy.flinch>0){
+    sctx.globalAlpha = enemy.flinch*0.6;
+    sctx.fillStyle = '#ff3b3b';
+    sctx.fillRect(-46,-84,130,110);
+  }
+  sctx.restore();
+  sctx.globalAlpha = 1;
+}
+
 function drawGreatBisonSpirit(t){
   if(beaver.active<=0) return;
   const s = beaver.scale * beaver.active * 1.85;
@@ -3815,6 +3883,250 @@ function drawGreatBisonSpirit(t){
   sctx.restore();
 }
 
+// The Cinderhorn Elder - Guardian Trial boss of the Smoldering Grove. An
+// ancient stag that never fled the fires the Surveyor set - its antlers
+// caught the blaze and never stopped smoldering. Built on elk anatomy
+// (quadruped, wide rack) but noticeably bulkier than the area's Giant Moose,
+// with a charred, ash-grey hide and antlers that glow like dying coals
+// instead of bone-tan. A slow ember trail drifts up off the rack every
+// frame, tying it visually to the Grove's burned setting even at rest.
+function drawEnemyCinderhornElder(t){
+  if(enemy.dead>=1) return;
+  const s = enemy.scale*1.7;
+  sctx.save();
+  const deathDrop = ease(enemy.dead)*40;
+  const deathRot = ease(enemy.dead)*0.6;
+  sctx.translate(enemy.x + enemy.leanX, enemy.y + enemy.leanY + Math.sin(t*0.0022+1)*2*s + deathDrop);
+  sctx.rotate(enemy.facing<0? deathRot : -deathRot);
+  sctx.globalAlpha = 1-enemy.dead*0.9;
+  sctx.scale(enemy.facingVis*s, s);
+
+  const charge = enemy.bayonetCharge;
+  const swing = enemy.gunFlash;
+
+  // legs - charred ash-grey
+  sctx.fillStyle = '#3a3530';
+  drawLimb(-20,-16,-24,20,9);
+  drawLimb(-6,-18,-9,20,9);
+  drawLimb(16+charge*12,-20,13+charge*12,20,9);
+  drawLimb(28+charge*12,-20,25+charge*12,20,9);
+
+  // body, coat mottled with old-ember flecks
+  sctx.fillStyle = '#4a423a';
+  sctx.beginPath();
+  sctx.ellipse(2+charge*10,-32,34,20,0,0,Math.PI*2);
+  sctx.fill();
+  sctx.fillStyle = 'rgba(255,120,40,0.35)';
+  sctx.beginPath(); sctx.ellipse(-6,-36,4,3,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(8,-26,3,2.5,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(18,-34,3,2,0,0,Math.PI*2); sctx.fill();
+
+  const hx = 32+charge*18, hy=-46;
+  sctx.save();
+  sctx.translate(hx,hy);
+  sctx.rotate(lerp(0,0.35,charge));
+  sctx.fillStyle = '#3a3530';
+  sctx.beginPath();
+  sctx.ellipse(0,0,13,11,0,0,Math.PI*2);
+  sctx.fill();
+
+  // glowing ember-rack antlers, wide swing on the attack
+  sctx.save();
+  sctx.rotate(lerp(-0.1,-0.6,swing));
+  sctx.shadowColor = '#ff8a3d';
+  sctx.shadowBlur = 10;
+  sctx.strokeStyle = '#ff8a3d';
+  sctx.lineWidth = 4;
+  sctx.beginPath(); sctx.moveTo(2,-8); sctx.lineTo(14,-28); sctx.lineTo(8,-26); sctx.moveTo(14,-28); sctx.lineTo(22,-32); sctx.moveTo(14,-28); sctx.lineTo(20,-22); sctx.stroke();
+  sctx.beginPath(); sctx.moveTo(-2,-8); sctx.lineTo(-10,-30); sctx.lineTo(-5,-28); sctx.moveTo(-10,-30); sctx.lineTo(-18,-34); sctx.moveTo(-10,-30); sctx.lineTo(-16,-24); sctx.stroke();
+  sctx.shadowBlur = 0;
+  sctx.restore();
+
+  // low drifting embers off the rack
+  const drift = (t*0.0015) % 1;
+  sctx.globalAlpha = (1-drift) * 0.8;
+  sctx.fillStyle = '#ffb85a';
+  sctx.beginPath(); sctx.arc(6, -30-drift*20, 1.6, 0, Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(-8, -26-drift*24, 1.3, 0, Math.PI*2); sctx.fill();
+  sctx.globalAlpha = 1;
+
+  sctx.restore();
+
+  if(enemy.flinch>0){
+    sctx.globalAlpha = enemy.flinch*0.6;
+    sctx.fillStyle = '#ff3b3b';
+    sctx.fillRect(-40,-76,116,100);
+  }
+  sctx.restore();
+  sctx.globalAlpha = 1;
+}
+
+function drawCinderhornElderSpirit(t){
+  if(beaver.active<=0) return;
+  const s = beaver.scale * beaver.active * 1.7;
+  sctx.save();
+  sctx.translate(beaver.x, beaver.y - beaver.hop);
+  sctx.scale(s,s);
+  const swing = beaver.tailSlam;
+  sctx.fillStyle = '#4a423a';
+  sctx.beginPath();
+  sctx.ellipse(0,-24,28,17,0,0,Math.PI*2);
+  sctx.fill();
+  const hx = 26, hy = -36;
+  sctx.beginPath(); sctx.ellipse(hx,hy,11,9,0,0,Math.PI*2); sctx.fill();
+  sctx.save();
+  sctx.translate(hx,hy);
+  sctx.rotate(lerp(-0.05,-0.55,swing));
+  sctx.shadowColor = '#ff8a3d';
+  sctx.shadowBlur = 10 + swing*8;
+  sctx.strokeStyle = '#ff8a3d';
+  sctx.lineWidth = 3.5;
+  sctx.beginPath(); sctx.moveTo(2,-6); sctx.lineTo(11,-22); sctx.lineTo(6,-20); sctx.moveTo(11,-22); sctx.lineTo(17,-25); sctx.stroke();
+  sctx.beginPath(); sctx.moveTo(-2,-6); sctx.lineTo(-9,-24); sctx.lineTo(-4,-22); sctx.moveTo(-9,-24); sctx.lineTo(-15,-27); sctx.stroke();
+  sctx.shadowBlur = 0;
+  sctx.restore();
+  sctx.fillStyle = '#2a251f';
+  sctx.fillRect(-14,-7,8,16);
+  sctx.fillRect(-3,-7,8,16);
+  sctx.fillRect(9,-7,8,16);
+  sctx.globalAlpha = 0.45 + swing*0.35;
+  sctx.strokeStyle = '#ff8a3d';
+  sctx.lineWidth = 2.5;
+  sctx.beginPath();
+  sctx.arc(0,-18,38+swing*10,0,Math.PI*2);
+  sctx.stroke();
+  sctx.globalAlpha = 1;
+  sctx.restore();
+}
+
+// The Deepfrost Warden - Guardian Trial boss of the Frozen Shore. A colossal,
+// ice-armored beast built on bear anatomy but far bulkier than anything else
+// on that coastline, with crystalline plates fused to its back and shoulders
+// and a permanent breath-mist trailing from its jaw. Rears up on its attack
+// the same way the regular Bear does, but the rear is heavier and slower -
+// this thing has real mass behind it.
+function drawEnemyDeepfrostWarden(t){
+  if(enemy.dead>=1) return;
+  const s = enemy.scale*1.75;
+  sctx.save();
+  const deathDrop = ease(enemy.dead)*40;
+  const deathRot = ease(enemy.dead)*0.6;
+  sctx.translate(enemy.x + enemy.leanX, enemy.y + enemy.leanY + Math.sin(t*0.0018+3)*2*s + deathDrop);
+  sctx.rotate(enemy.facing<0? deathRot : -deathRot);
+  sctx.globalAlpha = 1-enemy.dead*0.9;
+  sctx.scale(enemy.facingVis*s, s);
+
+  const rear = enemy.bayonetCharge;
+  const swipe = enemy.gunFlash;
+
+  sctx.fillStyle = '#c7d6de';
+
+  // hind legs
+  drawLimb(-18,-8,-23,30,13);
+  drawLimb(-3,-8,-5,30,13);
+  // front legs - lift as it rears
+  const frontY1 = lerp(-10,-46,rear);
+  drawLimb(20,frontY1,25+swipe*10,frontY1+34,12);
+  drawLimb(32,frontY1,37+swipe*14,frontY1+32,12);
+
+  sctx.save();
+  sctx.translate(0, lerp(0,-22,rear));
+  sctx.rotate(lerp(0,-0.35,rear));
+  // body
+  sctx.beginPath();
+  sctx.ellipse(0,-28,36,24,0,0,Math.PI*2);
+  sctx.fill();
+  // shoulder hump
+  sctx.beginPath();
+  sctx.ellipse(-14,-48,17,12,0,0,Math.PI*2);
+  sctx.fill();
+  // head
+  sctx.beginPath();
+  sctx.arc(30,-36,14,0,Math.PI*2);
+  sctx.fill();
+  // snout
+  sctx.fillStyle = '#8fa4ae';
+  sctx.beginPath();
+  sctx.ellipse(42,-32,8,6,0,0,Math.PI*2);
+  sctx.fill();
+  // ears
+  sctx.fillStyle = '#c7d6de';
+  sctx.beginPath(); sctx.arc(22,-48,5,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(36,-49,5,0,Math.PI*2); sctx.fill();
+
+  // crystalline ice-armor plates down the spine
+  sctx.fillStyle = 'rgba(210,240,255,0.85)';
+  sctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  sctx.lineWidth = 1;
+  [[-24,-52],[-10,-56],[6,-56],[20,-52]].forEach(([px,py])=>{
+    sctx.beginPath();
+    sctx.moveTo(px,py); sctx.lineTo(px+6,py-11); sctx.lineTo(px+12,py); sctx.closePath();
+    sctx.fill(); sctx.stroke();
+  });
+  sctx.restore();
+
+  // breath mist from the jaw
+  const mist = (t*0.0016) % 1;
+  sctx.globalAlpha = (1-mist)*0.5;
+  sctx.fillStyle = '#eaf6ff';
+  sctx.beginPath(); sctx.arc(48+mist*10, -30-lerp(0,22,rear), 3+mist*4, 0, Math.PI*2); sctx.fill();
+  sctx.globalAlpha = 1;
+
+  if(swipe>0){
+    sctx.save();
+    sctx.globalAlpha = swipe;
+    sctx.fillStyle = '#eaf6ff';
+    sctx.fillRect(36,frontY1+26,18,5);
+    sctx.restore();
+  }
+
+  if(enemy.flinch>0){
+    sctx.globalAlpha = enemy.flinch*0.6;
+    sctx.fillStyle = '#ff3b3b';
+    sctx.fillRect(-48,-84,140,116);
+  }
+
+  sctx.restore();
+  sctx.globalAlpha = 1;
+}
+
+function drawDeepfrostWardenSpirit(t){
+  if(beaver.active<=0) return;
+  const s = beaver.scale * beaver.active * 1.75;
+  sctx.save();
+  sctx.translate(beaver.x, beaver.y - beaver.hop);
+  sctx.scale(s,s);
+  const rear = beaver.tailSlam;
+  sctx.fillStyle = '#c7d6de';
+  sctx.beginPath();
+  sctx.ellipse(0,-26,29,19,0,0,Math.PI*2);
+  sctx.fill();
+  sctx.beginPath();
+  sctx.ellipse(-10,-42,13,10,0,0,Math.PI*2);
+  sctx.fill();
+  const hx = 24, hy = -34;
+  sctx.beginPath(); sctx.arc(hx,hy,11,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#8fa4ae';
+  sctx.beginPath(); sctx.ellipse(hx+9,hy+3,6,4.5,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = 'rgba(210,240,255,0.9)';
+  sctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  sctx.lineWidth = 1;
+  [[-18,-40],[-6,-44],[6,-44]].forEach(([px,py])=>{
+    sctx.beginPath();
+    sctx.moveTo(px,py); sctx.lineTo(px+5,py-9); sctx.lineTo(px+10,py); sctx.closePath();
+    sctx.fill(); sctx.stroke();
+  });
+  sctx.globalAlpha = 0.45 + rear*0.35;
+  sctx.strokeStyle = '#c8e8ff';
+  sctx.lineWidth = 2.5;
+  sctx.beginPath();
+  sctx.arc(0,-20,40+rear*10,0,Math.PI*2);
+  sctx.stroke();
+  sctx.globalAlpha = 1;
+  sctx.restore();
+}
+
+// Canada Lynx - Fast, tufted ears.
 function drawEnemyLynx(t){
   if(enemy.dead>=1) return;
   const s = enemy.scale*0.85;
@@ -7565,6 +7877,8 @@ const state = {
   inGuardianFight: false, // true while fighting a Guardian Trial boss (e.g. the Great Bison)
   currentGuardianId: null, // which GUARDIANS entry is active during a Guardian Trial
   guardiansDefeated: {},  // { guardianId: true } - bonding is a one-time event per Guardian
+  guardianBest: {},       // { guardianId: { tier: highest cleared, grades: { tier: 'S'|'A'|'B'|'C' } } }
+  currentGuardianTier: 1,
   flashbackDone: false,  // true once the memory has played once
   fightNumber: 1,        // 1 = main Sergeant fight, 2 = the memory flashback, 3 = Chapter 2 (Surveyor)
                           // unlocked, 4 = Chapter 3 (Captain Ashworth) unlocked, 5 = main story complete.
@@ -11041,6 +11355,7 @@ function updateHud(){
   const isRangedWeapon = state.weaponType !== 'spear';
   btnAttack.innerHTML = `<span class="icon">${isRangedWeapon ? '🔫' : '⚔'}</span>${state.weaponReloading ? 'Reloading' : (isRangedWeapon ? 'Shoot' : 'Spear')}`;
   if(state.weaponReloading) btnAttack.classList.add('disabled');
+  gtHud();
 }
 function setButtonsEnabled(on){
   [btnAttack,btnGuard,btnCharge,btnSkills].forEach(b=>b.classList.toggle('disabled', !on || state.over));
@@ -11050,6 +11365,7 @@ function setButtonsEnabled(on){
   // open while Attack/Guard/Charge/Spirit resolve caused stale UI and let
   // players tap through to skills mid-animation.
   if (!on) skillMenu.classList.add('hidden');
+  if (gtEls) gtHud();
 }
 function log(msg){ logline.textContent = msg; }
 // Like log(), but prefixes a small element icon before the message via
@@ -12069,6 +12385,7 @@ function executeEnemySignatureSkill(skill, def, dmgMult, guarded){
 }
 
 function enemyTurn(){
+  if(gtOn() && !GT.inSub){ gtTurn(); return; }
   if(state.enemyType === 'harwick'){ harwickTurn(); return; }
   if(state.enemyType === 'voss'){ vossTurn(); return; }
   if(state.enemyType === 'golden_beaver'){
@@ -12109,7 +12426,7 @@ function enemyTurn(){
   const band = Math.max(-1, Math.min(1, edge)); // clamp to [-1,1]
 
   // waste-turn chance: base 22%, swings roughly +/-14% with the band
-  const wasteChance = Math.max(0.08, Math.min(0.38, 0.22 - band*0.14));
+  const wasteChance = Math.max(0.08, Math.min(0.38, 0.22 - band*0.14)) * (gtOn() ? 0.45 : 1);
   // damage multiplier: eases hits down to ~0.75x when player is struggling, up to ~1.2x when dominating
   // the flashback beaver is a much gentler fight - it hits softer across the board; other enemies
   // each have their own multiplier defined in ENEMY_DEFS
@@ -12272,6 +12589,7 @@ function enemyTurn(){
 }
 
 function endEnemyTurn(){
+  if(gtAfterAction()) return;
   // Venom Fang poison tick: applied at the END of the enemy\'s turn so the
   // player sees the damage resolve before they choose their next action.
   if(state.enemyPoisonTurns > 0){
@@ -12516,10 +12834,23 @@ async function playEvolutionCinematic(fromId, toId){
 }
 
 function checkEnd(){
+  gtTryRise();
   if(state.enemyHp<=0){
     if(!state.over) PPHub.event('win');
     state.over = true;
     state.justSpared = false;
+    // Guardian Trials are handled entirely by endGuardianFight - it grants
+    // its own flat reward, trophy, and spirit bond, so it skips every other
+    // branch below (mercy, story triggers, the normal gold/xp formulas).
+    if(state.inGuardianFight){
+      const guardian = getGuardianById(state.currentGuardianId);
+      log(ENEMY_DEFS[guardian.bondSpiritId].victoryLog);
+      tween(700, t=>{ enemy.dead = ease(t); }, ()=>{
+        spawnParticles(enemy.x, enemy.y-24, 60, {color:'#e8c15a', speed:7, spread:6.2, size:4, glow:true});
+        wait(700, endGuardianFight);
+      });
+      return true;
+    }
     if(state.enemyType === 'surveyor'){ state.chapter2Done = true; state.fightNumber = 4; }
     if(state.enemyType === 'captain'){ state.chapter3Done = true; state.fightNumber = 5; }
     if(state.enemyType === 'harwick'){ state.chapter4Done = true; state.fightNumber = 6; }
@@ -12764,7 +13095,13 @@ function showEnd(won){
       const guardian = getGuardianById(state.currentGuardianId);
       endTitle.textContent = 'A BOND FORGED';
       endTitle.style.textShadow = '0 0 26px rgba(232,193,90,0.7), 0 2px 0 #000';
-      endText.textContent = `${guardian.name} yields, and something ancient passes between you. The ${SPIRIT_BONDS[guardian.bondSpiritId].name} is bonded to Kanata now - a power like nothing else he carries.`;
+      const r = GT.result || { grade: 'C', tier: 1, rounds: 0, knockdowns: 0, wards: 0 };
+      const nextTier = r.tier < 3 && gtBest(guardian.id).tier === r.tier ? ` ${GT_TIERS[r.tier+1].label} unlocked!` : '';
+      endTitle.textContent = `GRADE ${r.grade} - ${GT_TIERS[r.tier].label}`;
+      endText.textContent = (GT.alreadyBonded
+        ? `${guardian.name} yields again.`
+        : `${guardian.name} yields, and something ancient passes between you. The ${SPIRIT_BONDS[guardian.bondSpiritId].name} is bonded to Kanata now.`)
+        + ` ${r.rounds} rounds, ${r.wards} ward${r.wards===1?'':'s'} shattered, ${r.knockdowns} knockdown${r.knockdowns===1?'':'s'}.${nextTier}`;
       endEmblem.querySelector('path').setAttribute('fill', '#e8c15a');
     } else if(state.inSideFight){
       const def = ENEMY_DEFS[state.enemyType];
@@ -14087,6 +14424,9 @@ campfireRecipesCloseBtn.addEventListener('touchstart', e=>{ e.preventDefault(); 
 // ---------- Area Select: pick which hunting ground\'s pool to fight from ----------
 const areaSelectPanel = document.getElementById('areaSelectPanel');
 const areaSelectItemsEl = document.getElementById('areaSelectItems');
+const guardianSelectPanel = document.getElementById('guardianSelectPanel');
+const guardianSelectItemsEl = document.getElementById('guardianSelectItems');
+const guardianSelectCloseBtn = document.getElementById('guardianSelectCloseBtn');
 
 function renderAreaSelect(onPick){
   areaSelectItemsEl.innerHTML = '';
@@ -14128,6 +14468,73 @@ function chooseFightArea(){
   return new Promise(resolve=>{ renderAreaSelect(resolve); });
 }
 
+// Guardian Trials picker - always shown (even with just one Guardian) since
+// this is meant to feel like a special, deliberate destination rather than
+// something you fall into, unlike the Area picker\'s single-Guardian skip.
+let guardianSelectOnPick = null;
+function renderGuardianSelect(onPick){
+  guardianSelectOnPick = onPick;
+  guardianSelectItemsEl.innerHTML = '';
+  GUARDIANS.forEach(guardian=>{
+    const unlocked = guardian.unlocked();
+    const bonded = !!state.guardiansDefeated[guardian.id];
+    const row = document.createElement('div');
+    row.className = 'spiritItem' + (unlocked ? '' : ' locked');
+    gtEnsureUi();
+    const best = gtBest(guardian.id);
+    const tr = gtTrial(guardian.id);
+    const tierBtns = [1,2,3].map(n=>{
+      const open = n <= best.tier + 1;
+      const g = best.grades[n];
+      return `<div class="equipBtn ${open ? '' : 'locked'}" data-tier="${n}">${GT_TIERS[n].label}${g ? ' ' + g : ''}</div>`;
+    }).join('');
+    row.innerHTML = `
+      <div class="info">
+        <div class="iname">${guardian.icon} ${guardian.name} ${unlocked ? `<span style="font-size:11px; color:#e8c15a; margin-left:6px;">${guardian.title}</span>` : ''}</div>
+        <div class="idesc">${unlocked ? guardian.desc : guardian.unlockHint}</div>
+        ${unlocked ? `<div style="font-size:11px; color:#ffb38a; margin-top:4px;">${ELEMENT_ICON[guardian.element] || ''} ${GT_TWISTS[tr.twist]} Signature: ${tr.cata.name}.</div>` : ''}
+        ${unlocked && bonded ? `<div style="font-size:11px; color:#4ade80; margin-top:4px;">Bonded. Higher tiers pay more: ★★ x2.2, ★★★ x4, and the grade adds up to +50%.</div>` : ''}
+        ${unlocked ? `<div class="gtTierBtns">${tierBtns}</div>` : ''}
+      </div>
+      ${unlocked ? '' : '<div class="equipBtn locked">Locked</div>'}
+    `;
+    if(unlocked){
+      row.querySelectorAll('.gtTierBtns .equipBtn').forEach(btn=>{
+        const n = +btn.dataset.tier;
+        if(n > best.tier + 1) return;
+        const pick = (e)=>{
+          if(e){ e.stopPropagation(); if(e.type === 'touchstart') e.preventDefault(); }
+          if(Date.now() - shopJustOpenedAt < 400) return;
+          guardianSelectPanel.classList.add('hidden');
+          guardianSelectOnPick = null;
+          state.currentGuardianTier = n;
+          onPick(guardian.id);
+        };
+        btn.addEventListener('click', pick);
+        btn.addEventListener('touchstart', pick, {passive:false});
+      });
+    }
+    guardianSelectItemsEl.appendChild(row);
+  });
+  guardianSelectPanel.classList.remove('hidden');
+}
+
+// Back button: closes the picker without challenging anyone. Resolves the
+// pending chooseGuardianTrial() promise with null so the caller (playVillageReturn)
+// knows to return to the village action menu instead of starting a fight.
+function closeGuardianSelect(){
+  if(Date.now() - shopJustOpenedAt < 400) return;
+  guardianSelectPanel.classList.add('hidden');
+  const cb = guardianSelectOnPick;
+  guardianSelectOnPick = null;
+  if(cb) cb(null);
+}
+guardianSelectCloseBtn.addEventListener('click', closeGuardianSelect);
+guardianSelectCloseBtn.addEventListener('touchstart', e=>{ e.preventDefault(); closeGuardianSelect(); }, {passive:false});
+
+function chooseGuardianTrial(){
+  return new Promise(resolve=>{ renderGuardianSelect(resolve); });
+}
 
 // The butcher, forge, spirit den, and sleeping tent (the Elder\'s Tent) are
 // all wired up as village panels.
@@ -14144,7 +14551,7 @@ function isUiTapTarget(target){
 }
 function tryOpenBuildingAt(clientX, clientY){
   if(!villageInteractive) return false;
-  if(!shopPanel.classList.contains('hidden') || !spiritDenPanel.classList.contains('hidden') || !trophyPanel.classList.contains('hidden') || !compendiumPanel.classList.contains('hidden') || !rebirthPanel.classList.contains('hidden') || !masteryPanel.classList.contains('hidden') || !invasivePanel.classList.contains('hidden') || !campfirePanel.classList.contains('hidden')) return false; // a panel is already open; don\'t re-hit-test buildings underneath it
+  if(!shopPanel.classList.contains('hidden') || !spiritDenPanel.classList.contains('hidden') || !trophyPanel.classList.contains('hidden') || !compendiumPanel.classList.contains('hidden') || !guardianSelectPanel.classList.contains('hidden') || !rebirthPanel.classList.contains('hidden') || !masteryPanel.classList.contains('hidden') || !invasivePanel.classList.contains('hidden') || !campfirePanel.classList.contains('hidden')) return false; // a panel is already open; don\'t re-hit-test buildings underneath it
   const r = stage.getBoundingClientRect();
   const id = hitTestVillageBuilding(clientX-r.left, clientY-r.top);
   if(id === 'butcher' || id === 'forge' || id === 'sleep'){ renderShop(id === 'sleep' ? 'tent' : id); shopJustOpenedAt = Date.now(); return true; }
@@ -14189,6 +14596,7 @@ function collapseVillageActionsMenuOnPick(e){
 }
 villageActionsMenu.addEventListener('click', collapseVillageActionsMenuOnPick);
 const villageFightBtn = document.getElementById('villageFightBtn');
+const villageGuardianBtn = document.getElementById('villageGuardianBtn');
 const villageStoryBtn = document.getElementById('villageStoryBtn');
 let villageResolve = null;
 
@@ -14230,6 +14638,7 @@ function saveGame(auto = false) {
       bestiary: state.bestiary,
       buffs: state.buffs,
       guardiansDefeated: state.guardiansDefeated,
+      guardianBest: state.guardianBest,
       masteryPoints: state.masteryPoints,
       unlockedMastery: state.unlockedMastery,
       rebirthCount: state.rebirthCount,
@@ -14311,6 +14720,7 @@ function repairMastery() {
 
 function repairGuardians() {
   if (!state.guardiansDefeated) state.guardiansDefeated = {};
+  if (!state.guardianBest) state.guardianBest = {};
 }
 
 // Older saves (before a given spirit existed - most recently the Great Bison
@@ -14460,6 +14870,1151 @@ function registerGuardian(cfg){
 function getGuardianById(id){
   return GUARDIAN_LOOKUP[id] || GUARDIANS[0];
 }
+
+registerGuardian({
+  id: 'guardian_bison',
+  element: 'ground',
+  name: 'The Great Bison',
+  spiritName: 'Great Bison Spirit',
+  title: 'Guardian of the Open Plain',
+  desc: 'An ancient, massive bison said to have walked these plains since before the first fires. Elders say those who best it in fair combat may earn its spirit - and nothing less.',
+  unlockHint: 'Complete the Sergeant\'s tutorial trial to unlock',
+  unlocked: () => state.flashbackDone,
+  icon: '\ud83e\uddac', rgb: '232,193,90', particleColor: '#e8c15a',
+  heroMax: 46,      // a real endurance test - noticeably tougher than a normal side-fight
+  enemyMax: 260,
+  dmgMult: 1.6, shakeRanged: 20,
+  dmgMin: 38, dmgMax: 52, spiritCap: 120,
+  capDesc: 'Ancient - a demanding gauge, but nothing else hits like this.',
+  bossLevel: 5,
+  xpNext: 200,
+  reward: { gold: 250, kanataXp: 900, spiritXp: 700 }, // flat, level-independent - always feels like a landmark win
+  bondSpiritId: 'guardian_bison',
+  drawEnemy: drawEnemyGreatBison,
+  drawSpirit: drawGreatBisonSpirit,
+  log: {
+    encounter: 'The ground itself seems to shudder. The Great Bison steps from the tree line, ancient and enormous, its eyes holding centuries.',
+    wasted: [
+      { txt: 'The Great Bison lowers its head, considering you.', pose:'eye' },
+      { txt: 'A long breath rolls from its nostrils like fog.', pose:'eye' },
+      { txt: 'The ground trembles as it shifts its weight.', pose:'stumble' },
+      { txt: 'It paws the earth once, unhurried.', pose:'reload' }
+    ],
+    ranged: 'The Great Bison rears and slams its hooves down like thunder!',
+    rangedBrace: 'You brace behind the spear with everything you have. The shockwave nearly knocks you flat!',
+    lunge: 'The Great Bison lowers its horns and charges - the whole world seems to shake!',
+    lungeBrace: 'You just barely catch the charge on your spear shaft, arms screaming!',
+    victory: 'The Great Bison plants its hooves and goes still, breath slowing, its ancient gaze settling on you.',
+    call: 'The Great Bison Spirit answers your call - the earth itself seems to answer with it!'
+  },
+  bondBeats: {
+    first: [
+      'The Great Bison stops fighting. Its breath slows to the rhythm of the earth.',
+      'This is no ordinary spirit. This is a bond that will shake mountains.'
+    ],
+    repeat: ['The Great Bison yields again, its ancient bond with Kanata already unbroken.']
+  },
+  trophy: { name: "Great Bison\'s Ancient Horn", icon:'🦬', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 300 XP.', effect: ()=>{ grantKanataXp(300); log('The horn hums with old, patient strength. Kanata gains 300 XP.'); } },
+  special: { name: 'Unstoppable Charge', desc: 'A guaranteed, unstoppable hit - can never be reduced, guarded, or dodged away by anything.',
+    apply: ()=>{ log('UNSTOPPABLE CHARGE! Nothing could have braced for that.'); } },
+  // Unstoppable Charge: this bond's Spirit Surge always lands at the very
+  // top of its damage range - no roll can shortchange it - and (per
+  // scaleDamageToEnemy) nothing is allowed to reduce it afterward either.
+  mechanics: { surgeAlwaysMax: true },
+  moves: [
+    { id: 'earthen_stand', name: 'Earthen Stand', lvl: 3, cost: 45, desc: 'Auto-guards Kanata\'s next attack and heals 20% Max HP.', action: (cb) => {
+      log('The Great Bison Spirit plants itself like a mountain!');
+      state.autoGuardNext = true;
+      const heal = Math.floor(state.heroMax * 0.20);
+      state.heroHp = Math.min(state.heroMax, state.heroHp + heal);
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#e8c15a', speed:3, spread:6.28, size:4, up:1});
+      updateHud();
+      wait(650, cb);
+    }},
+    { id: 'ancient_momentum', name: 'Ancient Momentum', lvl: 7, cost: 80, desc: 'Deals 9x spear damage and always strikes first.', action: (cb) => {
+      log('The Great Bison Spirit builds unstoppable, ancient momentum!');
+      executeSpiritMove(kanataSkillDamage(9), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'cinderhorn_elder',
+  element: 'fire',
+  name: 'The Cinderhorn Elder',
+  spiritName: 'Cinderhorn Elder Spirit',
+  title: 'Guardian of the Smoldering Grove',
+  desc: 'An ancient stag that refused to flee the fires the Surveyor set - its antlers caught the blaze and never stopped smoldering. Far larger and far angrier than anything else that calls the Grove home.',
+  unlockHint: 'Defeat the Surveyor to unlock',
+  unlocked: () => state.chapter2Done,
+  icon: '\ud83e\udd8c', rgb: '255,138,61', particleColor: '#ff8a3d',
+  heroMax: 45,
+  enemyMax: 370,    // roughly 5.7x the Grove's toughest wild animal (Giant Moose, 65hp)
+  dmgMult: 1.65, shakeRanged: 22,
+  dmgMin: 48, dmgMax: 64, spiritCap: 135,
+  capDesc: 'Smoldering - a demanding gauge, but it burns the enemy long after it lands.',
+  bossLevel: 15,
+  xpNext: 240,
+  reward: { gold: 400, kanataXp: 1400, spiritXp: 1100 },
+  bondSpiritId: 'cinderhorn_elder',
+  drawEnemy: drawEnemyCinderhornElder,
+  drawSpirit: drawCinderhornElderSpirit,
+  log: {
+    encounter: 'Smoke curls between the blackened trunks, and something enormous steps through it - an ancient stag whose antlers never stopped smoldering since the fires the Surveyor set.',
+    wasted: [
+      { txt: 'The Elder scrapes a hoof through drifted ash.', pose:'stumble' },
+      { txt: 'Embers drift lazily off its antlers.', pose:'eye' },
+      { txt: 'It exhales, and the smoke around it thickens.', pose:'eye' },
+      { txt: 'The Elder turns its head, coals glowing in its rack.', pose:'reload' }
+    ],
+    ranged: 'The Cinderhorn Elder rears and stamps down - a wave of hot ash rolls out!',
+    rangedBrace: 'You throw an arm up against the ash cloud, coughing, but hold your ground!',
+    lunge: 'The Elder lowers its glowing rack and charges through the smoke!',
+    lungeBrace: 'You catch the burning antlers on your spear shaft - the heat alone nearly buckles your knees!',
+    victory: 'The Cinderhorn Elder kneels slowly into the ash, the coal-glow in its antlers dimming to a quiet ember.',
+    call: 'The Cinderhorn Elder Spirit answers your call - the air fills with drifting ash and ember-light!'
+  },
+  bondBeats: {
+    first: [
+      'The Cinderhorn Elder stops fighting. The coal-glow in its antlers dims to a quiet ember.',
+      'This is no ordinary spirit. This is a bond that will smolder for a lifetime.'
+    ],
+    repeat: ['The Cinderhorn Elder yields again, its ancient bond with Kanata already unbroken.']
+  },
+  trophy: { name: "Cinderhorn Elder\'s Ember Antler", icon:'🔥', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 480 XP.', effect: ()=>{ grantKanataXp(480); log('The antler is warm to the touch, even now. Kanata gains 480 XP.'); } },
+  special: { name: 'Wildfire Reckoning', desc: 'Weakens the enemy\'s next attack by 35% and burns them for 12 damage at the start of each of their next 3 turns.',
+    apply: ()=>{ state.enemyWeakenNext = 0.65; state.enemyPoisonTurns = 3; state.enemyPoisonDmg = 12; log('The Elder\'s antlers flare - ash and embers catch the foe alight!'); } },
+  moves: [
+    { id: 'ashbound_stand', name: 'Ashbound Stand', lvl: 3, cost: 55, desc: 'Auto-guards Kanata\'s next attack, heals 22% Max HP, and burns the enemy for 8 damage next turn.', action: (cb) => {
+      log('The Cinderhorn Elder digs its hooves into the drifted ash!');
+      state.autoGuardNext = true;
+      state.enemyPoisonTurns = Math.max(state.enemyPoisonTurns, 1);
+      state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, 8);
+      const heal = Math.floor(state.heroMax * 0.22);
+      state.heroHp = Math.min(state.heroMax, state.heroHp + heal);
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#ff8a3d', speed:3, spread:6.28, size:4, up:1});
+      updateHud();
+      wait(650, cb);
+    }},
+    { id: 'grovefire_surge', name: 'Grovefire Surge', lvl: 7, cost: 90, desc: 'Deals 10x spear damage and burns the enemy for 14 damage over their next 3 turns.', action: (cb) => {
+      log('The Cinderhorn Elder throws its glowing rack forward - the whole grove seems to catch!');
+      state.enemyPoisonTurns = 3;
+      state.enemyPoisonDmg = 14;
+      executeSpiritMove(kanataSkillDamage(10), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'deepfrost_warden',
+  element: 'frost',
+  name: 'The Deepfrost Warden',
+  spiritName: 'Deepfrost Warden Spirit',
+  title: 'Guardian of the Frozen Shore',
+  desc: 'A bear-shaped mountain of muscle and old, fused ice that hauled itself out of the pack ice long before Voss ever made landfall. Nothing else on that coastline comes close to its size.',
+  unlockHint: 'Defeat Commander Voss to unlock',
+  unlocked: () => state.chapter5Done,
+  icon: '\ud83d\udc3b\u200d\u2744\ufe0f', rgb: '199,214,222', particleColor: '#c8e8ff',
+  heroMax: 62,
+  enemyMax: 540,    // roughly 5.7x the Shore's toughest wild animal (Arctic Muskox, 95hp)
+  dmgMult: 1.95, shakeRanged: 26,
+  dmgMin: 58, dmgMax: 76, spiritCap: 150,
+  capDesc: 'Glacial - the most demanding gauge of all, but nothing hits harder or locks a fight down tighter.',
+  bossLevel: 50,
+  xpNext: 280,
+  reward: { gold: 1100, kanataXp: 3800, spiritXp: 3000 },
+  bondSpiritId: 'deepfrost_warden',
+  drawEnemy: drawEnemyDeepfrostWarden,
+  drawSpirit: drawDeepfrostWardenSpirit,
+  log: {
+    encounter: 'The pack ice groans and splits, and something vast hauls itself onto the shore - a bear-shaped mountain of muscle and old, fused ice, breath rolling off it in sheets of fog.',
+    wasted: [
+      { txt: 'The Warden shakes, and a sheet of frost cracks off its shoulders.', pose:'stumble' },
+      { txt: 'Its breath rolls out in a slow, freezing fog.', pose:'eye' },
+      { txt: 'Ice groans and resettles across its back plates.', pose:'eye' },
+      { txt: 'It rakes the shingle once, unhurried, testing its footing.', pose:'reload' }
+    ],
+    ranged: 'The Deepfrost Warden rears up and slams down - the ground itself seems to frost over!',
+    rangedBrace: 'You brace hard behind the spear as the cold bites through to the bone!',
+    lunge: 'The Warden drops to all fours and charges, ice plates grinding with every stride!',
+    lungeBrace: 'You catch the charge on your spear shaft - your arms go numb from the cold alone!',
+    victory: 'The Deepfrost Warden settles onto the ice, the fog of its breath slowing to a calm, steady drift.',
+    call: 'The Deepfrost Warden Spirit answers your call - the air turns to biting fog around you!'
+  },
+  bondBeats: {
+    first: [
+      'The Deepfrost Warden stops fighting. Its breath slows to a calm, steady drift.',
+      'This is no ordinary spirit. This is a bond as unshakeable as the ice itself.'
+    ],
+    repeat: ['The Deepfrost Warden yields again, its ancient bond with Kanata already unbroken.']
+  },
+  trophy: { name: "Deepfrost Warden\'s Ice-Fused Claw", icon:'❄️', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 700 XP.', effect: ()=>{ grantKanataXp(700); log('The claw is cold enough to sting your palm. Kanata gains 700 XP.'); } },
+  special: { name: 'Glacial Reckoning', desc: 'Stuns the enemy and guarantees Kanata dodges each of the next 2 attacks.',
+    apply: ()=>{ state.enemyStunned = true; state.dodgeGuaranteed = true; state.blizzardDodgeCharges = 2; log('A wave of killing cold rolls out - the foe freezes mid-step!'); } },
+  moves: [
+    { id: 'frostbound_ward', name: 'Frostbound Ward', lvl: 3, cost: 60, desc: 'Auto-guards Kanata\'s next attack and guarantees a dodge on the one after.', action: (cb) => {
+      log('The Deepfrost Warden raises a wall of packed ice!');
+      state.autoGuardNext = true;
+      state.dodgeGuaranteed = true;
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#c8e8ff', speed:3, spread:6.28, size:4, up:1});
+      updateHud();
+      wait(650, cb);
+    }},
+    { id: 'avalanche_calving', name: 'Avalanche Calving', lvl: 7, cost: 100, desc: 'Deals 11x spear damage, always strikes first, and stuns the enemy.', action: (cb) => {
+      log('The Deepfrost Warden brings the full weight of the ice down at once!');
+      state.enemyStunned = true;
+      executeSpiritMove(kanataSkillDamage(11), cb);
+    }}
+  ]
+});
+
+// ==== NEW GUARDIANS: ART ==================================================
+// Each shape is drawn once, at the origin, facing +x (towards the enemy side
+// it will be mirrored by enemy.facingVis). gtDrawers() wraps one shape into
+// the "enemy" pose (battle boss) and the "spirit" pose (bonded companion), so
+// every Guardian keeps one drawing for both.
+function gtDrawers(shape, enemyScale, spiritScale){
+  return {
+    enemy(t){
+      if(enemy.dead>=1) return;
+      const s = enemy.scale*enemyScale;
+      sctx.save();
+      const deathDrop = ease(enemy.dead)*40, deathRot = ease(enemy.dead)*0.6;
+      sctx.translate(enemy.x + enemy.leanX, enemy.y + enemy.leanY + deathDrop);
+      sctx.rotate(enemy.facing<0? deathRot : -deathRot);
+      sctx.globalAlpha = 1-enemy.dead*0.9;
+      sctx.scale(enemy.facingVis*s, s);
+      shape(t, enemy.bayonetCharge||0, enemy.gunFlash||0, false);
+      sctx.restore();
+    },
+    spirit(t){
+      if(beaver.active<=0) return;
+      const s = beaver.scale*beaver.active*spiritScale;
+      sctx.save();
+      sctx.translate(beaver.x, beaver.y - beaver.hop);
+      sctx.scale(s,s);
+      sctx.globalAlpha = 0.9;
+      shape(t, 0, beaver.tailSlam||0, true);
+      sctx.restore();
+    }
+  };
+}
+function gtGlowEye(x,y,r,color){
+  sctx.save(); sctx.shadowColor = color; sctx.shadowBlur = 10; sctx.fillStyle = color;
+  sctx.beginPath(); sctx.arc(x,y,r,0,Math.PI*2); sctx.fill(); sctx.restore();
+}
+
+// The Moonhowl Alpha - a spectral wolf of the Far Frontier.
+function gtShapeMoonhowl(t, charge, swing, spirit){
+  const sway = Math.sin(t*0.003)*2;
+  const body = spirit ? 'rgba(120,110,200,0.85)' : '#2c2a4a';
+  sctx.save(); sctx.globalAlpha *= 0.35; sctx.fillStyle = '#a99cff';
+  sctx.beginPath(); sctx.ellipse(4+charge*8,-34,54,30,0,0,Math.PI*2); sctx.fill(); sctx.restore();
+  sctx.fillStyle = '#1d1b33';
+  drawLimb(-26,-16,-30,20,9); drawLimb(-12,-16,-14,20,9);
+  drawLimb(16+charge*10,-18,14+charge*12,20,9); drawLimb(28+charge*10,-18,28+charge*12,20,9);
+  // tail of mist
+  sctx.save(); sctx.translate(-38,-34); sctx.rotate(-0.5+Math.sin(t*0.004)*0.2);
+  sctx.fillStyle = body; sctx.beginPath(); sctx.ellipse(-14,0,20,7,0.2,0,Math.PI*2); sctx.fill(); sctx.restore();
+  sctx.fillStyle = body;
+  sctx.beginPath(); sctx.ellipse(0+charge*8,-32,38,17,0,0,Math.PI*2); sctx.fill();
+  // mane
+  sctx.beginPath(); sctx.moveTo(10+charge*8,-52);
+  for(let i=0;i<6;i++){ sctx.lineTo(16+i*4+charge*8, -60+Math.sin(t*0.006+i)*3 + (i%2)*8); }
+  sctx.lineTo(36+charge*8,-30); sctx.lineTo(8+charge*8,-26); sctx.fill();
+  // head
+  sctx.save(); sctx.translate(42+charge*14,-44+sway); sctx.rotate(lerp(0,0.3,charge) - swing*0.5);
+  sctx.fillStyle = body;
+  sctx.beginPath(); sctx.ellipse(0,0,14,11,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(6,-4); sctx.lineTo(26,2); sctx.lineTo(6,8); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(-6,-8); sctx.lineTo(-2,-22); sctx.lineTo(3,-9); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(2,-9); sctx.lineTo(8,-21); sctx.lineTo(10,-6); sctx.fill();
+  // open jaw when howling/biting
+  if(swing>0.05){ sctx.fillStyle='#0b0a18'; sctx.beginPath(); sctx.moveTo(8,4); sctx.lineTo(24,4+swing*10); sctx.lineTo(8,9); sctx.fill(); }
+  gtGlowEye(6,-3,2.4,'#d8d0ff');
+  // crescent on the brow
+  sctx.strokeStyle = '#efeaff'; sctx.lineWidth = 2;
+  sctx.beginPath(); sctx.arc(-2,-6,4,Math.PI*0.6,Math.PI*1.6); sctx.stroke();
+  sctx.restore();
+}
+
+// The Ironshell Tortoise - an old tortoise whose shell fused with slag from
+// the ruined ironworks. Glowing seams, riveted plates.
+function gtShapeIronshell(t, charge, swing, spirit){
+  const glow = 0.55 + Math.sin(t*0.004)*0.25 + swing*0.4;
+  sctx.fillStyle = '#3a3330';
+  drawLimb(-30,-10,-34,18,13); drawLimb(-8,-10,-10,18,13);
+  drawLimb(18,-10,20,18,13); drawLimb(34,-10,38,18,13);
+  // head and neck, extends on a charge
+  sctx.save(); sctx.translate(44+charge*18,-22 - swing*6);
+  sctx.fillStyle = '#4b423b';
+  sctx.beginPath(); sctx.ellipse(-8,4,14,8,-0.2,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(6,0,12,9,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#2a2420'; sctx.beginPath(); sctx.moveTo(12,2); sctx.lineTo(19,4); sctx.lineTo(12,6); sctx.fill();
+  gtGlowEye(8,-3,2.2,'#ffb347');
+  sctx.restore();
+  // shell
+  sctx.fillStyle = spirit ? 'rgba(90,80,72,0.95)' : '#5a504a';
+  sctx.beginPath(); sctx.moveTo(-46,-8);
+  sctx.quadraticCurveTo(-44,-70,2,-72); sctx.quadraticCurveTo(46,-70,48,-8); sctx.closePath(); sctx.fill();
+  sctx.fillStyle = '#6b625b';
+  sctx.fillRect(-48,-12,98,8);
+  // plates + slag seams
+  sctx.strokeStyle = `rgba(255,140,40,${glow})`; sctx.lineWidth = 2.5;
+  sctx.save(); sctx.shadowColor = '#ff8c28'; sctx.shadowBlur = 8;
+  sctx.beginPath();
+  sctx.moveTo(-30,-12); sctx.lineTo(-22,-44); sctx.lineTo(2,-58); sctx.lineTo(26,-44); sctx.lineTo(32,-12);
+  sctx.moveTo(-22,-44); sctx.lineTo(-40,-30); sctx.moveTo(26,-44); sctx.lineTo(42,-30);
+  sctx.moveTo(2,-58); sctx.lineTo(2,-12);
+  sctx.stroke(); sctx.restore();
+  // rivets
+  sctx.fillStyle = '#9c9289';
+  [[-34,-24],[-12,-50],[14,-50],[36,-24],[-14,-26],[16,-26]].forEach(([x,y])=>{ sctx.beginPath(); sctx.arc(x,y,2.2,0,Math.PI*2); sctx.fill(); });
+  // smoke vent
+  if(Math.random()<0.08 && !spirit) spawnParticles(enemy.x, enemy.y - enemy.scale*120, 1, {color:'rgba(90,90,90,0.6)', speed:0.6, spread:0.6, size:4, grav:-0.03, life:90, angle:-Math.PI/2});
+}
+
+// The Stormcrest Eagle - a vast eagle that rides the highland storms.
+function gtShapeStormcrest(t, charge, swing, spirit){
+  const hover = -26 + Math.sin(t*0.003)*5;
+  const flap = Math.sin(t*0.008)*0.6 + swing*0.8;
+  sctx.save(); sctx.translate(charge*14, hover);
+  const dark = spirit ? 'rgba(70,90,120,0.9)' : '#3b4656';
+  // far wing
+  sctx.save(); sctx.translate(-2,-30); sctx.rotate(-0.4 - flap*0.6);
+  sctx.fillStyle = '#2a3340';
+  sctx.beginPath(); sctx.moveTo(0,0); sctx.quadraticCurveTo(-30,-40,-66,-40); sctx.lineTo(-54,-28); sctx.lineTo(-62,-22); sctx.lineTo(-48,-16); sctx.lineTo(-52,-8); sctx.closePath(); sctx.fill();
+  sctx.restore();
+  // tail
+  sctx.fillStyle = '#e8edf2'; sctx.beginPath(); sctx.moveTo(-26,-24); sctx.lineTo(-50,-14); sctx.lineTo(-48,-28); sctx.closePath(); sctx.fill();
+  // body
+  sctx.fillStyle = dark; sctx.beginPath(); sctx.ellipse(-4,-28,30,15,-0.15,0,Math.PI*2); sctx.fill();
+  // talons
+  sctx.strokeStyle = '#e0b44a'; sctx.lineWidth = 3;
+  sctx.beginPath(); sctx.moveTo(-4,-16); sctx.lineTo(0+charge*10,0); sctx.moveTo(8,-16); sctx.lineTo(12+charge*10,0); sctx.stroke();
+  // head (white) + beak + crest
+  sctx.save(); sctx.translate(26,-40); sctx.rotate(charge*0.3);
+  sctx.fillStyle = '#eef2f6'; sctx.beginPath(); sctx.ellipse(0,0,12,10,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e8b230'; sctx.beginPath(); sctx.moveTo(8,-3); sctx.quadraticCurveTo(22,0,14,9); sctx.lineTo(8,4); sctx.fill();
+  sctx.fillStyle = '#8fd0ff';
+  for(let i=0;i<4;i++){ sctx.beginPath(); sctx.moveTo(-6+i*2,-8); sctx.lineTo(-20+i*3,-22-i*2+Math.sin(t*0.01+i)*2); sctx.lineTo(-2+i*2,-6); sctx.fill(); }
+  gtGlowEye(4,-2,2,'#7fd4ff');
+  sctx.restore();
+  // near wing
+  sctx.save(); sctx.translate(2,-32); sctx.rotate(0.15 + flap);
+  sctx.fillStyle = dark;
+  sctx.beginPath(); sctx.moveTo(0,0); sctx.quadraticCurveTo(-24,-54,-60,-62); sctx.lineTo(-48,-48); sctx.lineTo(-58,-40); sctx.lineTo(-40,-32); sctx.lineTo(-46,-20); sctx.lineTo(-20,-12); sctx.closePath(); sctx.fill();
+  sctx.strokeStyle = 'rgba(143,208,255,0.7)'; sctx.lineWidth = 1.5;
+  sctx.beginPath(); sctx.moveTo(-8,-10); sctx.quadraticCurveTo(-28,-44,-56,-58); sctx.stroke();
+  sctx.restore();
+  // crackle of lightning on a big swing
+  if(swing>0.3){
+    sctx.strokeStyle = 'rgba(200,235,255,0.9)'; sctx.lineWidth = 2;
+    sctx.beginPath(); sctx.moveTo(30,-50); for(let i=0;i<5;i++) sctx.lineTo(40+i*8, -50 + (i%2?10:-6)); sctx.stroke();
+  }
+  sctx.restore();
+}
+
+// The Mire Serpent - a black-water serpent of the river delta, cold enough
+// to frost the reeds it passes.
+function gtShapeMire(t, charge, swing, spirit){
+  const w = Math.sin(t*0.003);
+  const col = spirit ? 'rgba(60,110,120,0.9)' : '#24434a';
+  sctx.save(); sctx.translate(charge*14,0);
+  // coils on the ground
+  sctx.fillStyle = '#1a3136';
+  sctx.beginPath(); sctx.ellipse(-20,-8,36,10,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = col;
+  sctx.beginPath(); sctx.ellipse(-4,-12,30,9,0,0,Math.PI*2); sctx.fill();
+  // rising neck: a chain of segments
+  const pts = [];
+  for(let i=0;i<=10;i++){ const k=i/10; pts.push([lerp(10,30,k) + Math.sin(k*3+t*0.003)*8*(1-k), -14 - k*(62+charge*6) + Math.sin(k*5)*4]); }
+  for(let i=0;i<pts.length;i++){
+    const r = lerp(11,8,i/pts.length);
+    sctx.fillStyle = col; sctx.beginPath(); sctx.arc(pts[i][0], pts[i][1], r, 0, Math.PI*2); sctx.fill();
+    if(i%2===0){ sctx.fillStyle = 'rgba(180,230,240,0.35)'; sctx.beginPath(); sctx.arc(pts[i][0]-3, pts[i][1], 2.2, 0, Math.PI*2); sctx.fill(); }
+  }
+  // head with frill
+  const [hx,hy] = pts[pts.length-1];
+  sctx.save(); sctx.translate(hx+4, hy+w*2); sctx.rotate(0.15 + swing*0.4);
+  sctx.fillStyle = 'rgba(160,220,235,0.55)';
+  sctx.beginPath(); sctx.moveTo(-6,-4); sctx.lineTo(-18,-20); sctx.lineTo(-4,-12); sctx.lineTo(0,-24); sctx.lineTo(4,-10); sctx.closePath(); sctx.fill();
+  sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(6,0,16,9,0,0,Math.PI*2); sctx.fill();
+  if(swing>0.05){
+    sctx.fillStyle = '#0a1416'; sctx.beginPath(); sctx.moveTo(10,2); sctx.lineTo(24,2+swing*10); sctx.lineTo(10,7); sctx.fill();
+    sctx.fillStyle = '#e8f6fa'; sctx.fillRect(14,3,2,5); sctx.fillRect(19,4,2,5);
+  }
+  gtGlowEye(8,-3,2.2,'#9ff0ff');
+  sctx.restore();
+  sctx.restore();
+  if(!spirit && Math.random()<0.06) spawnParticles(enemy.x + (Math.random()-0.5)*80, enemy.y, 1, {color:'#d8f4ff', speed:0.4, spread:1, size:2, grav:-0.01, life:80, angle:-Math.PI/2});
+}
+
+// The Rootcrowned Moose - the oldest thing in the Ancient Grove. Its antlers
+// are living roots, and moss hangs from its flanks.
+function gtShapeRootcrowned(t, charge, swing, spirit){
+  const body = spirit ? 'rgba(70,60,40,0.92)' : '#3d3322';
+  sctx.fillStyle = '#2a2318';
+  drawLimb(-26,-24,-28,20,10); drawLimb(-12,-24,-12,20,10);
+  drawLimb(18+charge*10,-26,18+charge*12,20,10); drawLimb(30+charge*10,-26,32+charge*12,20,10);
+  sctx.fillStyle = body;
+  sctx.beginPath(); sctx.ellipse(2+charge*8,-42,40,20,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(22+charge*8,-52,20,18,0,0,Math.PI*2); sctx.fill();
+  // moss
+  sctx.fillStyle = '#4f7a3a';
+  for(let i=0;i<7;i++){ const x=-30+i*9+charge*8; sctx.beginPath(); sctx.moveTo(x,-32); sctx.lineTo(x+4,-20+Math.sin(t*0.004+i)*3); sctx.lineTo(x+8,-32); sctx.fill(); }
+  // head
+  sctx.save(); sctx.translate(44+charge*14,-50); sctx.rotate(lerp(0.1,0.45,charge));
+  sctx.fillStyle = body;
+  sctx.beginPath(); sctx.ellipse(0,0,12,10,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(12,6,12,8,0.3,0,Math.PI*2); sctx.fill();
+  gtGlowEye(2,-3,2.2,'#9dff8a');
+  // root antlers
+  sctx.strokeStyle = '#6b5434'; sctx.lineCap = 'round';
+  const branch = (x,y,a,len,depth)=>{
+    if(depth===0 || len<4) return;
+    const x2 = x + Math.cos(a)*len, y2 = y + Math.sin(a)*len;
+    sctx.lineWidth = depth*1.4; sctx.beginPath(); sctx.moveTo(x,y); sctx.lineTo(x2,y2); sctx.stroke();
+    if(depth===1){ sctx.fillStyle = '#7fe36a'; sctx.globalAlpha *= 1; sctx.beginPath(); sctx.arc(x2,y2,2.4+Math.sin(t*0.005+x)*0.6,0,Math.PI*2); sctx.fill(); }
+    branch(x2,y2,a-0.45,len*0.7,depth-1); branch(x2,y2,a+0.4,len*0.68,depth-1);
+  };
+  branch(-4,-8,-1.9 - swing*0.3,16,4);
+  branch(2,-8,-1.2 - swing*0.3,15,4);
+  sctx.restore();
+  if(!spirit && Math.random()<0.05) spawnParticles(enemy.x + (Math.random()-0.5)*60, enemy.y - enemy.scale*130, 1, {color:'#8fe07a', speed:0.5, spread:1.2, size:2.5, grav:0.02, life:120});
+}
+
+const GT_ART = {
+  moonhowl: gtDrawers(gtShapeMoonhowl, 1.8, 1.55),
+  ironshell: gtDrawers(gtShapeIronshell, 1.75, 1.45),
+  stormcrest: gtDrawers(gtShapeStormcrest, 1.75, 1.45),
+  mire: gtDrawers(gtShapeMire, 1.8, 1.5),
+  rootcrowned: gtDrawers(gtShapeRootcrowned, 1.8, 1.5)
+};
+
+// ---- New Guardians (one for every Area that had none) -------------------
+function gtWasted(lines){ return lines.map((txt,i)=>({ txt, pose: ['eye','stumble','eye','reload'][i%4] })); }
+
+registerGuardian({
+  id: 'moonhowl_alpha',
+  element: 'spirit',
+  name: 'The Moonhowl Alpha',
+  spiritName: 'Moonhowl Alpha Spirit',
+  title: 'Guardian of the Far Frontier',
+  desc: 'A wolf of mist and moonlight that has led the same ghost pack since before the first trade roads. When it howls, the pack answers.',
+  unlockHint: 'Defeat Captain Ashworth to unlock',
+  unlocked: () => state.chapter3Done,
+  bgArea: 'far_frontier',
+  icon: '🐺', rgb: '169,156,255', particleColor: '#b9aeff',
+  heroMax: 52, enemyMax: 300,
+  dmgMult: 1.7, shakeRanged: 20,
+  dmgMin: 50, dmgMax: 66, spiritCap: 135,
+  capDesc: 'Lunar - a demanding gauge, but it never hunts alone.',
+  bossLevel: 30, xpNext: 250,
+  reward: { gold: 600, kanataXp: 2000, spiritXp: 1500 },
+  bondSpiritId: 'moonhowl_alpha',
+  drawEnemy: GT_ART.moonhowl.enemy, drawSpirit: GT_ART.moonhowl.spirit,
+  log: {
+    encounter: 'The moon comes out from behind the clouds, and a wolf the size of a cabin steps out of the mist. Somewhere behind it, the pack is waiting.',
+    wasted: gtWasted(['The Alpha circles, never taking its eyes off you.', 'It throws back its head and listens to the pack.', 'Its outline blurs into mist for a moment.', 'It scrapes the frost with one paw.']),
+    ranged: 'The Moonhowl Alpha howls - a wave of cold moonlight hits you!',
+    rangedBrace: 'You set the spear and the howl breaks around you!',
+    lunge: 'The Alpha vanishes into mist and reappears at your throat!',
+    lungeBrace: 'You get the spear shaft between its jaws just in time!',
+    victory: 'The Moonhowl Alpha lies down in the frost, and the ghost pack falls silent.',
+    call: 'The Moonhowl Alpha Spirit answers - and the pack comes with it!'
+  },
+  bondBeats: {
+    first: ['The Alpha stops. The pack steps out of the mist, one by one, and bows its heads.', 'You are part of the pack now.'],
+    repeat: ['The Alpha yields again. The pack already knows you.']
+  },
+  trophy: { name: "Moonhowl Alpha\'s Mist Fang", icon:'🐺', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 450 XP.', effect: ()=>{ grantKanataXp(450); log('The fang is cold and weightless. Kanata gains 450 XP.'); } },
+  special: { name: 'Pack Hunt', desc: 'The ghost pack joins in: the next 2 attacks against Kanata miss.',
+    apply: ()=>{ state.dodgeGuaranteed = true; state.blizzardDodgeCharges = Math.max(state.blizzardDodgeCharges, 2); log('The ghost pack surrounds the foe - it cannot find you!'); } },
+  moves: [
+    { id: 'moon_veil', name: 'Moon Veil', lvl: 3, cost: 55, desc: 'Guarantees Kanata dodges the next attack and heals 15% Max HP.', action: (cb) => {
+      log('Moonlight wraps around Kanata like a cloak!');
+      state.dodgeGuaranteed = true;
+      state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*0.15));
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#b9aeff', speed:3, spread:6.28, size:4, up:1});
+      updateHud(); wait(650, cb);
+    }},
+    { id: 'pack_ambush', name: 'Pack Ambush', lvl: 7, cost: 90, desc: 'Deals 10x spear damage and always strikes first.', action: (cb) => {
+      log('The whole ghost pack strikes at once!');
+      executeSpiritMove(kanataSkillDamage(10), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'ironshell_tortoise',
+  element: 'ground',
+  name: 'The Ironshell Tortoise',
+  spiritName: 'Ironshell Tortoise Spirit',
+  title: 'Guardian of the Ironworks Ruins',
+  desc: 'An ancient tortoise that slept through the building of Harwick\'s foundry - and woke with molten slag fused into its shell. It is very slow, and very, very hard to hurt.',
+  unlockHint: 'Defeat Colonel Harwick to unlock',
+  unlocked: () => state.chapter4Done,
+  bgArea: 'ironworks_ruins',
+  icon: '🐢', rgb: '255,150,60', particleColor: '#ff9b42',
+  heroMax: 56, enemyMax: 320,
+  dmgMult: 1.75, shakeRanged: 24,
+  dmgMin: 52, dmgMax: 70, spiritCap: 140,
+  capDesc: 'Forged - a demanding gauge, but it turns Kanata into a wall.',
+  bossLevel: 40, xpNext: 260,
+  reward: { gold: 800, kanataXp: 2800, spiritXp: 2100 },
+  bondSpiritId: 'ironshell_tortoise',
+  drawEnemy: GT_ART.ironshell.enemy, drawSpirit: GT_ART.ironshell.spirit,
+  log: {
+    encounter: 'What you took for a heap of slag stands up. The Ironshell Tortoise turns its glowing eyes on you, and the seams in its shell flare orange.',
+    wasted: gtWasted(['The Tortoise blinks, very slowly.', 'Steam hisses out of the seams in its shell.', 'It shifts its weight and the ground groans.', 'It chews on a strip of scrap iron.']),
+    ranged: 'The Ironshell Tortoise vents a blast of furnace heat!',
+    rangedBrace: 'You turn your face away and brace - the heat washes past!',
+    lunge: 'The Tortoise lunges with its iron-hard beak!',
+    lungeBrace: 'The beak slams into your spear shaft and nearly snaps it!',
+    victory: 'The Ironshell Tortoise pulls into its shell, and the glow in the seams slowly cools.',
+    call: 'The Ironshell Tortoise Spirit answers - and the ground hardens under your feet!'
+  },
+  bondBeats: {
+    first: ['The glow in the shell dims to a warm ember. The Tortoise lowers its head to you.', 'Slow, patient and unbreakable. That is your bond now.'],
+    repeat: ['The Tortoise yields again, as patient as ever.']
+  },
+  trophy: { name: "Ironshell Tortoise\'s Slag Scute", icon:'🐢', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 550 XP.', effect: ()=>{ grantKanataXp(550); log('The scute is still warm. Kanata gains 550 XP.'); } },
+  special: { name: 'Forged Shell', desc: 'Kanata auto-guards the next attack and heals 25% Max HP.',
+    apply: ()=>{ state.autoGuardNext = true; state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*0.25)); log('An iron shell closes around Kanata!'); } },
+  moves: [
+    { id: 'slag_wall', name: 'Slag Wall', lvl: 3, cost: 55, desc: 'Auto-guards the next attack, and the attacker takes 3x spear damage back.', action: (cb) => {
+      log('A wall of glowing slag rises in front of Kanata!');
+      state.autoGuardNext = true;
+      state.thornsNext = kanataSkillDamage(3);
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#ff9b42', speed:3, spread:6.28, size:4, up:1});
+      updateHud(); wait(650, cb);
+    }},
+    { id: 'molten_crush', name: 'Molten Crush', lvl: 7, cost: 95, desc: 'Deals 11x spear damage and always strikes first.', action: (cb) => {
+      log('The Tortoise Spirit drops its full weight on the foe!');
+      executeSpiritMove(kanataSkillDamage(11), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'stormcrest_eagle',
+  element: 'air',
+  name: 'The Stormcrest Eagle',
+  spiritName: 'Stormcrest Eagle Spirit',
+  title: 'Guardian of the Highland Pass',
+  desc: 'An eagle with a wingspan wider than a canoe is long, said to carry the highland storms on its back. It strikes twice before you can blink.',
+  unlockHint: 'Defeat General Blackmoor to unlock',
+  unlocked: () => state.chapter6Done,
+  bgArea: 'highland_pass',
+  icon: '🦅', rgb: '143,208,255', particleColor: '#9fd8ff',
+  heroMax: 66, enemyMax: 330,
+  dmgMult: 2.0, shakeRanged: 22,
+  dmgMin: 60, dmgMax: 80, spiritCap: 150,
+  capDesc: 'Tempest - a demanding gauge, but it lets Kanata strike like lightning.',
+  bossLevel: 66, xpNext: 290,
+  reward: { gold: 1300, kanataXp: 4600, spiritXp: 3600 },
+  bondSpiritId: 'stormcrest_eagle',
+  drawEnemy: GT_ART.stormcrest.enemy, drawSpirit: GT_ART.stormcrest.spirit,
+  log: {
+    encounter: 'The wind drops to nothing. Then a shadow passes over the whole pass, and the Stormcrest Eagle lands on the rocks above you with a crack of thunder.',
+    wasted: gtWasted(['The Eagle tilts its head and studies you.', 'It shakes rain out of its feathers.', 'A gust nearly lifts it off the rock.', 'It preens one enormous wing.']),
+    ranged: 'The Stormcrest Eagle beats its wings - a wall of wind slams into you!',
+    rangedBrace: 'You dig in your heels behind the spear and the gale roars past!',
+    lunge: 'The Eagle dives, talons first!',
+    lungeBrace: 'You knock the talons aside with the spear shaft!',
+    victory: 'The Stormcrest Eagle folds its wings, and the clouds over the pass begin to clear.',
+    call: 'The Stormcrest Eagle Spirit answers - and thunder rolls across the sky!'
+  },
+  bondBeats: {
+    first: ['The Eagle lands in front of you and lowers its head.', 'The storm is yours to call now.'],
+    repeat: ['The Eagle yields again, the storm quiet around it.']
+  },
+  trophy: { name: "Stormcrest Eagle\'s Thunder Feather", icon:'🦅', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 850 XP.', effect: ()=>{ grantKanataXp(850); log('The feather crackles in your hand. Kanata gains 850 XP.'); } },
+  special: { name: 'Thunderstrike', desc: 'Lightning stuns the enemy.',
+    apply: ()=>{ state.enemyStunned = true; log('Lightning strikes the foe - it reels!'); } },
+  moves: [
+    { id: 'tailwind', name: 'Tailwind', lvl: 3, cost: 50, desc: 'Kanata\'s next attack deals double damage and he dodges the next blow.', action: (cb) => {
+      log('A tailwind rises behind Kanata!');
+      state.atkMultNext = 2; state.dodgeGuaranteed = true;
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#9fd8ff', speed:3, spread:6.28, size:4, up:1});
+      updateHud(); wait(650, cb);
+    }},
+    { id: 'storm_dive', name: 'Storm Dive', lvl: 7, cost: 100, desc: 'Deals 12x spear damage and always strikes first.', action: (cb) => {
+      log('The Eagle Spirit dives out of the storm!');
+      executeSpiritMove(kanataSkillDamage(12), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'mire_serpent',
+  element: 'frost',
+  name: 'The Mire Serpent',
+  spiritName: 'Mire Serpent Spirit',
+  title: 'Guardian of the River Delta',
+  desc: 'A serpent of black, ice-cold water that coils beneath the delta reeds. Its bite carries a cold that lingers for days.',
+  unlockHint: 'Defeat Admiral Crane to unlock',
+  unlocked: () => state.chapter7Done,
+  bgArea: 'river_delta',
+  icon: '🐍', rgb: '140,220,235', particleColor: '#a8ecff',
+  heroMax: 70, enemyMax: 340,
+  dmgMult: 2.05, shakeRanged: 22,
+  dmgMin: 64, dmgMax: 84, spiritCap: 155,
+  capDesc: 'Venomous - a demanding gauge, but its cold keeps biting long after.',
+  bossLevel: 80, xpNext: 300,
+  reward: { gold: 1600, kanataXp: 5600, spiritXp: 4400 },
+  bondSpiritId: 'mire_serpent',
+  drawEnemy: GT_ART.mire.enemy, drawSpirit: GT_ART.mire.spirit,
+  log: {
+    encounter: 'The water goes perfectly still, then frosts over in a ring around you. The Mire Serpent rises out of the middle of it, coil after coil.',
+    wasted: gtWasted(['The Serpent sways, slow and hypnotic.', 'It tastes the air with a black tongue.', 'Frost spreads across the reeds around it.', 'It slides one coil back into the water.']),
+    ranged: 'The Mire Serpent spits a stream of freezing black water!',
+    rangedBrace: 'You raise the spear and the spray freezes on the shaft!',
+    lunge: 'The Serpent strikes, fangs bared!',
+    lungeBrace: 'You jam the spear shaft sideways into its jaws!',
+    victory: 'The Mire Serpent sinks slowly into the water, and the frost on the reeds begins to melt.',
+    call: 'The Mire Serpent Spirit answers - and the air turns bitterly cold!'
+  },
+  bondBeats: {
+    first: ['The Serpent rests its head on the bank beside you.', 'The black water of the delta answers to you now.'],
+    repeat: ['The Serpent yields again, coiling quietly in the shallows.']
+  },
+  trophy: { name: "Mire Serpent\'s Frost Fang", icon:'🐍', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 1000 XP.', effect: ()=>{ grantKanataXp(1000); log('The fang leaves frost on your fingers. Kanata gains 1000 XP.'); } },
+  special: { name: 'Black Frost', desc: 'Poisons the enemy for 4 turns.',
+    apply: (dmg)=>{ state.enemyPoisonTurns = 4; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, Math.floor((dmg||40)*0.25)); log('Black frost spreads through the foe\'s veins!'); } },
+  moves: [
+    { id: 'cold_coils', name: 'Cold Coils', lvl: 3, cost: 60, desc: 'Poisons the enemy for 4 turns and auto-guards the next attack.', action: (cb) => {
+      log('Freezing coils wrap around the foe!');
+      state.enemyPoisonTurns = 4; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, kanataSkillDamage(1.5));
+      state.autoGuardNext = true;
+      spawnParticles(enemy.x, enemy.y-40, 26, {color:'#a8ecff', speed:3, spread:6.28, size:4, up:1});
+      updateHud(); wait(650, cb);
+    }},
+    { id: 'deep_strike', name: 'Deep Strike', lvl: 7, cost: 100, desc: 'Deals 12x spear damage and always strikes first.', action: (cb) => {
+      log('The Serpent Spirit strikes from below the water!');
+      executeSpiritMove(kanataSkillDamage(12), cb);
+    }}
+  ]
+});
+
+registerGuardian({
+  id: 'rootcrowned_moose',
+  element: 'spirit',
+  name: 'The Rootcrowned Moose',
+  spiritName: 'Rootcrowned Moose Spirit',
+  title: 'Guardian of the Ancient Grove',
+  desc: 'The oldest living thing in the Ancient Grove. Its antlers are roots that still grow, and the forest itself fights at its side.',
+  unlockHint: 'Defeat The Warden to unlock',
+  unlocked: () => state.chapter8Done,
+  bgArea: 'ancient_grove',
+  icon: '🫎', rgb: '127,227,106', particleColor: '#8fe07a',
+  heroMax: 76, enemyMax: 360,
+  dmgMult: 2.1, shakeRanged: 26,
+  dmgMin: 70, dmgMax: 92, spiritCap: 160,
+  capDesc: 'Ancient - the most demanding gauge, and the whole forest answers it.',
+  bossLevel: 95, xpNext: 320,
+  reward: { gold: 2200, kanataXp: 7000, spiritXp: 5500 },
+  bondSpiritId: 'rootcrowned_moose',
+  drawEnemy: GT_ART.rootcrowned.enemy, drawSpirit: GT_ART.rootcrowned.spirit,
+  log: {
+    encounter: 'The trees lean in. Roots shift under your feet. The Rootcrowned Moose walks out of the oldest part of the grove, and the whole forest seems to hold its breath.',
+    wasted: gtWasted(['The Moose stands perfectly still, like one of the trees.', 'Leaves drift down from its antlers.', 'Roots stir in the earth around it.', 'It breathes out, and the moss glows.']),
+    ranged: 'Roots burst out of the ground and lash at you!',
+    rangedBrace: 'You cut through the roots with the spear!',
+    lunge: 'The Rootcrowned Moose lowers its living antlers and charges!',
+    lungeBrace: 'You catch the antlers on the spear shaft - they keep growing towards you!',
+    victory: 'The Rootcrowned Moose kneels in the moss, and the grove lets out its breath.',
+    call: 'The Rootcrowned Moose Spirit answers - and the forest rises with it!'
+  },
+  bondBeats: {
+    first: ['The Moose lowers its crown of roots until it touches your forehead.', 'The oldest bond in the land. The grove will remember you.'],
+    repeat: ['The Moose yields again. The grove already knows your name.']
+  },
+  trophy: { name: "Rootcrowned Moose\'s Living Tine", icon:'🌿', dropChance: 1,
+    desc: 'A rare relic. Kanata gains 1300 XP.', effect: ()=>{ grantKanataXp(1300); log('A tiny leaf unfurls on the tine. Kanata gains 1300 XP.'); } },
+  special: { name: 'Grove\'s Embrace', desc: 'Heals Kanata 30% Max HP and stuns the enemy.',
+    apply: ()=>{ state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*0.3)); state.enemyStunned = true; log('The grove wraps Kanata in green light and binds the foe in roots!'); } },
+  moves: [
+    { id: 'living_bark', name: 'Living Bark', lvl: 3, cost: 60, desc: 'Heals 25% Max HP and auto-guards the next attack.', action: (cb) => {
+      log('Bark grows over Kanata\'s skin!');
+      state.autoGuardNext = true;
+      state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*0.25));
+      spawnParticles(hero.x, hero.y-40, 26, {color:'#8fe07a', speed:3, spread:6.28, size:4, up:1});
+      updateHud(); wait(650, cb);
+    }},
+    { id: 'world_root', name: 'World Root', lvl: 7, cost: 110, desc: 'Deals 13x spear damage, always strikes first, and stuns the enemy.', action: (cb) => {
+      log('The roots of the whole grove rise against the foe!');
+      state.enemyStunned = true;
+      executeSpiritMove(kanataSkillDamage(13), cb);
+    }}
+  ]
+});
+
+// ==== COLOSSAL GUARDIAN TRIALS ============================================
+// What makes a Guardian Trial different from an ordinary fight:
+//  - The Guardian towers over the field, and its HP bar has three phases.
+//    Crossing into a new phase stops the damage at the line and raises a
+//    WARD: a shield of pips. While warded it takes only 20% damage, and every
+//    hit (any source: spear, guns, skills, poison) knocks off one pip.
+//    Shattering the ward STAGGERS it: it loses its next turn, any signature
+//    attack it was winding up collapses, and it takes +50% damage for 2 rounds.
+//  - Every few rounds it winds up its SIGNATURE attack, announced a turn
+//    early. Guard to take a quarter of it, or break the ward to cancel it.
+//  - From phase 3 (phase 2 for some) it is ENRAGED and acts twice a round.
+//    Guarding protects Kanata for the whole round.
+//  - Kanata's ASCENSION meter fills as he deals and takes damage. Once full,
+//    Ascend (a free action) makes him a giant for 3 rounds: he fills his
+//    spirit gauge, deals 1.8x damage, breaks 2 pips per hit and takes half
+//    damage. Once per trial at the start; a second Ascension needs the meter
+//    filled again, at half speed.
+//  - RESOLVE: Kanata can be knocked down and get back up (3/2/2 times by
+//    tier) at half HP.
+//  - Each Guardian has one twist of its own (see GT_TRIAL[id].twist).
+//  - Three tiers: clear ★1 to unlock ★2, ★2 to unlock ★3. Higher tiers mean
+//    more HP, harder hits and thicker wards, and pay much more. Every clear
+//    gets a grade (S/A/B/C) from rounds taken and knockdowns.
+const GT_TIERS = {
+  1: { hp: 1.0, dmg: 1.0, pips: 0, resolve: 3, reward: 1.0, label: '★' },
+  2: { hp: 1.5, dmg: 1.25, pips: 1, resolve: 2, reward: 2.2, label: '★★' },
+  3: { hp: 2.1, dmg: 1.55, pips: 2, resolve: 2, reward: 4.0, label: '★★★' }
+};
+const GT_GRADE_MULT = { S: 1.5, A: 1.25, B: 1.1, C: 1.0 };
+const GT_TWISTS = {
+  sturdy:    'Unyielding: every ward has one extra pip.',
+  burn:      'Smoulder: from phase 2, embers burn Kanata every round.',
+  pack:      'Ghost Pack: from phase 2, a spirit wolf bites every round (Guard blocks most of it).',
+  regen:     'Forged Shell: heals every round while its ward is up. Break it fast.',
+  chill:     'Deep Cold: every hit it lands drains Kanata\'s spirit gauge.',
+  swift:     'Tempest: enraged from phase 2 - it acts twice a round for most of the fight.',
+  venom:     'Black Water: its signature attack leaves Kanata poisoned.',
+  thornward: 'Bramble Ward: hitting its ward pricks Kanata back.'
+};
+const GT_TRIAL = {
+  guardian_bison:     { bgArea: 'frontier_trail',   twist: 'sturdy',    cata: { name: 'Stampede of Ages', tell: 'paws the earth - the ground begins to shake', hit: 'and the whole plain stampedes with it' } },
+  cinderhorn_elder:   { bgArea: 'smoldering_grove', twist: 'burn',      cata: { name: 'Ashfall', tell: 'lifts its burning antlers - the sky fills with embers', hit: 'and burning ash rains down' } },
+  moonhowl_alpha:     { bgArea: 'far_frontier',     twist: 'pack',      cata: { name: 'Howl of the Pack', tell: 'raises its head to the moon - the pack gathers', hit: 'and the whole pack charges at once' } },
+  ironshell_tortoise: { bgArea: 'ironworks_ruins',  twist: 'regen',     cata: { name: 'Slag Eruption', tell: 'draws into its shell - the seams glow white-hot', hit: 'and molten slag bursts out' } },
+  deepfrost_warden:   { bgArea: 'frozen_shore',     twist: 'chill',     cata: { name: 'Whiteout', tell: 'breathes in - the air freezes solid', hit: 'and a wall of ice slams down' } },
+  stormcrest_eagle:   { bgArea: 'highland_pass',    twist: 'swift',     cata: { name: 'Eye of the Storm', tell: 'climbs into the clouds - lightning gathers', hit: 'and the storm comes down at once' } },
+  mire_serpent:       { bgArea: 'river_delta',      twist: 'venom',     cata: { name: 'Black Tide', tell: 'sinks beneath the water - the river goes still', hit: 'and a tide of freezing black water crashes in' } },
+  rootcrowned_moose:  { bgArea: 'ancient_grove',    twist: 'thornward', cata: { name: 'Wrath of the Grove', tell: 'lowers its crown - every root in the grove stirs', hit: 'and the whole forest strikes' } }
+};
+function gtTrial(id){ return GT_TRIAL[id] || GT_TRIAL.guardian_bison; }
+
+// Live state for the current trial (not saved).
+const GT = { active: false };
+function gtReset(guardian, tier){
+  const T = GT_TIERS[tier] || GT_TIERS[1];
+  Object.assign(GT, {
+    active: true, id: guardian.id, tier, T, cfg: guardian, trial: gtTrial(guardian.id),
+    phase: 1, ward: 0, wardMax: 0, breakRounds: 0,
+    round: 0, lastCata: 0, cataPending: false,
+    extra: 0, inSub: false, savedGuard: false, roundGuard: false,
+    meter: 0, meterRate: 1, ascendRounds: 0, ascendUsed: 0, grow: 0,
+    resolve: T.resolve, knockdowns: 0, venomRounds: 0,
+    hitsLanded: 0, wardsBroken: 0, bannerT: 0
+  });
+}
+function gtOn(){ return GT.active && state.inGuardianFight; }
+function gtThresholdHp(phase){ return Math.ceil(state.enemyMax * (phase === 1 ? 0.66 : 0.33)); }
+function gtEnraged(){ return GT.phase >= 3 || (GT.trial.twist === 'swift' && GT.phase >= 2); }
+
+// ---- HP interception ----
+// Every damage source writes state.enemyHp / state.heroHp directly, so the
+// trial rules hook in here, once, instead of in each attack.
+(function(){
+  let _e = state.enemyHp, _h = state.heroHp;
+  Object.defineProperty(state, 'enemyHp', { enumerable: true, configurable: true,
+    get(){ return _e; },
+    set(v){
+      if(!gtOn() || state.over || !(v < _e)){ _e = v; return; }
+      let dmg = _e - v;
+      if(GT.ascendRounds > 0) dmg *= 1.8;
+      if(GT.breakRounds > 0) dmg *= 1.5;
+      GT.hitsLanded++;
+      if(GT.ward > 0){
+        dmg *= 0.2;
+        const pips = GT.ascendRounds > 0 ? 2 : 1;
+        GT.ward = Math.max(0, GT.ward - pips);
+        damageNumber(enemy.x + 18, enemy.y - 96, GT.ward > 0 ? '🛡 ' + GT.ward : '', '#ffe6a0');
+        if(GT.trial.twist === 'thornward'){
+          const prick = Math.max(1, Math.floor(state.heroMax * 0.03));
+          _h = Math.max(1, _h - prick);
+          damageNumber(hero.x, hero.y - 70, prick, '#8fe07a');
+        }
+        if(GT.ward === 0) setTimeout(gtShatter, 0);
+      }
+      dmg = Math.max(1, Math.round(dmg));
+      const before = _e;
+      let after = Math.max(0, _e - dmg);
+      if(GT.phase < 3){
+        const line = gtThresholdHp(GT.phase);
+        if(before > line && after <= line){ after = line; setTimeout(gtNextPhase, 0); }
+      }
+      _e = after;
+      gtFill((before - after) / state.enemyMax * 170);
+    }
+  });
+  Object.defineProperty(state, 'heroHp', { enumerable: true, configurable: true,
+    get(){ return _h; },
+    set(v){
+      if(!gtOn() || state.over || !(v < _h)){ _h = v; return; }
+      let dmg = _h - v;
+      if(GT.ascendRounds > 0) dmg = Math.max(1, Math.round(dmg * 0.5));
+      const before = _h;
+      _h = Math.max(0, _h - dmg);
+      gtFill((before - _h) / state.heroMax * 90);
+      if(GT.trial.twist === 'chill' && !GT.inRoundEnd) state.spirit = Math.max(0, state.spirit - 12);
+    }
+  });
+})();
+
+function gtFill(amount){
+  if(!gtOn() || GT.ascendRounds > 0) return;
+  GT.meter = Math.min(100, GT.meter + amount * GT.meterRate);
+}
+
+function gtNextPhase(){
+  if(!gtOn() || state.over || GT.phase >= 3) return;
+  GT.phase++;
+  GT.wardMax = 3 + GT.T.pips + (GT.phase - 2) + (GT.trial.twist === 'sturdy' ? 1 : 0);
+  GT.ward = GT.wardMax;
+  const name = GT.cfg.name;
+  screenShake(18, 24);
+  flash(GT.cfg.rgb, 0.45);
+  spawnParticles(enemy.x, enemy.y - 60, 50, { color: GT.cfg.particleColor, speed: 6, spread: 6.28, size: 4, glow: true });
+  if(gtEnraged()){
+    gtBanner('ENRAGED', `${name} raises a ward of ${GT.wardMax} - and now acts twice a round!`, '#ff6b6b');
+    log(`${name} is enraged! A ward of ${GT.wardMax} rises - land ${GT.wardMax} hits to shatter it.`);
+  } else {
+    gtBanner('WARD RAISED', `Land ${GT.wardMax} hits to shatter it`, GT.cfg.particleColor);
+    log(`${name} raises a ward! Land ${GT.wardMax} hits to shatter it.`);
+  }
+  gtHud();
+}
+
+function gtShatter(){
+  if(!gtOn() || state.over) return;
+  GT.ward = 0; GT.wardsBroken++;
+  GT.breakRounds = 2;
+  state.enemyStunned = true;
+  state.enemyChargeup = null;
+  const cancelled = GT.cataPending;
+  GT.cataPending = false;
+  gtFill(40);
+  screenShake(22, 26);
+  flash('255,255,255', 0.5);
+  spawnParticles(enemy.x, enemy.y - 70, 70, { color: '#fff3c4', speed: 8, spread: 6.28, size: 3.5, glow: true });
+  spawnParticles(enemy.x, enemy.y - 70, 30, { color: GT.cfg.particleColor, speed: 5, spread: 6.28, size: 5, glow: true });
+  gtBanner('WARD SHATTERED!', cancelled ? `${GT.trial.cata.name} collapses! It staggers - +50% damage for 2 rounds` : 'It staggers - +50% damage for 2 rounds', '#ffe066');
+  log(`The ward shatters! ${GT.cfg.name} staggers${cancelled ? ` and ${GT.trial.cata.name} collapses` : ''}!`);
+  updateHud();
+}
+
+// ---- The Guardian's round ----
+function gtTurn(){
+  GT.round++;
+  GT.roundGuard = state.guarding || state.autoGuardNext;
+  const extra = gtEnraged() ? 1 : 0;
+  if(state.enemyStunned){ GT.extra = 0; gtSub(); return; }
+  if(GT.cataPending){ GT.extra = 0; gtCataclysm(); return; }
+  const every = gtEnraged() ? 4 : 5;
+  if(GT.round >= 3 && GT.round - GT.lastCata >= every && !state.enemyChargeup){
+    GT.cataPending = true; GT.lastCata = GT.round; GT.extra = 0;
+    const c = GT.trial.cata;
+    gtBanner(`⚠ ${c.name}`, 'Next round! Guard, or shatter its ward to stop it', '#ff9b42');
+    log(`${GT.cfg.name} ${c.tell}! ${c.name} is coming - Guard or break its ward!`);
+    seq(
+      next=>{ spawnParticles(enemy.x, enemy.y-60, 40, {color: GT.cfg.particleColor, speed:1.6, spread:6.28, size:3.5, up:0.8, glow:true, grav:-0.03}); tween(600, t=>{ enemy.crouch = ease(t)*0.4; }, next); },
+      next=>{ wait(350, next); },
+      next=>{ enemy.crouch = 0; endEnemyTurn(); }
+    );
+    return;
+  }
+  GT.extra = extra;
+  gtSub();
+}
+function gtSub(){ GT.inSub = true; try { enemyTurn(); } finally { GT.inSub = false; } }
+
+function gtCataclysm(){
+  GT.cataPending = false;
+  const guarded = state.guarding || state.autoGuardNext;
+  state.guarding = false; state.autoGuardNext = false; hero.guardPose = 0;
+  const c = GT.trial.cata;
+  const heroElement = (SPIRIT_BONDS[state.spiritBond] || {}).element;
+  const elementMult = getElementMult(GT.cfg.element, heroElement);
+  log(`${c.name.toUpperCase()}! ${GT.cfg.name} lets loose ${c.hit}!`);
+  const gapClose = (enemy.homeX - hero.x) * 0.5;
+  seq(
+    next=>{ tween(420, t=>{ const e=ease(t); enemy.bayonetCharge = e; enemy.gunFlash = e; enemy.leanX = -e*gapClose; }, next); },
+    next=>{
+      let dmg = state.heroMax * (0.5 + 0.08*(GT.tier-1)) * elementMult;
+      if(guarded) dmg *= 0.25;
+      dmg = Math.max(1, Math.floor(dmg * (1 - (state.defenseBonus||0))));
+      state.heroHp = Math.max(0, state.heroHp - dmg);
+      screenShake(34, 30);
+      flash(GT.cfg.rgb, guarded ? 0.3 : 0.7);
+      for(let i=0;i<4;i++) spawnParticles(hero.x + (i-1.5)*30, hero.y-40, 20, {color: GT.cfg.particleColor, speed:8, spread:6.28, size:4.5, glow:true});
+      hero.flinch = 1; hero.leanX = 14;
+      damageNumber(hero.x, hero.y-60, dmg, guarded ? '#9fd6ff' : '#ff4d4d');
+      if(guarded) log(`You brace with everything you have - ${c.name} only grazes you!`);
+      if(GT.trial.twist === 'venom'){ GT.venomRounds = 3; log('The black water seeps in - Kanata is poisoned!'); }
+      updateHud();
+      wait(200, next);
+    },
+    next=>{ const sl = enemy.leanX; tween(380, t=>{ const e=ease(t); enemy.leanX = lerp(sl,0,e); enemy.bayonetCharge = 1-e; enemy.gunFlash = 1-e; hero.flinch = 1-e; hero.leanX = lerp(14,0,e); }, next); },
+    next=>{ enemy.bayonetCharge = 0; enemy.gunFlash = 0; endEnemyTurn(); }
+  );
+}
+
+// Called at the top of endEnemyTurn. Returns true if it took over (another
+// action this round); otherwise runs the end-of-round effects and lets the
+// normal end of turn carry on.
+function gtAfterAction(){
+  if(!gtOn() || state.over) return false;
+  if(GT.extra > 0 && state.heroHp > 0 && state.enemyHp > 0 && !state.enemyStunned){
+    GT.extra--;
+    state.guarding = GT.roundGuard;
+    if(GT.roundGuard) hero.guardPose = 1;
+    log(`${GT.cfg.name} isn't finished!`);
+    wait(500, gtSub);
+    return true;
+  }
+  GT.extra = 0;
+  // end of round
+  GT.inRoundEnd = true;
+  const tw = GT.trial.twist;
+  const g = GT.roundGuard;
+  if(tw === 'burn' && GT.phase >= 2){
+    const d = Math.max(1, Math.floor(state.heroMax*0.04));
+    state.heroHp = Math.max(0, state.heroHp - d);
+    damageNumber(hero.x - 16, hero.y-50, d, '#ff8a3d');
+    spawnParticles(hero.x, hero.y-30, 10, {color:'#ff8a3d', speed:2, spread:6.28, size:2.5, glow:true, up:1});
+  }
+  if(tw === 'pack' && GT.phase >= 2){
+    const d = Math.max(1, Math.floor(state.heroMax*(g ? 0.015 : 0.06)));
+    state.heroHp = Math.max(0, state.heroHp - d);
+    damageNumber(hero.x + 16, hero.y-50, d, '#b9aeff');
+    spawnParticles(hero.x, hero.y-30, 14, {color:'#b9aeff', speed:4, spread:6.28, size:3, glow:true});
+    log(g ? 'A ghost wolf snaps at you, but you keep it at spear\'s length.' : 'A ghost wolf darts out of the mist and bites!');
+  }
+  if(tw === 'regen' && GT.ward > 0){
+    const cap = GT.phase === 2 ? gtThresholdHp(1) : gtThresholdHp(2);
+    const heal = Math.floor(state.enemyMax*0.035);
+    const nhp = Math.min(cap, state.enemyHp + heal);
+    if(nhp > state.enemyHp){ damageNumber(enemy.x, enemy.y-80, '+' + (nhp - state.enemyHp), '#4ade80'); state.enemyHp = nhp; }
+  }
+  if(GT.venomRounds > 0){
+    GT.venomRounds--;
+    const d = Math.max(1, Math.floor(state.heroMax*0.05));
+    state.heroHp = Math.max(0, state.heroHp - d);
+    damageNumber(hero.x, hero.y-44, d, '#7fd4c8');
+  }
+  GT.inRoundEnd = false;
+  if(GT.breakRounds > 0) GT.breakRounds--;
+  if(GT.ascendRounds > 0){
+    GT.ascendRounds--;
+    if(GT.ascendRounds === 0){
+      log('The Ascension fades. Kanata returns to his own size.');
+      tween(700, t=>{ GT.grow = 1 - ease(t); });
+    }
+  }
+  gtHud();
+  return false;
+}
+
+// ---- Knockdown / Resolve ----
+// Called at the top of checkEnd. Returns true when Kanata got back up.
+function gtTryRise(){
+  if(!gtOn() || state.heroHp > 0 || state.enemyHp <= 0 || GT.resolve <= 0) return false;
+  GT.resolve--; GT.knockdowns++;
+  GT.extra = 0;
+  state.heroHp = Math.ceil(state.heroMax * 0.5);
+  hero.flinch = 0; hero.crouch = 0; hero.leanY = 0;
+  flash('255,240,200', 0.6);
+  screenShake(10, 14);
+  spawnParticles(hero.x, hero.y-40, 50, {color:'#ffe6a0', speed:4, spread:6.28, size:3.5, glow:true, up:1.2});
+  gtBanner('KANATA RISES', GT.resolve > 0 ? `Resolve left: ${GT.resolve}` : 'No Resolve left - the next fall is the last', '#ffe6a0');
+  log(`Kanata is knocked down - and gets back up! (${GT.resolve} Resolve left)`);
+  updateHud();
+  return true;
+}
+
+// ---- Ascension ----
+function gtAscend(){
+  if(!gtOn() || state.turnBusy || state.over || GT.ascendRounds > 0 || GT.meter < 100) return;
+  GT.meter = 0; GT.ascendUsed++; GT.meterRate = 0.5;
+  GT.ascendRounds = 3;
+  state.spirit = state.spiritMax;
+  log('KANATA ASCENDS! For 3 rounds: 1.8x damage, 2 ward pips per hit, half damage taken. Spirit gauge full!');
+  gtBanner('ASCENSION', 'Kanata towers over the field for 3 rounds', '#ffd76a');
+  screenShake(20, 30);
+  flash('255,215,106', 0.6);
+  spawnParticles(hero.x, hero.y-40, 80, {color:'#ffd76a', speed:7, spread:6.28, size:4, glow:true, up:1});
+  tween(800, t=>{ GT.grow = ease(t); });
+  updateHud();
+}
+
+// ---- UI ----
+let gtEls = null;
+function gtEnsureUi(){
+  if(gtEls) return gtEls;
+  const css = document.createElement('style');
+  css.textContent = `
+  #gtBanner{position:absolute;left:0;right:0;top:22%;z-index:30;text-align:center;pointer-events:none;opacity:0;transition:opacity .25s}
+  #gtBanner.show{opacity:1}
+  #gtBanner .t{font-family:Georgia,'Times New Roman',serif;font-weight:900;font-size:clamp(24px,8vw,40px);letter-spacing:.06em;text-shadow:0 0 24px currentColor,0 3px 0 #000}
+  #gtBanner .s{margin-top:6px;font-size:13px;color:#f3ece0;text-shadow:0 1px 3px #000;padding:0 20px}
+  .gtRow{display:flex;gap:6px;align-items:center;margin-top:4px;font-size:11px;min-height:16px;flex-wrap:wrap}
+  .gtChip{padding:1px 7px;border-radius:9px;font-weight:700;font-size:10px;letter-spacing:.04em}
+  .gtPip{display:inline-block;width:10px;height:12px;margin-left:2px;clip-path:polygon(50% 0,100% 25%,100% 70%,50% 100%,0 70%,0 25%);background:#ffe6a0;box-shadow:0 0 6px #ffe6a0}
+  .gtPip.off{background:rgba(255,255,255,.15);box-shadow:none}
+  .gtTick{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.75)}
+  .gtMeter{height:5px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:4px}
+  .gtMeter > div{height:100%;width:0;background:linear-gradient(90deg,#ffb347,#ffe680);transition:width .3s}
+  #btnAscend{grid-column:1/-1;min-height:46px;border-color:rgba(255,215,106,.8)!important;background:linear-gradient(180deg,rgba(255,200,80,.35),rgba(120,70,10,.45))!important;color:#fff3c4;font-weight:800;letter-spacing:.06em;animation:gtPulse 1.1s ease-in-out infinite}
+  @keyframes gtPulse{50%{box-shadow:0 0 18px rgba(255,215,106,.8)}}
+  .gtTierBtns{display:flex;gap:6px;margin-top:8px}
+  .gtTierBtns .equipBtn{flex:1 1 0;min-width:0;width:auto;margin:0;padding:6px 4px;text-align:center;font-size:12px;white-space:nowrap}
+  `;
+  document.head.appendChild(css);
+  const banner = document.createElement('div');
+  banner.id = 'gtBanner'; banner.innerHTML = '<div class="t"></div><div class="s"></div>';
+  stage.appendChild(banner);
+  // enemy side: phase ticks on the HP bar, ward pips and status chips
+  const eOuter = enemyHpBar.parentElement;
+  eOuter.style.position = 'relative';
+  const ticks = [0.33, 0.66].map(f=>{ const d = document.createElement('div'); d.className = 'gtTick hidden'; d.style.left = (f*100) + '%'; eOuter.appendChild(d); return d; });
+  const eRow = document.createElement('div'); eRow.className = 'gtRow hidden'; eRow.style.justifyContent = 'flex-end';
+  eOuter.closest('.barbox').appendChild(eRow);
+  // hero side: resolve and the Ascension meter
+  const hBox = heroHpBar.closest('.barbox');
+  const hRow = document.createElement('div'); hRow.className = 'gtRow hidden';
+  const meter = document.createElement('div'); meter.className = 'gtMeter hidden'; meter.innerHTML = '<div></div>';
+  hBox.appendChild(meter); hBox.appendChild(hRow);
+  const btn = document.createElement('div');
+  btn.className = 'btn hidden'; btn.id = 'btnAscend'; btn.innerHTML = '<span class="icon">✹</span>ASCEND';
+  actionsEl.insertBefore(btn, btnSkills);
+  bindTap(btn, gtAscend);
+  gtEls = { banner, ticks, eRow, hRow, meter, btn };
+  return gtEls;
+}
+let gtBannerTimer = null;
+function gtBanner(title, sub, color){
+  const els = gtEnsureUi();
+  els.banner.querySelector('.t').textContent = title;
+  els.banner.querySelector('.t').style.color = color || '#ffe6c2';
+  els.banner.querySelector('.s').textContent = sub || '';
+  els.banner.classList.add('show');
+  clearTimeout(gtBannerTimer);
+  gtBannerTimer = setTimeout(()=>els.banner.classList.remove('show'), 2200);
+}
+function gtHud(){
+  const els = gtEnsureUi();
+  const on = gtOn();
+  els.ticks.forEach(d=>d.classList.toggle('hidden', !on));
+  [els.eRow, els.hRow, els.meter].forEach(d=>d.classList.toggle('hidden', !on));
+  const showBtn = on && !state.over && GT.meter >= 100 && GT.ascendRounds === 0;
+  els.btn.classList.toggle('hidden', !showBtn);
+  els.btn.classList.toggle('disabled', !showBtn || state.turnBusy);
+  if(!on) return;
+  let e = `<span class="gtChip" style="background:rgba(232,193,90,.2);color:#e8c15a">${GT.T.label} P${GT.phase}</span>`;
+  if(GT.ward > 0){ e += '<span>'; for(let i=0;i<GT.wardMax;i++) e += `<span class="gtPip${i < GT.ward ? '' : ' off'}"></span>`; e += '</span>'; }
+  if(GT.breakRounds > 0) e += `<span class="gtChip" style="background:#ffe066;color:#1a1408">STAGGER ${GT.breakRounds}</span>`;
+  if(GT.cataPending) e += `<span class="gtChip" style="background:#ff9b42;color:#1a1408">⚠ ${GT.trial.cata.name}</span>`;
+  else if(gtEnraged()) e += '<span class="gtChip" style="background:rgba(255,80,80,.3);color:#ff8a8a">ENRAGED</span>';
+  els.eRow.innerHTML = e;
+  let h = `<span style="color:#ff8a8a">${'♥'.repeat(GT.resolve)}<span style="opacity:.25">${'♥'.repeat(Math.max(0, GT.T.resolve - GT.resolve))}</span></span>`;
+  h += GT.ascendRounds > 0 ? `<span class="gtChip" style="background:#ffd76a;color:#1a1408">ASCENDED ${GT.ascendRounds}</span>` : `<span style="opacity:.75">Ascension ${Math.floor(GT.meter)}%</span>`;
+  if(GT.venomRounds > 0) h += `<span class="gtChip" style="background:rgba(127,212,200,.25);color:#7fd4c8">POISON ${GT.venomRounds}</span>`;
+  els.hRow.innerHTML = h;
+  els.meter.firstChild.style.width = (GT.ascendRounds > 0 ? 100 : GT.meter) + '%';
+}
+
+// ---- Drawing: the towering Guardian and the Ascended Kanata ----
+// How much bigger than its normal battle size the Guardian is drawn: as big
+// as the screen allows (up to 1.3x), so on a tall phone it still fits between
+// Kanata and the right edge.
+function gtScale(){
+  const half = enemy.scale * 1.85 * 52;
+  return Math.max(0.9, Math.min(1.3, (W - enemy.x - 6) / half, (enemy.x - hero.x - 30) / (half * 1.6)));
+}
+function gtDrawEnemy(t, drawFn){
+  const gx = enemy.x, gy = groundY();
+  const base = gtScale();
+  const k = base * (1 + Math.sin(t*0.0018)*0.012);
+  // aura
+  sctx.save();
+  const rad = enemy.scale*170;
+  const grd = sctx.createRadialGradient(gx, gy - rad*0.55, rad*0.1, gx, gy - rad*0.55, rad);
+  const a = (GT.breakRounds > 0 ? 0.12 : 0.28) + (GT.cataPending ? 0.15 + Math.sin(t*0.012)*0.1 : 0);
+  grd.addColorStop(0, `rgba(${GT.cfg.rgb},${a})`); grd.addColorStop(1, `rgba(${GT.cfg.rgb},0)`);
+  sctx.fillStyle = grd; sctx.fillRect(gx - rad, gy - rad*1.6, rad*2, rad*1.7);
+  sctx.restore();
+  sctx.save();
+  sctx.translate(gx, gy); sctx.scale(k, k); sctx.translate(-gx, -gy);
+  drawFn(t);
+  sctx.restore();
+  // ward bubble
+  if(GT.ward > 0 && enemy.dead < 1){
+    const rx = enemy.scale*1.85*base*56, ry = enemy.scale*1.85*base*50, cy = gy - ry*0.95;
+    sctx.save();
+    sctx.globalAlpha = 0.18 + 0.5*(GT.ward/GT.wardMax) * (0.8 + Math.sin(t*0.006)*0.2);
+    sctx.strokeStyle = '#ffe6a0'; sctx.lineWidth = 3; sctx.shadowColor = GT.cfg.particleColor; sctx.shadowBlur = 16;
+    sctx.beginPath();
+    for(let i=0;i<6;i++){ const ang = Math.PI/6 + i*Math.PI/3 + t*0.0004; const px = gx + Math.cos(ang)*rx, py = cy + Math.sin(ang)*ry; if(i===0) sctx.moveTo(px,py); else sctx.lineTo(px,py); }
+    sctx.closePath(); sctx.stroke();
+    sctx.globalAlpha *= 0.35; sctx.fillStyle = `rgba(${GT.cfg.rgb},0.5)`; sctx.fill();
+    sctx.restore();
+  }
+}
+function gtDrawHero(t){
+  if(GT.grow <= 0.001){ drawHero(t); return; }
+  const k = 1 + 0.32*GT.grow;
+  const gx = hero.x, gy = groundY();
+  sctx.save();
+  const rad = hero.scale*140*k;
+  const grd = sctx.createRadialGradient(gx, gy - rad*0.6, rad*0.1, gx, gy - rad*0.6, rad);
+  grd.addColorStop(0, `rgba(255,215,106,${0.35*GT.grow})`); grd.addColorStop(1, 'rgba(255,215,106,0)');
+  sctx.fillStyle = grd; sctx.fillRect(gx - rad, gy - rad*1.6, rad*2, rad*1.7);
+  sctx.restore();
+  sctx.save();
+  sctx.translate(gx, gy); sctx.scale(k, k); sctx.translate(-gx, -gy);
+  drawHero(t);
+  sctx.restore();
+  if(Math.random() < 0.2*GT.grow) spawnParticles(gx + (Math.random()-0.5)*40, gy - Math.random()*80*k, 1, {color:'#ffd76a', speed:0.8, spread:1, size:2.5, glow:true, grav:-0.04, life:60, angle:-Math.PI/2});
+}
+function gtBgArea(){ return gtOn() ? GT.trial.bgArea : null; }
+
+// ---- Results ----
+function gtGrade(){
+  if(GT.knockdowns === 0 && GT.round <= 14) return 'S';
+  if(GT.knockdowns <= 1 && GT.round <= 20) return 'A';
+  if(GT.round <= 28) return 'B';
+  return 'C';
+}
+function gtRecordClear(){
+  if(!state.guardianBest) state.guardianBest = {};
+  const b = state.guardianBest[GT.id] || (state.guardianBest[GT.id] = { tier: 0, grades: {} });
+  const grade = gtGrade();
+  const order = 'CBAS';
+  b.tier = Math.max(b.tier || 0, GT.tier);
+  const prev = b.grades[GT.tier];
+  if(!prev || order.indexOf(grade) > order.indexOf(prev)) b.grades[GT.tier] = grade;
+  GT.result = { grade, tier: GT.tier, rounds: GT.round, knockdowns: GT.knockdowns, wards: GT.wardsBroken, mult: GT.T.reward * GT_GRADE_MULT[grade] };
+  return GT.result;
+}
+function gtBest(id){ return (state.guardianBest && state.guardianBest[id]) || { tier: 0, grades: {} }; }
+
+// ==== END GUARDIAN REGISTRY ==============================================
 
 // ---- Generic (stage-less) fusion --------------------------------------
 // Every hand-authored recipe above pairs two specific spirits with a
@@ -14823,6 +16378,9 @@ villageContinueBtn.addEventListener('click', ()=>{
 villageFightBtn.addEventListener('click', ()=>{
   if(villageResolve){ const res = villageResolve; villageResolve = null; res('fight'); }
 });
+villageGuardianBtn.addEventListener('click', ()=>{
+  if(villageResolve){ const res = villageResolve; villageResolve = null; res('guardian'); }
+});
 villageStoryBtn.addEventListener('click', ()=>{
   if(villageResolve){ const res = villageResolve; villageResolve = null; res('story'); }
 });
@@ -14856,9 +16414,24 @@ async function playVillageReturn(){
   villagePanel.classList.remove('hidden');
   updateGoldDisplay();
 
-  let choice;
+  let choice, pickedGuardianId = null;
   while(true){
     choice = await new Promise(res=>{ villageResolve = res; });
+    if(choice === 'guardian'){
+      villageInteractive = false;
+      closeShop();
+      closeSpiritDen();
+      closeTrophyPanel();
+      villagePanel.classList.add('hidden');
+      pickedGuardianId = await chooseGuardianTrial();
+      if(pickedGuardianId) break; // a Guardian was actually picked - proceed to the fight
+      // Back was pressed instead - return to the action menu and let them choose again
+      villageWelcome.classList.add('hidden');
+      villageActions.classList.remove('hidden');
+      villagePanel.classList.remove('hidden');
+      villageInteractive = true;
+      continue;
+    }
     break;
   }
 
@@ -14874,6 +16447,8 @@ async function playVillageReturn(){
   if(choice === 'fight'){
     const areaId = await chooseFightArea();
     startSideFight(areaId);
+  } else if(choice === 'guardian'){
+    startGuardianFight(pickedGuardianId);
   } else {
     state.inSideFight = false;
     state.inGuardianFight = false;
@@ -15143,10 +16718,143 @@ function startSideFight(areaId){
   log(def.encounterLog);
 }
 
+// A Guardian Trial: full normal battle rules (basic attack / guard / weapon /
+// Focus / Spirit), but against a single, much larger boss fight reached from
+// its own village menu. Losing just returns to the village like any other
+// loss - only a win triggers the one-time bonding sequence in endGuardianFight.
+function startGuardianFight(guardianId){
+  const guardian = getGuardianById(guardianId);
+  state.currentGuardianId = guardian.id;
+  state.currentAreaId = guardian.id; // fixed boss level anchor via BOSS_LEVELS - never scales off Kanata\'s own level
+  state.enemyType = guardian.bondSpiritId; // reuses ENEMY_DEFS[guardian.bondSpiritId] for flavor text
+  state.spiritLocked = false;
+  state.inFlashback = false;
+  state.inSideFight = false;
+  state.inGuardianFight = true;
+  const gtTier = Math.min(Math.max(1, state.currentGuardianTier || 1), gtBest(guardian.id).tier + 1, 3);
+  state.currentGuardianTier = gtTier;
+  gtReset(guardian, gtTier);
+  ENEMY_DEFS[guardian.bondSpiritId].dmgMult = guardian.dmgMult * GT.T.dmg;
+  state.goldenBeaverTurns = 0;
+  state.heroMax = Math.floor((guardian.heroMax + state.hpBonus + getKanataLevelHpBonus()) * getSpiritLevelMult());
+  // Scales with the Guardian's own level like every other foe, so later
+  // Guardians stay a real test; the ward phases add the rest of its bulk.
+  state.enemyMax = Math.floor(guardian.enemyMax * (1 + (guardian.bossLevel - 1) * 0.15) * 0.55 * GT.T.hp * getDevilBulkMult());
+  heroNameEl.textContent = 'Kanata';
+  enemyNameEl.textContent = guardian.name;
+  state.heroHp = state.heroMax;
+  state.enemyHp = state.enemyMax;
+  state.spirit = 0;
+  applySpiritCap();
+  state.guarding = false;
+  state.turnBusy = false;
+  state.over = false;
+  state.furyStacks = 0;
+  state.weaponReloading = false;
+  state.reloadTurnsLeft = 0;
+  state.enemyWeakenNext = 1;
+  state.thornsNext = 0;
+  state.enemyChargeup = null;
+  state.autoGuardNext = false;
+  state.dodgeGuaranteed = false;
+  state.blizzardDodgeCharges = 0;
+  state.enemyPoisonTurns = 0;
+  state.enemyPoisonDmg = 0;
+  hero.leanX=0; hero.leanY=0; hero.spearThrust=0; hero.flinch=0; hero.crouch=0; hero.glowSpirit=0; hero.bob=0; hero.guardPose=0; hero.meditatePose=0;
+  enemy.leanX=0; enemy.leanY=0; enemy.gunFlash=0; enemy.flinch=0; enemy.crouch=0; enemy.dead=0; enemy.guardPose=0; enemy.bayonetCharge=0;
+  beaver.active=0; beaver.hop=0; beaver.tailSlam=0;
+  camZoom = 1;
+  GT.grow = 0;
+  layout();
+  updateHud();
+  setButtonsEnabled(true);
+  log(ENEMY_DEFS[guardian.bondSpiritId].encounterLog);
+  screenShake(14, 30);
+  gtBanner(`${GT.T.label} GUARDIAN TRIAL`, guardian.name, guardian.particleColor);
+}
+
+// Called from checkEnd() instead of the normal win branch whenever
+// state.inGuardianFight is true and the Guardian\'s HP hits 0. Plays a bonding
+// cinematic modeled on endFlashback\'s, then hands out the flat Guardian
+// reward and permanently unlocks the Guardian\'s unique spirit bond.
+async function endGuardianFight(){
+  const guardian = getGuardianById(state.currentGuardianId);
+  ui.classList.add('hidden');
+  setButtonsEnabled(false);
+
+  const alreadyBonded = !!state.guardiansDefeated[guardian.id];
+  state.guardiansDefeated[guardian.id] = true;
+  const gtRes = gtRecordClear();
+  GT.alreadyBonded = alreadyBonded;
+  if(GT.grow > 0) tween(600, t=>{ GT.grow = Math.min(GT.grow, 1 - ease(t)); });
+  GT.ascendRounds = 0; GT.ward = 0;
+  recordBestiaryResult(guardian.bondSpiritId, true);
+  if(!state.unlockedSpirits[guardian.bondSpiritId]){
+    state.unlockedSpirits[guardian.bondSpiritId] = true;
+  }
+  if (!state.discoveredSpirits) state.discoveredSpirits = {};
+  state.discoveredSpirits[guardian.bondSpiritId] = true;
+
+  flashbackTextEl.classList.remove('hidden');
+  const beats = alreadyBonded ? guardian.bondBeats.repeat : guardian.bondBeats.first;
+
+  const bondAnim = (async()=>{
+    const startX = hero.x;
+    const targetX = lerp(startX, enemy.x, 0.5);
+    hero.walkCycle = 1;
+    await tweenP(2000, t=>{
+      const e = ease(t);
+      hero.x = lerp(startX, targetX, e);
+      hero.glowSpirit = e*0.7;
+      camZoom = lerp(camZoom, 1.16, e);
+    });
+    hero.walkCycle = 0; hero.bob = 0; hero.armSwing = 0;
+    await tweenP(650, t=>{
+      hero.glowSpirit = 0.7 + Math.sin(t*Math.PI)*0.3;
+    });
+    const bondColor = SPIRIT_BONDS[guardian.bondSpiritId].particleColor;
+    const bondRgb = SPIRIT_BONDS[guardian.bondSpiritId].rgb;
+    screenShake(18,22);
+    flash(bondRgb, 0.5);
+    spawnParticles(hero.x, hero.y-50, 90, {color:bondColor, speed:7, spread:6.28, size:4.5, glow:true, up:1});
+    spawnParticles(hero.x, hero.y-30, 40, {color:'#fff3d6', speed:2.6, spread:6.28, size:2.5, glow:true, up:0.4, life:80});
+  })();
+
+  await Promise.all([
+    bondAnim,
+    playCaptions(flashbackTextEl, beats, 1900, 550, 400)
+  ]);
+  await delay(700);
+  flashbackTextEl.classList.add('hidden');
+
+  // Reward - flat and large regardless of level, so it always reads as a
+  // landmark win rather than something that scales away with progression.
+  const guardianGold = Math.round(guardian.reward.gold * gtRes.mult * getMasteryGoldMult() * getDevilGoldMult());
+  state.lastGoldGained = guardianGold;
+  state.gold += guardianGold;
+  updateGoldDisplay();
+  state.lastXpGained = Math.round(guardian.reward.kanataXp * gtRes.mult);
+  grantKanataXp(state.lastXpGained);
+  state.lastSpiritXpGained = Math.round(guardian.reward.spiritXp * gtRes.mult);
+  grantSpiritXp(guardian.bondSpiritId, state.lastSpiritXpGained);
+  grantTrophy(guardian.bondSpiritId);
+  state.spiritBond = guardian.bondSpiritId; // equip the new bond immediately - it should be felt right away
+  applySpiritCap();
+  state.totalFights++;
+  saveGame(true);
+
+  camZoom = 1;
+  hero.glowSpirit = 0;
+  ui.classList.remove('hidden');
+  showEnd(true);
+}
+
 function continueAfterEnd(){
   endScreen.classList.add('hidden');
   if(state.inFlashback){
     setupFlashbackBattle(); // retry just the memory fight, not the whole game
+  } else if(state.inGuardianFight){
+    startGuardianFight(state.currentGuardianId); // retry the same Guardian Trial
   } else if(state.inSideFight){
     startSideFight(); // another random regular/animal encounter
   } else {
@@ -15666,7 +17374,7 @@ window.addEventListener('resize', layout);
     if(state.enemyType==='beaver') {
       drawFlashbackBackground(t);
     } else {
-      const area = state.currentAreaId;
+      const area = gtBgArea() || state.currentAreaId;
       if(state.enemyType === 'captain') drawRiverCrossingBackground(t);
       else if(area === 'frontier_trail' || state.enemyType === 'sergeant') drawBackground(t);
       else if(area === 'smoldering_grove' || state.enemyType === 'surveyor') drawSmolderingGrove(t);
@@ -15680,8 +17388,8 @@ window.addEventListener('resize', layout);
     }
     
     if(state.enemyType!=='beaver') drawSpiritCompanion(t);
-    drawHero(t);
-    if(state.enemyType==='beaver') drawEnemyBeaver(t); else (ENEMY_DEFS[state.enemyType] ? ENEMY_DEFS[state.enemyType].draw : drawEnemy)(t);
+    if(gtOn()) gtDrawHero(t); else drawHero(t);
+    if(state.enemyType==='beaver') drawEnemyBeaver(t); else if(gtOn()) gtDrawEnemy(t, ENEMY_DEFS[state.enemyType].draw); else (ENEMY_DEFS[state.enemyType] ? ENEMY_DEFS[state.enemyType].draw : drawEnemy)(t);
     updateParticles();
     // drifting canopy leaves add life to the flashback forest
     if(state.enemyType==='beaver' && Math.random()<0.045){
