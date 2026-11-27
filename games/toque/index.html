@@ -19855,6 +19855,190 @@ async function playChapter12Outro(){
   showEnd(true);
 }
 
+// ---- More creatures: one new bondable creature for each older Area ----
+function cr2Quad(o){
+  // Small generic four-legged body; o sets colours and proportions.
+  return function(t, charge, swing){
+    const x = charge*14, hop = o.hop ? Math.abs(Math.sin(t*o.hop))*3 : 0;
+    sctx.save(); sctx.translate(x, -hop);
+    if(o.tail) o.tail(t, swing);
+    sctx.fillStyle = o.leg;
+    drawLimb(-o.w*0.6,-o.legH,-o.w*0.65,0,o.lw); drawLimb(-o.w*0.2,-o.legH,-o.w*0.2,0,o.lw);
+    drawLimb(o.w*0.35,-o.legH,o.w*0.38,0,o.lw); drawLimb(o.w*0.6,-o.legH,o.w*0.65,0,o.lw);
+    sctx.fillStyle = o.body; sctx.beginPath(); sctx.ellipse(0,-o.legH-o.h*0.5,o.w,o.h,0,0,Math.PI*2); sctx.fill();
+    if(o.mark) o.mark(t);
+    sctx.save(); sctx.translate(o.w*0.95, -o.legH-o.h*0.9); sctx.rotate(swing*-0.3);
+    o.head(t, swing);
+    sctx.restore(); sctx.restore();
+  };
+}
+function cr2Squirrel(t, charge, swing){
+  const x = charge*16, hop = Math.abs(Math.sin(t*0.008))*4;
+  sctx.save(); sctx.translate(x,-hop);
+  sctx.fillStyle = '#b4502a'; sctx.beginPath(); sctx.ellipse(-14,-26,9,20,-0.4 + Math.sin(t*0.006)*0.1,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#c2602e'; sctx.beginPath(); sctx.ellipse(0,-14,11,13,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#f0e0c8'; sctx.beginPath(); sctx.ellipse(4,-12,5,9,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#c2602e'; sctx.beginPath(); sctx.ellipse(8,-30,8,7,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(3,-35); sctx.lineTo(4,-43); sctx.lineTo(8,-36); sctx.fill();
+  sctx.fillStyle = '#111'; sctx.beginPath(); sctx.arc(11,-31,1.4,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#7a4a26'; sctx.beginPath(); sctx.arc(10+swing*6,-18,3,0,Math.PI*2); sctx.fill();
+  sctx.restore();
+}
+function cr2Crow(t, charge, swing){
+  sctx.save(); sctx.translate(charge*14,0);
+  sctx.strokeStyle = '#111'; sctx.lineWidth = 2.5; sctx.beginPath(); sctx.moveTo(-2,-10); sctx.lineTo(-3,0); sctx.moveTo(4,-10); sctx.lineTo(5,0); sctx.stroke();
+  sctx.fillStyle = '#16161a'; sctx.beginPath(); sctx.moveTo(-14,-18); sctx.lineTo(-30,-10); sctx.lineTo(-14,-12); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(0,-20,16,10,-0.25,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(-2,-22); sctx.rotate(-0.2 - swing*0.9); sctx.beginPath(); sctx.moveTo(0,0); sctx.quadraticCurveTo(-14,-6,-24,2); sctx.lineTo(-12,4); sctx.closePath(); sctx.fill(); sctx.restore();
+  sctx.beginPath(); sctx.ellipse(14,-30,7,6,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#2a2a30'; sctx.beginPath(); sctx.moveTo(19,-32); sctx.lineTo(28,-29); sctx.lineTo(19,-27); sctx.fill();
+  sctx.fillStyle = '#c8c8d0'; sctx.beginPath(); sctx.arc(16,-31,1.3,0,Math.PI*2); sctx.fill();
+  sctx.restore();
+}
+const cr2Pronghorn = cr2Quad({ w:22, h:10, legH:22, lw:4.5, body:'#c08a50', leg:'#a8763e',
+  mark(){ sctx.fillStyle = '#f2ece0'; sctx.beginPath(); sctx.ellipse(2,-27,16,4,0,0,Math.PI*2); sctx.fill(); sctx.beginPath(); sctx.arc(-20,-33,5,0,Math.PI*2); sctx.fill(); },
+  head(t, swing){ sctx.fillStyle = '#c08a50'; sctx.save(); sctx.rotate(-0.6); sctx.fillRect(-3,-4,6,16); sctx.restore();
+    sctx.beginPath(); sctx.ellipse(8,-8,9,6,0.3,0,Math.PI*2); sctx.fill();
+    sctx.strokeStyle = '#1a1410'; sctx.lineWidth = 2.5; sctx.beginPath(); sctx.moveTo(4,-12); sctx.quadraticCurveTo(2,-24,8,-26); sctx.moveTo(8,-12); sctx.quadraticCurveTo(8,-22,14,-24); sctx.stroke();
+    sctx.fillStyle = '#111'; sctx.beginPath(); sctx.arc(9,-10,1.4,0,Math.PI*2); sctx.fill(); } });
+function cr2Hare(t, charge, swing){
+  const x = charge*18, hop = Math.abs(Math.sin(t*0.007))*5;
+  sctx.save(); sctx.translate(x,-hop);
+  sctx.fillStyle = '#f4f6f8';
+  sctx.beginPath(); sctx.ellipse(-4,-14,16,11,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(-2,-2,14,4,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(-18,-16,4,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(12,-22,8,7,0,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(9,-28); sctx.rotate(-0.4 - swing*0.3); sctx.beginPath(); sctx.ellipse(0,-10,3,10,0,0,Math.PI*2); sctx.fill(); sctx.restore();
+  sctx.save(); sctx.translate(13,-28); sctx.rotate(-0.1 - swing*0.3); sctx.beginPath(); sctx.ellipse(0,-10,3,10,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#222'; sctx.beginPath(); sctx.ellipse(0,-19,2.5,2,0,0,Math.PI*2); sctx.fill(); sctx.restore();
+  sctx.fillStyle = '#222'; sctx.beginPath(); sctx.arc(15,-23,1.5,0,Math.PI*2); sctx.fill();
+  sctx.restore();
+}
+function cr2Pika(t, charge, swing){
+  const x = charge*14, sq = 1 + Math.sin(t*0.006)*0.04;
+  sctx.save(); sctx.translate(x,0); sctx.scale(1,sq);
+  sctx.fillStyle = '#9a8a74'; sctx.beginPath(); sctx.ellipse(0,-12,16,12,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(12,-16,9,8,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#7e705c'; sctx.beginPath(); sctx.arc(8,-24,5,0,Math.PI*2); sctx.arc(14,-24,4.5,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e8dcc8'; sctx.beginPath(); sctx.arc(8,-24,2.5,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#111'; sctx.beginPath(); sctx.arc(16,-17,1.5,0,Math.PI*2); sctx.fill();
+  if(swing>0.1){ sctx.strokeStyle = '#6a9a3a'; sctx.lineWidth = 2; for(let i=0;i<3;i++){ sctx.beginPath(); sctx.moveTo(20,-12+i); sctx.lineTo(28+i*2,-16+i*3); sctx.stroke(); } }
+  sctx.restore();
+}
+function cr2Frog(t, charge, swing){
+  const x = charge*16, j = swing*10 + Math.abs(Math.sin(t*0.003))*1.5;
+  sctx.save(); sctx.translate(x,-j);
+  sctx.fillStyle = '#4a6a2a';
+  drawLimb(-14,-6,-24,0,6); drawLimb(-24,0,-10,0,5);
+  sctx.fillStyle = '#5a8034'; sctx.beginPath(); sctx.ellipse(0,-12,20,12,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#d8d8a0'; sctx.beginPath(); sctx.ellipse(6,-6,13,6,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#5a8034'; sctx.beginPath(); sctx.arc(8,-22,6,0,Math.PI*2); sctx.arc(18,-20,6,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e8c040'; sctx.beginPath(); sctx.arc(9,-23,3.5,0,Math.PI*2); sctx.arc(19,-21,3.5,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#111'; sctx.fillRect(7,-24,4,1.6); sctx.fillRect(17,-22,4,1.6);
+  sctx.fillStyle = '#4a6a2a'; drawLimb(12,-6,16,0,5);
+  if(swing>0.1){ sctx.strokeStyle = '#d86a7a'; sctx.lineWidth = 2.5; sctx.beginPath(); sctx.moveTo(22,-12); sctx.lineTo(22+swing*40,-14); sctx.stroke(); }
+  sctx.restore();
+}
+function cr2Woodpecker(t, charge, swing){
+  sctx.save(); sctx.translate(charge*12,0);
+  sctx.fillStyle = '#5a4430'; sctx.fillRect(-4,-70,12,70);
+  sctx.save(); sctx.translate(-6,-36 + Math.sin(t*0.002)*1.5); sctx.rotate(-0.1);
+  sctx.fillStyle = '#16141a'; sctx.beginPath(); sctx.ellipse(0,0,9,18,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(-4,14); sctx.lineTo(-6,28); sctx.lineTo(2,16); sctx.fill();
+  sctx.fillStyle = '#f2f0ea'; sctx.fillRect(-2,-14,3,20);
+  const peck = Math.max(swing, (Math.sin(t*0.02)>0.9?0.5:0));
+  sctx.save(); sctx.translate(-2 - peck*4,-20);
+  sctx.fillStyle = '#16141a'; sctx.beginPath(); sctx.ellipse(0,0,7,6,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#d82020'; sctx.beginPath(); sctx.moveTo(-6,-2); sctx.quadraticCurveTo(0,-16,6,-4); sctx.fill();
+  sctx.fillStyle = '#f2f0ea'; sctx.fillRect(-6,1,10,2);
+  sctx.fillStyle = '#3a3a40'; sctx.beginPath(); sctx.moveTo(5,-2); sctx.lineTo(16,0); sctx.lineTo(5,2); sctx.fill();
+  sctx.fillStyle = '#fff'; sctx.beginPath(); sctx.arc(2,-2,1.2,0,Math.PI*2); sctx.fill();
+  sctx.restore(); sctx.restore(); sctx.restore();
+}
+function cr2Bat(t, charge, swing){
+  const y = -50 + Math.sin(t*0.006)*8, flap = Math.sin(t*0.03);
+  sctx.save(); sctx.translate(charge*20, y);
+  sctx.fillStyle = '#2a2026';
+  [-1,1].forEach(sx=>{ sctx.save(); sctx.scale(sx,1); sctx.rotate(flap*0.5);
+    sctx.beginPath(); sctx.moveTo(4,0); sctx.lineTo(30,-14); sctx.lineTo(28,-2); sctx.lineTo(22,2); sctx.lineTo(16,0); sctx.lineTo(10,4); sctx.closePath(); sctx.fill(); sctx.restore(); });
+  sctx.fillStyle = '#3a2c30'; sctx.beginPath(); sctx.ellipse(0,0,6,9,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(-4,-7); sctx.lineTo(-5,-15); sctx.lineTo(-1,-8); sctx.moveTo(1,-8); sctx.lineTo(5,-15); sctx.lineTo(4,-7); sctx.fill();
+  gtGlowEye(-2,-4,1.3,'#ff8a5a'); gtGlowEye(2,-4,1.3,'#ff8a5a');
+  if(swing>0.2){ sctx.strokeStyle = `rgba(200,160,255,${swing*0.6})`; sctx.lineWidth = 2; for(let i=1;i<4;i++){ sctx.beginPath(); sctx.arc(10,0,i*8,-0.6,0.6); sctx.stroke(); } }
+  sctx.restore();
+}
+const CR2_ART = {
+  squirrel: gtDrawers(cr2Squirrel, 1.0, 0.95), crow: gtDrawers(cr2Crow, 1.15, 1.0), pronghorn: gtDrawers(cr2Pronghorn, 1.15, 1.0), hare: gtDrawers(cr2Hare, 1.05, 1.0),
+  pika: gtDrawers(cr2Pika, 1.05, 1.0), frog: gtDrawers(cr2Frog, 1.15, 1.0), woodpecker: gtDrawers(cr2Woodpecker, 1.05, 0.9), bat: gtDrawers(cr2Bat, 1.2, 1.0)
+};
+function cr2(id, area, element, name, icon, rgb, color, hp, dmgMult, gold, bond, art, log, trophy, special, moves){
+  registerCreature({ id, element, name, icon, rgb, color, hp, dmgMult, gold, xpNext: 60 + Math.round(gold*0.6), bond, art, log, trophy, special, moves });
+  const a = AREAS.find(x=>x.id === area);
+  if(a && a.pool.indexOf(id) < 0) a.pool.push(id);
+}
+function cr2Log(enc, wasted, ranged, lunge, victory){
+  return { encounter: enc, wasted, ranged, rangedBrace: 'You brace behind the spear!', lunge, lungeBrace: 'You turn it aside with the spear shaft!', victory };
+}
+function cr2Hp(n, what){ return { name: what, icon: '🐾', dropChance: 0.45, desc: `+${n} Max HP.`, effect: ()=>{ state.hpBonus += n; log(`${what}. +${n} Max HP.`); } }; }
+
+cr2('red_squirrel','frontier_trail','air','Red Squirrel','🐿️','194,96,46','#c2602e', 30, 0.9, 9, [14,20,70], CR2_ART.squirrel,
+  cr2Log('A red squirrel chatters furiously at you from a stump. You are in its tree, apparently.', ['The squirrel stuffs a pinecone in its cheeks.','It flicks its tail and scolds you.','It races up a trunk and back down.'],
+    'The squirrel pelts you with pinecones!', 'The squirrel leaps at your face!', 'The squirrel scolds you one last time and vanishes up a pine.'),
+  { name:'Stashed Acorn', icon:'🌰', dropChance:0.5, desc:'+40% gold for your next 5 battles.', effect:()=>{ setBuff('gold',1.4,5); log('Someone was saving this. Fortune favours you.'); } },
+  { name:'Scatter', desc:'Kanata dodges the next attack and refills 25% spirit.', apply:()=>{ state.dodgeGuaranteed = true; state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.25)); log('Kanata scatters out of reach like a squirrel!'); } },
+  [ crMove('cache','air','Cache',3,25,'Heals 15% Max HP.', cb=>{ log('The Squirrel Spirit shares its winter cache.'); crHeal(0.15); wait(600,cb); }),
+    crMove('pinecone_volley','air','Pinecone Volley',7,50,'Deals 4.5x spear damage and always strikes first.', cb=>{ log('A volley of pinecones rains down!'); executeSpiritMove(kanataSkillDamage(4.5),cb); }) ]);
+cr2('crow','ironworks_ruins','air','Crow','🐦‍⬛','40,40,50','#50505e', 66, 1.4, 30, [28,38,95], CR2_ART.crow,
+  cr2Log('A crow picks through the foundry scrap, then fixes one bright eye on you.', ['The crow tugs at a loose rivet.','It caws to the others on the roof.','It hops sideways, watching you.'],
+    'The crow dives and rakes you with its claws!', 'The crow stabs at you with its beak!', 'The crow flaps up onto a broken chimney.'),
+  cr2Hp(4, 'A glossy black feather'),
+  { name:'Murder of Crows', desc:'Weakens the enemy\'s next attack by 40% and poisons it for 2 turns.', apply:()=>{ state.enemyWeakenNext = 0.6; state.enemyPoisonTurns = 2; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, Math.floor(state.enemyMax*0.07)); log('A whole flock of crows mobs the foe!'); } },
+  [ crMove('scavenge','air','Scavenge',3,35,'Finds 10-25 gold and heals 10% Max HP.', cb=>{ state.gold += 10+Math.floor(Math.random()*16); updateGoldDisplay(); crHeal(0.1); log('The Crow Spirit finds something shiny in the scrap.'); wait(600,cb); }),
+    crMove('peck_eyes','air','Peck',7,65,'Deals 5.5x spear damage and always strikes first.', cb=>{ log('The Crow Spirit dives beak-first!'); executeSpiritMove(kanataSkillDamage(5.5),cb); }) ]);
+cr2('pronghorn','far_frontier','air','Pronghorn','🦌','192,138,80','#c08a50', 54, 1.25, 24, [24,34,85], CR2_ART.pronghorn,
+  cr2Log('A pronghorn stands on a rise, white rump flashing. It is the fastest thing on the plains, and it knows it.', ['The pronghorn flicks its ears.','It sprints a wide circle around you for fun.','It grazes, one eye on you.'],
+    'The pronghorn kicks up a cloud of dust and grit!', 'The pronghorn charges at full speed!', 'The pronghorn is gone over the rise before you can blink.'),
+  cr2Hp(3, 'A pronghorn\'s horn sheath'),
+  { name:'Plains Sprint', desc:'Kanata\'s next attack deals double damage and he dodges the next blow.', apply:()=>{ state.atkMultNext = 2; state.dodgeGuaranteed = true; log('Kanata moves faster than the eye can follow!'); } },
+  [ crMove('fleet_foot','air','Fleet Foot',3,30,'Kanata dodges the next attack.', cb=>{ log('Kanata is light on his feet.'); state.dodgeGuaranteed = true; wait(600,cb); }),
+    crMove('horn_rush','air','Horn Rush',7,60,'Deals 5.5x spear damage and always strikes first.', cb=>{ log('The Pronghorn Spirit charges at full speed!'); executeSpiritMove(kanataSkillDamage(5.5),cb); }) ]);
+cr2('snowshoe_hare','frozen_shore','frost','Snowshoe Hare','🐇','244,246,248','#e8f0f6', 78, 1.45, 38, [30,40,80], CR2_ART.hare,
+  cr2Log('Something white bolts out of the snow on huge feet - a snowshoe hare, and it is not running away.', ['The hare thumps a big back foot.','It vanishes against the snow, then reappears.','It twitches its nose at you.'],
+    'The hare kicks a spray of ice at you!', 'The hare bounds in and kicks with both feet!', 'The snowshoe hare bounds off across the snow.'),
+  cr2Hp(5, 'A soft white tuft'),
+  { name:'Snow Blind', desc:'Kanata dodges the next 2 attacks.', apply:()=>{ state.dodgeGuaranteed = true; state.blizzardDodgeCharges = Math.max(state.blizzardDodgeCharges, 2); log('Kanata vanishes against the snow!'); } },
+  [ crMove('big_feet','frost','Big Feet',3,30,'Kanata dodges the next attack and heals 10%.', cb=>{ log('Kanata skims over the snow.'); state.dodgeGuaranteed = true; crHeal(0.1); wait(600,cb); }),
+    crMove('double_kick','frost','Double Kick',7,60,'Deals 6x spear damage and always strikes first.', cb=>{ log('The Hare Spirit kicks with both feet!'); executeSpiritMove(kanataSkillDamage(6),cb); }) ]);
+cr2('pika','highland_pass','ground','Pika','🐭','154,138,116','#9a8a74', 88, 1.55, 45, [32,42,75], CR2_ART.pika,
+  cr2Log('A tiny round pika peeps at you from a pile of rocks - then lets out a shriek far too loud for its size.', ['The pika carries a mouthful of grass into its rocks.','It peeps loudly.','It sits very still, like a stone.'],
+    'The pika shrieks so loud your ears ring!', 'The pika darts out and bites your ankle!', 'The pika disappears into the rocks.'),
+  cr2Hp(5, 'A bundle of dried mountain grass'),
+  { name:'Haypile', desc:'Heals Kanata 25% Max HP.', apply:()=>{ crHeal(0.25); log('The Pika Spirit shares its winter haypile!'); } },
+  [ crMove('alarm_call','ground','Alarm Call',3,30,'Weakens the enemy\'s next attack by 40%.', cb=>{ log('A piercing alarm call rattles the foe!'); state.enemyWeakenNext = 0.6; wait(600,cb); }),
+    crMove('rockslide','ground','Rockslide',7,60,'Deals 6x spear damage and always strikes first.', cb=>{ log('The Pika Spirit starts a rockslide!'); executeSpiritMove(kanataSkillDamage(6),cb); }) ]);
+cr2('bullfrog','river_delta','frost','Bullfrog','🐸','90,128,52','#5a8034', 100, 1.6, 52, [34,46,95], CR2_ART.frog,
+  cr2Log('A bullfrog the size of a dinner plate booms from the reeds. It would like you to leave its pond.', ['The bullfrog booms.','It snaps up a passing dragonfly.','It puffs up to look bigger.'],
+    'The bullfrog\'s tongue lashes out and stings!', 'The bullfrog leaps straight at you!', 'The bullfrog plops back into the water.'),
+  cr2Hp(6, 'A cool, slick river stone'),
+  { name:'Deep Croak', desc:'Stuns the enemy (70%) and refills 25% spirit.', apply:()=>{ if(rollEnemyStun(0.7)) state.enemyStunned = true; state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.25)); log('A croak like a drum stuns the foe!'); } },
+  [ crMove('lily_pad','frost','Lily Pad',3,35,'Auto-guards the next attack and heals 10%.', cb=>{ log('Kanata hops clear like the Frog Spirit.'); state.autoGuardNext = true; crHeal(0.1); wait(600,cb); }),
+    crMove('tongue_lash','frost','Tongue Lash',7,65,'Deals 6.5x spear damage and always strikes first.', cb=>{ log('The Frog Spirit\'s tongue lashes out!'); executeSpiritMove(kanataSkillDamage(6.5),cb); }) ]);
+cr2('woodpecker','ancient_grove','air','Pileated Woodpecker','🪶','216,32,32','#d82020', 110, 1.7, 60, [36,48,90], CR2_ART.woodpecker,
+  cr2Log('Rat-a-tat-tat. A huge red-crested woodpecker is drilling into an ancient tree - and you are interrupting.', ['The woodpecker drums on the trunk.','It pulls a grub from the bark.','It cocks its red-crested head.'],
+    'The woodpecker flings a spray of bark chips!', 'The woodpecker drills at you with its beak!', 'The woodpecker swoops off between the old trees.'),
+  cr2Hp(6, 'A red crest feather'),
+  { name:'Drumroll', desc:'Deals 10% of the enemy\'s Max HP as bonus damage and weakens its next attack by 30%.', apply:()=>{ state.enemyHp = Math.max(0, state.enemyHp - Math.floor(state.enemyMax*0.10)); state.enemyWeakenNext = 0.7; log('Rat-a-tat-tat-tat! The foe is hammered!'); } },
+  [ crMove('bark_shield','air','Bark Shield',3,35,'Auto-guards the next attack.', cb=>{ log('Kanata ducks behind the old bark.'); state.autoGuardNext = true; wait(600,cb); }),
+    crMove('drill','air','Drill',7,70,'Deals 7x spear damage and always strikes first.', cb=>{ log('The Woodpecker Spirit drills in!'); executeSpiritMove(kanataSkillDamage(7),cb); }) ]);
+cr2('cave_bat','sunken_mines','air','Cave Bat','🦇','60,44,48','#c8a0ff', 104, 1.6, 85, [42,54,100], CR2_ART.bat,
+  cr2Log('Hundreds of wings rustle in the dark. One bat, bigger than the rest, drops from the ceiling towards you.', ['The bat hangs upside down, watching.','It clicks into the dark, listening.','It circles the lantern.'],
+    'The bat screeches - the sound rattles your bones!', 'The bat swoops in and bites!', 'The bat flits back up into the dark.'),
+  cr2Hp(8, 'A leathery bat wing'),
+  { name:'Echolocation', desc:'Kanata dodges the next attack and his next hit deals +60%.', apply:()=>{ state.dodgeGuaranteed = true; state.atkMultNext = 1.6; log('Kanata hears every move the foe makes!'); } },
+  [ crMove('night_bite','air','Night Bite',3,40,'Deals 3x spear damage and heals Kanata for half of it.', cb=>{ const d = kanataSkillDamage(3); log('The Bat Spirit bites and drinks deep!'); state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(d*0.5)); executeSpiritMove(d,cb); }),
+    crMove('sonic_screech','air','Sonic Screech',7,75,'Deals 7x spear damage and always strikes first.', cb=>{ log('The Bat Spirit screeches!'); executeSpiritMove(kanataSkillDamage(7),cb); }) ]);
+
 async function playExpansionChapterIntro(title, beats, color){
   ui.classList.add('hidden');
   setButtonsEnabled(false);
