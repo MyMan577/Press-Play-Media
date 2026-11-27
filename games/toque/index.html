@@ -12860,8 +12860,10 @@ function checkEnd(){
     if(state.enemyType === 'crane'){ state.chapter7Done = true; state.fightNumber = 9; }
     if(state.enemyType === 'warden'){ state.chapter8Done = true; state.fightNumber = 10; }
     if(state.enemyType === 'subterranean_baron'){ state.chapter9Done = true; state.fightNumber = 11; }
-    PPHub.best('chapter', [2,3,4,5,6,7,8,9].filter(n => state['chapter' + n + 'Done']).length);
+    PPHub.best('chapter', [2,3,4,5,6,7,8,9,10,11,12].filter(n => state['chapter' + n + 'Done']).length);
     if(state.enemyType === 'stormcaller'){ state.chapter10Done = true; state.fightNumber = 12; }
+    if(state.enemyType === 'cartographer'){ state.chapter11Done = true; state.fightNumber = 13; }
+    if(state.enemyType === 'governor'){ state.chapter12Done = true; state.fightNumber = 14; }
     // Animals met on the side-fight trail (wolf/bear) can be spared to bond
     // with their spirit instead of finished off - the Sergeant, Ranger, and
     // flashback beaver are all story-critical or human, so they\'re never
@@ -12974,6 +12976,13 @@ function checkEnd(){
       tween(700, t=>{ enemy.dead = ease(t); }, ()=>{
         spawnParticles(enemy.x, enemy.y-24, 76, {color:'#d9c678', speed:7, spread:6.2, size:4, glow:true});
         wait(700, playChapter10Outro);
+      });
+    } else if(state.enemyType === 'cartographer' || state.enemyType === 'governor'){
+      const fin = state.enemyType === 'governor';
+      log(ENEMY_DEFS[state.enemyType].victoryLog);
+      tween(700, t=>{ enemy.dead = ease(t); }, ()=>{
+        spawnParticles(enemy.x, enemy.y-24, 80, {color: fin ? '#e8c15a' : '#8fe0c8', speed:7, spread:6.2, size:4, glow:true});
+        wait(700, fin ? playChapter12Outro : playChapter11Outro);
       });
     } else {
       const def = ENEMY_DEFS[state.enemyType];
@@ -13123,6 +13132,20 @@ function showEnd(won){
       endTitle.textContent = 'THE SHORE IS YOURS';
       endTitle.style.textShadow = '0 0 22px rgba(168,216,255,0.6), 0 2px 0 #000';
       endText.textContent = 'Commander Voss\'s charts lie scattered on the ice, useless now. The frozen shore belongs to no crown. Kanata watches the tide come in and knows the land will outlast all of them.';
+    } else if(state.enemyType === 'subterranean_baron'){
+      endTitle.textContent = 'THE RIVER RUNS AGAIN';
+      endText.textContent = 'The pumps fall silent and the minewater finds its old bed. The Skyward Peaks are open.';
+    } else if(state.enemyType === 'stormcaller'){
+      endTitle.textContent = 'THE WIND IS FREE';
+      endText.textContent = 'The signal towers are silent. North of the peaks, green light is moving in the sky. The Aurora Tundra is open.';
+    } else if(state.enemyType === 'cartographer'){
+      endTitle.textContent = 'NO MORE BORDERS';
+      endTitle.style.textShadow = '0 0 22px rgba(143,224,200,0.6), 0 2px 0 #000';
+      endText.textContent = 'The Royal Cartographer\u2019s maps are scattered across the ice. Only one fort still flies the Crown\u2019s flag. The Last Fort is open.';
+    } else if(state.enemyType === 'governor'){
+      endTitle.textContent = 'THE LAND IS FREE';
+      endTitle.style.textShadow = '0 0 26px rgba(232,193,90,0.7), 0 2px 0 #000';
+      endText.textContent = 'Governor Ashcombe has fallen and the last fort stands open. Kanata\u2019s story is told - but the spirits, the Guardians and the wild places are all still out there.';
     } else {
       endText.textContent = 'The Sergeant retreats to the tree line. The Beaver Spirit dives back beneath the water, waiting for your next call. The land breathes easy a while longer.';
     }
@@ -16814,6 +16837,8 @@ async function playVillageReturn(){
     else if(state.fightNumber === 9) startChapter8();
     else if(state.fightNumber === 10) startChapter9();
     else if(state.fightNumber === 11) startChapter10();
+    else if(state.fightNumber === 12) startChapter11();
+    else if(state.fightNumber === 13) startChapter12();
     else resetBattle();
   }
 }
@@ -17223,6 +17248,8 @@ function continueAfterEnd(){
     else if(state.fightNumber === 9) startChapter8();
     else if(state.fightNumber === 10) startChapter9();
     else if(state.fightNumber === 11) startChapter10();
+    else if(state.fightNumber === 12) startChapter11();
+    else if(state.fightNumber === 13) startChapter12();
     else resetBattle();
   }
 }
@@ -17731,7 +17758,9 @@ window.addEventListener('resize', layout);
       drawFlashbackBackground(t);
     } else {
       const area = gtBgArea() || state.currentAreaId;
-      if(state.enemyType === 'captain') drawRiverCrossingBackground(t);
+      if(area === 'aurora_tundra' || state.enemyType === 'cartographer') drawAuroraTundraBackground(t);
+      else if(area === 'last_fort' || state.enemyType === 'governor') drawLastFortBackground(t);
+      else if(state.enemyType === 'captain') drawRiverCrossingBackground(t);
       else if(area === 'frontier_trail' || state.enemyType === 'sergeant') drawBackground(t);
       else if(area === 'smoldering_grove' || state.enemyType === 'surveyor') drawSmolderingGrove(t);
       else if(area === 'far_frontier') drawFarFrontierBackground(t);
@@ -19142,6 +19171,8 @@ const EXPANSION_DEFAULTS = {
   expansionVersion: EXPANSION_VERSION,
   chapter9Done: false,
   chapter10Done: false,
+  chapter11Done: false,
+  chapter12Done: false,
   season: null,
   weatherByArea: {},
   artifacts: {},
@@ -19163,7 +19194,7 @@ function repairExpansionState(){
   });
   state.expansionVersion = EXPANSION_VERSION;
   if (!state.areaFights) state.areaFights = {};
-  ['sunken_mines', 'skyward_peaks'].forEach(id => { if (state.areaFights[id] == null) state.areaFights[id] = 0; });
+  ['sunken_mines', 'skyward_peaks', 'aurora_tundra', 'last_fort'].forEach(id => { if (state.areaFights[id] == null) state.areaFights[id] = 0; });
   if (!state.weatherByArea || typeof state.weatherByArea !== 'object') state.weatherByArea = {};
   if (!state.artifacts || typeof state.artifacts !== 'object') state.artifacts = {};
   if (!state.discoveredArtifacts || typeof state.discoveredArtifacts !== 'object') state.discoveredArtifacts = {};
@@ -19185,6 +19216,8 @@ function getExpansionSave(){
     expansionVersion: EXPANSION_VERSION,
     chapter9Done: !!state.chapter9Done,
     chapter10Done: !!state.chapter10Done,
+    chapter11Done: !!state.chapter11Done,
+    chapter12Done: !!state.chapter12Done,
     season: state.season,
     weatherByArea: state.weatherByArea,
     artifacts: state.artifacts,
@@ -19532,10 +19565,309 @@ AREAS.push(
   }
 );
 
+// ==== CHAPTERS XI-XII AND THEIR CREATURES =================================
+// Six new bondable creatures (registerCreature fills every table a spirit
+// needs), two Areas, and two story bosses: the Royal Cartographer on the
+// Aurora Tundra and Governor Ashcombe at the Last Fort.
+function registerCreature(c){
+  ENEMY_DEFS[c.id] = {
+    element: c.element, name: c.name, hp: c.hp, dmgMult: c.dmgMult, shakeRanged: c.shake || 13, draw: c.art.enemy,
+    encounterLog: c.log.encounter,
+    wasted: c.log.wasted.map((txt,i)=>({ txt, pose: ['eye','stumble','reload'][i%3] })),
+    rangedLog: c.log.ranged, rangedBrace: c.log.rangedBrace,
+    lungeLog: c.log.lunge, lungeBrace: c.log.lungeBrace,
+    victoryLog: c.log.victory
+  };
+  SPIRIT_BONDS[c.id] = {
+    element: c.element, name: c.name + ' Spirit', short: c.name, icon: c.icon,
+    rgb: c.rgb, particleColor: c.color, dmgMin: c.bond[0], dmgMax: c.bond[1], spiritCap: c.bond[2],
+    callLog: `The ${c.name} Spirit answers your call!`,
+    unlockDesc: `Spare a ${c.name.toLowerCase()} in battle to bond with it.`,
+    capDesc: c.capDesc || 'Steady - a fair gauge with a solid hit.',
+    draw: c.art.spirit
+  };
+  GOLD_BY_ENEMY[c.id] = c.gold;
+  SPIRIT_DATA_XPNEXT_DEFAULTS[c.id] = c.xpNext;
+  TROPHY_DEFS[c.id] = c.trophy;
+  SPIRIT_SPECIALS[c.id] = c.special;
+  SPIRIT_SKILLS[c.id] = c.moves;
+}
+
+// ---- Art ----
+function crShapeWalrus(t, charge, swing){
+  const x = charge*12, br = Math.sin(t*0.003)*1.5;
+  sctx.fillStyle = '#7a5a48'; sctx.beginPath(); sctx.ellipse(-10+x,-20+br,40,20,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.ellipse(-46+x,-6,12,6,0.4,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#6a4c3c'; sctx.beginPath(); sctx.ellipse(6+x,-4,10,5,0,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(28+x,-30+br); sctx.rotate(swing*-0.4);
+  sctx.fillStyle = '#8a6856'; sctx.beginPath(); sctx.ellipse(0,0,16,14,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#a07e6a'; sctx.beginPath(); sctx.ellipse(10,6,9,7,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#f4efe2'; sctx.beginPath(); sctx.moveTo(6,10); sctx.lineTo(9,30+charge*4); sctx.lineTo(11,10); sctx.moveTo(12,10); sctx.lineTo(15,30+charge*4); sctx.lineTo(17,9); sctx.fill();
+  sctx.fillStyle = '#1a1210'; sctx.beginPath(); sctx.arc(4,-5,1.8,0,Math.PI*2); sctx.fill();
+  sctx.restore();
+}
+function crShapeErmine(t, charge, swing){
+  const x = charge*18, hop = Math.abs(Math.sin(t*0.006))*3;
+  sctx.save(); sctx.translate(x,-hop);
+  sctx.fillStyle = '#f6f6f2';
+  sctx.beginPath(); sctx.ellipse(-4,-14,22,7,-0.1,0,Math.PI*2); sctx.fill();
+  sctx.fillRect(-18,-12,4,12); sctx.fillRect(-8,-12,4,12); sctx.fillRect(8,-12,4,12); sctx.fillRect(14,-12,4,12);
+  sctx.save(); sctx.translate(-24,-16); sctx.rotate(-0.4 + Math.sin(t*0.008)*0.2);
+  sctx.fillStyle = '#f6f6f2'; sctx.fillRect(-12,-2,13,4); sctx.fillStyle = '#111'; sctx.fillRect(-18,-2.5,7,5); sctx.restore();
+  sctx.save(); sctx.translate(20,-20); sctx.rotate(swing*-0.3);
+  sctx.fillStyle = '#f6f6f2'; sctx.beginPath(); sctx.ellipse(0,0,8,6,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(-2,-5,2.5,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#111'; sctx.beginPath(); sctx.arc(3,-1,1.5,0,Math.PI*2); sctx.arc(8,1,1.2,0,Math.PI*2); sctx.fill();
+  sctx.restore(); sctx.restore();
+}
+function crShapeGoose(t, charge, swing){
+  const x = charge*14, flap = swing*0.9 + Math.sin(t*0.004)*0.05;
+  sctx.save(); sctx.translate(x,0);
+  sctx.strokeStyle = '#e0a040'; sctx.lineWidth = 3; sctx.beginPath(); sctx.moveTo(-4,-16); sctx.lineTo(-6,0); sctx.moveTo(6,-16); sctx.lineTo(8,0); sctx.stroke();
+  sctx.fillStyle = '#f4f4f0'; sctx.beginPath(); sctx.ellipse(-2,-26,24,13,-0.15,0,Math.PI*2); sctx.fill();
+  sctx.save(); sctx.translate(-6,-30); sctx.rotate(-0.2 - flap); sctx.fillStyle = '#e8e8e4';
+  sctx.beginPath(); sctx.moveTo(0,0); sctx.quadraticCurveTo(-22,-14,-36,-4); sctx.lineTo(-20,4); sctx.closePath(); sctx.fill();
+  sctx.fillStyle = '#222'; sctx.beginPath(); sctx.moveTo(-30,-6); sctx.lineTo(-38,-4); sctx.lineTo(-30,0); sctx.fill(); sctx.restore();
+  sctx.strokeStyle = '#f4f4f0'; sctx.lineWidth = 7; sctx.lineCap = 'round';
+  sctx.beginPath(); sctx.moveTo(16,-30); sctx.quadraticCurveTo(22,-44,20 + swing*8,-52); sctx.stroke();
+  sctx.fillStyle = '#f4f4f0'; sctx.beginPath(); sctx.ellipse(22 + swing*8,-54,7,5.5,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e8a0a0'; sctx.beginPath(); sctx.moveTo(27 + swing*8,-56); sctx.lineTo(36 + swing*8,-54); sctx.lineTo(27 + swing*8,-51); sctx.fill();
+  sctx.fillStyle = '#111'; sctx.beginPath(); sctx.arc(24 + swing*8,-56,1.4,0,Math.PI*2); sctx.fill();
+  sctx.restore();
+}
+function crShapeSkunk(t, charge, swing){
+  const x = charge*12;
+  sctx.save(); sctx.translate(-22+x,-22); sctx.rotate(-0.9 + Math.sin(t*0.004)*0.1 - swing*0.4);
+  sctx.fillStyle = '#16141a'; sctx.beginPath(); sctx.ellipse(-16,0,22,10,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#f2f2ee'; sctx.beginPath(); sctx.ellipse(-16,-2,18,3,0,0,Math.PI*2); sctx.fill(); sctx.restore();
+  sctx.fillStyle = '#16141a';
+  sctx.beginPath(); sctx.ellipse(x,-16,24,12,0,0,Math.PI*2); sctx.fill();
+  sctx.fillRect(-16+x,-8,5,8); sctx.fillRect(10+x,-8,5,8);
+  sctx.fillStyle = '#f2f2ee'; sctx.fillRect(-18+x,-28,32,4);
+  sctx.save(); sctx.translate(24+x,-16);
+  sctx.fillStyle = '#16141a'; sctx.beginPath(); sctx.ellipse(0,0,9,7,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(6,-2); sctx.lineTo(14,2); sctx.lineTo(6,4); sctx.fill();
+  sctx.fillStyle = '#f2f2ee'; sctx.fillRect(-2,-7,10,2);
+  sctx.fillStyle = '#e8e0a0'; sctx.beginPath(); sctx.arc(4,-1,1.4,0,Math.PI*2); sctx.fill(); sctx.restore();
+  if(swing>0.2){ sctx.fillStyle = `rgba(170,200,90,${swing*0.5})`; for(let i=0;i<5;i++){ sctx.beginPath(); sctx.arc(-50+x-i*6, -50+Math.sin(t*0.01+i)*6, 8+i*2, 0, Math.PI*2); sctx.fill(); } }
+}
+function crShapeTurkey(t, charge, swing){
+  const x = charge*12;
+  sctx.save(); sctx.translate(-14+x,-34);
+  const fan = 0.9 + swing*0.4;
+  for(let i=0;i<9;i++){ const a = -Math.PI/2 + (i-4)*0.24*fan; sctx.save(); sctx.rotate(a); sctx.fillStyle = i%2 ? '#6b4428' : '#8a5a34'; sctx.beginPath(); sctx.ellipse(0,-22,6,22,0,0,Math.PI*2); sctx.fill(); sctx.fillStyle = '#f0e6d0'; sctx.beginPath(); sctx.ellipse(0,-40,5,3,0,0,Math.PI*2); sctx.fill(); sctx.restore(); }
+  sctx.restore();
+  sctx.strokeStyle = '#b08040'; sctx.lineWidth = 3; sctx.beginPath(); sctx.moveTo(-4+x,-14); sctx.lineTo(-6+x,0); sctx.moveTo(6+x,-14); sctx.lineTo(8+x,0); sctx.stroke();
+  sctx.fillStyle = '#3a2a1e'; sctx.beginPath(); sctx.ellipse(x,-26,18,14,0,0,Math.PI*2); sctx.fill();
+  sctx.strokeStyle = 'rgba(120,180,140,0.5)'; sctx.lineWidth = 1.5; sctx.beginPath(); sctx.ellipse(x,-26,14,10,0,Math.PI*1.1,Math.PI*1.9); sctx.stroke();
+  sctx.strokeStyle = '#3a2a1e'; sctx.lineWidth = 5; sctx.beginPath(); sctx.moveTo(10+x,-34); sctx.quadraticCurveTo(18+x,-44,16+x+swing*6,-52); sctx.stroke();
+  sctx.fillStyle = '#7fa8d8'; sctx.beginPath(); sctx.ellipse(17+x+swing*6,-54,5,5,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#d03030'; sctx.beginPath(); sctx.ellipse(19+x+swing*6,-46,3,6,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#e0b060'; sctx.beginPath(); sctx.moveTo(21+x+swing*6,-55); sctx.lineTo(27+x+swing*6,-53); sctx.lineTo(21+x+swing*6,-51); sctx.fill();
+}
+function crShapeBobcat(t, charge, swing){
+  const x = charge*14;
+  sctx.fillStyle = '#8a6a48';
+  drawLimb(-18+x,-16,-20+x,8,7); drawLimb(-6+x,-16,-6+x,8,7); drawLimb(12+x,-16,14+x,8,7); drawLimb(22+x,-16,24+x,8,7);
+  sctx.beginPath(); sctx.ellipse(2+x,-22,26,11,0,0,Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#4a3624'; for(let i=0;i<6;i++){ sctx.beginPath(); sctx.arc(-14+x+i*6,-24+(i%2)*4,1.6,0,Math.PI*2); sctx.fill(); }
+  sctx.fillStyle = '#8a6a48'; sctx.fillRect(-28+x,-30,6,6);
+  sctx.save(); sctx.translate(30+x,-30); sctx.rotate(swing*-0.3);
+  sctx.fillStyle = '#9a7a56'; sctx.beginPath(); sctx.ellipse(0,0,10,8,0,0,Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.moveTo(-6,-5); sctx.lineTo(-5,-16); sctx.lineTo(-1,-7); sctx.moveTo(2,-7); sctx.lineTo(5,-17); sctx.lineTo(7,-5); sctx.fill();
+  sctx.strokeStyle = '#1a1410'; sctx.lineWidth = 1.2; sctx.beginPath(); sctx.moveTo(-5,-16); sctx.lineTo(-5,-20); sctx.moveTo(5,-17); sctx.lineTo(5,-21); sctx.stroke();
+  sctx.fillStyle = '#d8c8a8'; sctx.beginPath(); sctx.moveTo(-8,2); sctx.lineTo(-14,8); sctx.lineTo(-4,6); sctx.fill();
+  gtGlowEye(4,-2,1.6,'#d8e060'); sctx.restore();
+}
+const CR_ART = {
+  walrus: gtDrawers(crShapeWalrus, 1.15, 0.95), ermine: gtDrawers(crShapeErmine, 1.1, 1.0), goose: gtDrawers(crShapeGoose, 1.1, 1.0),
+  skunk: gtDrawers(crShapeSkunk, 1.1, 1.0), turkey: gtDrawers(crShapeTurkey, 1.1, 1.0), bobcat: gtDrawers(crShapeBobcat, 1.15, 1.0)
+};
+function crHeal(pct){ state.heroHp = Math.min(state.heroMax, state.heroHp + Math.floor(state.heroMax*pct)); spawnParticles(hero.x, hero.y-40, 18, {color:'#4ade80', speed:3, spread:6.28, size:3, up:1}); updateHud(); }
+function crMove(id, element, name, lvl, cost, desc, fn){ return { id, element, name, lvl, cost, desc, action: fn }; }
+
+// ---- Aurora Tundra creatures ----
+registerCreature({ id:'walrus', element:'frost', name:'Walrus', icon:'🦭', rgb:'160,120,100', color:'#a07e6a',
+  hp:170, dmgMult:1.95, gold:150, xpNext:170, bond:[52,66,150], art:CR_ART.walrus, shake:17, capDesc:'Heavy - slow to fill, hits like an iceberg.',
+  log:{ encounter:'A walrus heaves itself up onto the ice, tusks gleaming, and bellows a warning.', wasted:['The walrus scratches its whiskers on the ice.','It flops onto its side, then back up.','It snorts out a cloud of frost.'],
+    ranged:'The walrus slaps the ice and a sheet of freezing water hits you!', rangedBrace:'You brace behind the spear!', lunge:'The walrus lunges with its tusks!', lungeBrace:'You catch the tusks on the spear shaft!', victory:'The walrus slides back into the dark water.' },
+  trophy:{ name:'Walrus Tusk', icon:'🦭', dropChance:0.45, desc:'+7 Max HP.', effect:()=>{ state.hpBonus += 7; log('A long ivory tusk. +7 Max HP.'); } },
+  special:{ name:'Tusk Crush', desc:'Stuns the enemy and auto-guards the next attack.', apply:()=>{ state.enemyStunned = true; state.autoGuardNext = true; log('The Walrus Spirit crashes down on the foe!'); } },
+  moves:[ crMove('blubber','frost','Blubber',3,55,'Auto-guards the next attack and heals 15% Max HP.', cb=>{ log('A thick layer of warmth wraps around Kanata.'); state.autoGuardNext = true; crHeal(0.15); wait(600,cb); }),
+          crMove('ice_breaker','frost','Ice Breaker',7,100,'Deals 9x spear damage and always strikes first.', cb=>{ log('The Walrus Spirit smashes through the ice!'); executeSpiritMove(kanataSkillDamage(9),cb); }) ] });
+registerCreature({ id:'ermine', element:'air', name:'Ermine', icon:'🤍', rgb:'240,240,235', color:'#f4f4ee',
+  hp:130, dmgMult:1.75, gold:125, xpNext:120, bond:[38,48,95], art:CR_ART.ermine, shake:10, capDesc:'Quick - an easy gauge to fill.',
+  log:{ encounter:'Something white flickers across the snow - an ermine, small and fearless, bares its teeth at you.', wasted:['The ermine pops up out of a snowdrift.','It darts in a circle around you.','It stands up tall to get a better look.'],
+    ranged:'The ermine kicks a spray of ice into your eyes!', rangedBrace:'You turn your face away behind the spear!', lunge:'The ermine darts in and bites!', lungeBrace:'You flick it away with the spear!', victory:'The ermine vanishes into the snow.' },
+  trophy:{ name:'Ermine Pelt', icon:'🤍', dropChance:0.45, desc:'+40% gold for your next 6 battles.', effect:()=>{ setBuff('gold',1.4,6); log('The white fur is fine and soft. Fortune favours you.'); } },
+  special:{ name:'White Flash', desc:'Kanata dodges the next 2 attacks.', apply:()=>{ state.dodgeGuaranteed = true; state.blizzardDodgeCharges = Math.max(state.blizzardDodgeCharges, 2); log('Kanata moves like a white blur across the snow!'); } },
+  moves:[ crMove('snow_dart','air','Snow Dart',3,35,'Kanata\'s next attack deals +60% and he dodges the next blow.', cb=>{ log('Kanata darts across the snow like the Ermine.'); state.atkMultNext = 1.6; state.dodgeGuaranteed = true; wait(600,cb); }),
+          crMove('neck_bite','air','Neck Bite',7,70,'Deals 7x spear damage and always strikes first.', cb=>{ log('The Ermine Spirit strikes faster than the eye can follow!'); executeSpiritMove(kanataSkillDamage(7),cb); }) ] });
+registerCreature({ id:'snow_goose', element:'air', name:'Snow Goose', icon:'🪿', rgb:'240,240,235', color:'#f0f0ea',
+  hp:140, dmgMult:1.8, gold:130, xpNext:130, bond:[40,52,110], art:CR_ART.goose, shake:12,
+  log:{ encounter:'A snow goose, separated from its flock, hisses and spreads its wings at you.', wasted:['The goose honks for its flock.','It ruffles its feathers against the cold.','It pecks at a frozen berry.'],
+    ranged:'The goose beats its wings - a gust of snow hits you!', rangedBrace:'You lean into the gust behind the spear!', lunge:'The goose charges, hissing and pecking!', lungeBrace:'You fend off the beak with the spear shaft!', victory:'The snow goose takes off to find its flock.' },
+  trophy:{ name:'Snow Goose Down', icon:'🪶', dropChance:0.45, desc:'+40% XP for your next 6 battles.', effect:()=>{ setBuff('xp',1.4,6); log('The down is light as air. Kanata feels sharp.'); } },
+  special:{ name:'Flock Call', desc:'Weakens the enemy\'s next attack by 50% and refills 25% spirit.', apply:()=>{ state.enemyWeakenNext = 0.5; state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.25)); log('A whole flock of geese swoops over the foe!'); } },
+  moves:[ crMove('v_formation','air','V Formation',3,40,'Heals 15% Max HP and refills 20% spirit.', cb=>{ log('The Goose Spirit leads the way.'); crHeal(0.15); state.spirit = Math.min(state.spiritMax, state.spirit + Math.floor(state.spiritMax*0.2)); wait(600,cb); }),
+          crMove('wing_buffet','air','Wing Buffet',7,80,'Deals 7.5x spear damage and always strikes first.', cb=>{ log('The Goose Spirit batters the foe with its wings!'); executeSpiritMove(kanataSkillDamage(7.5),cb); }) ] });
+
+// ---- Last Fort creatures ----
+registerCreature({ id:'skunk', element:'spirit', name:'Skunk', icon:'🦨', rgb:'170,200,90', color:'#aac85a',
+  hp:150, dmgMult:1.85, gold:140, xpNext:140, bond:[44,56,120], art:CR_ART.skunk, shake:10,
+  log:{ encounter:'A skunk waddles out of the fort\'s rubble and stamps its front feet. That is a warning.', wasted:['The skunk stamps its feet again.','It sniffs around an old boot.','It turns its back on you - not a good sign.'],
+    ranged:'The skunk sprays! Your eyes water!', rangedBrace:'You cover your face just in time!', lunge:'The skunk charges and nips your ankle!', lungeBrace:'You hop back behind the spear!', victory:'The skunk waddles off, very pleased with itself.' },
+  trophy:{ name:'Skunk Tail', icon:'🦨', dropChance:0.45, desc:'+6 Max HP.', effect:()=>{ state.hpBonus += 6; log('It still smells a bit. +6 Max HP.'); } },
+  special:{ name:'Stink Cloud', desc:'Poisons the enemy for 3 turns and weakens its next attack by 30%.', apply:()=>{ state.enemyPoisonTurns = 3; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, Math.floor(state.enemyMax*0.06)); state.enemyWeakenNext = 0.7; log('A choking cloud surrounds the foe!'); } },
+  moves:[ crMove('foul_spray','spirit','Foul Spray',3,45,'Poisons the enemy for 4 turns.', cb=>{ log('The Skunk Spirit lets loose!'); state.enemyPoisonTurns = 4; state.enemyPoisonDmg = Math.max(state.enemyPoisonDmg, kanataSkillDamage(1.5)); spawnParticles(enemy.x, enemy.y-40, 20, {color:'#aac85a', speed:2, spread:6.28, size:5}); wait(600,cb); }),
+          crMove('stamp_charge','spirit','Stamp Charge',7,80,'Deals 7.5x spear damage and always strikes first.', cb=>{ log('The Skunk Spirit charges!'); executeSpiritMove(kanataSkillDamage(7.5),cb); }) ] });
+registerCreature({ id:'wild_turkey', element:'air', name:'Wild Turkey', icon:'🦃', rgb:'140,90,52', color:'#a0703c',
+  hp:155, dmgMult:1.85, gold:140, xpNext:140, bond:[44,58,125], art:CR_ART.turkey, shake:12,
+  log:{ encounter:'A wild turkey gobbles, fans its tail, and comes straight at you. It is not afraid of anything.', wasted:['The turkey gobbles loudly.','It struts in a circle, fanning its tail.','It scratches in the dirt for acorns.'],
+    ranged:'The turkey flaps up and kicks with its spurs!', rangedBrace:'You block the spurs with the spear!', lunge:'The turkey charges, pecking furiously!', lungeBrace:'You hold it off with the spear shaft!', victory:'The turkey gobbles once more and struts away.' },
+  trophy:{ name:'Turkey Fan', icon:'🦃', dropChance:0.45, desc:'+6 Max HP.', effect:()=>{ state.hpBonus += 6; log('A beautiful fan of bronze feathers. +6 Max HP.'); } },
+  special:{ name:'Strut', desc:'Kanata\'s next attack deals double damage and he heals 15%.', apply:()=>{ state.atkMultNext = 2; crHeal(0.15); log('Kanata stands tall and proud!'); } },
+  moves:[ crMove('gobble','air','Gobble',3,40,'Weakens the enemy\'s next attack by 40%.', cb=>{ log('A deafening gobble rattles the foe!'); state.enemyWeakenNext = 0.6; wait(600,cb); }),
+          crMove('spur_kick','air','Spur Kick',7,80,'Deals 7.5x spear damage and always strikes first.', cb=>{ log('The Turkey Spirit kicks with sharp spurs!'); executeSpiritMove(kanataSkillDamage(7.5),cb); }) ] });
+registerCreature({ id:'bobcat', element:'spirit', name:'Bobcat', icon:'🐈', rgb:'154,122,86', color:'#9a7a56',
+  hp:160, dmgMult:1.9, gold:150, xpNext:150, bond:[48,62,130], art:CR_ART.bobcat, shake:13,
+  log:{ encounter:'A bobcat crouches on the broken fort wall, tail twitching, ready to pounce.', wasted:['The bobcat licks a paw, ignoring you.','It flattens its ears.','It slinks along the wall to a better spot.'],
+    ranged:'The bobcat pounces from the wall!', rangedBrace:'You set the spear and turn it aside!', lunge:'The bobcat rakes with its claws!', lungeBrace:'You block the claws with the spear shaft!', victory:'The bobcat leaps the wall and is gone.' },
+  trophy:{ name:'Bobcat Claw', icon:'🐾', dropChance:0.45, desc:'+40% rare-encounter chance for your next 6 battles.', effect:()=>{ setBuff('rare',1.4,6); log('A sharp, curved claw. Something rare may find you.'); } },
+  special:{ name:'Ambush', desc:'Deals 12% of the enemy\'s Max HP as bonus damage and stuns it.', apply:()=>{ state.enemyHp = Math.max(0, state.enemyHp - Math.floor(state.enemyMax*0.12)); state.enemyStunned = true; log('The Bobcat Spirit pounces out of nowhere!'); } },
+  moves:[ crMove('stalk','spirit','Stalk',3,45,'Kanata\'s next attack is a guaranteed double-damage hit.', cb=>{ log('Kanata waits in the shadows, perfectly still.'); state.atkMultNext = 2; wait(600,cb); }),
+          crMove('pounce','spirit','Pounce',7,85,'Deals 8x spear damage and always strikes first.', cb=>{ log('The Bobcat Spirit pounces!'); executeSpiritMove(kanataSkillDamage(8),cb); }) ] });
+
+// ---- Story bosses ----
+Object.assign(ENEMY_DEFS, {
+  cartographer: {
+    element: 'frost', name: 'The Royal Cartographer', hp: 285, dmgMult: 2.15, shakeRanged: 21, draw: drawEnemyVoss,
+    encounterLog: 'The Royal Cartographer stands at a folding table on the ice, pinning down a map of land he has never walked. He does not look up.',
+    wasted: [{txt:'The Cartographer inks another line across the map.',pose:'reload'},{txt:'He measures the horizon with a brass sextant.',pose:'eye'},{txt:'The wind tears a page from his atlas. He curses.',pose:'stumble'}],
+    rangedLog: 'The Cartographer fires a brass pistol across the ice!', rangedBrace: 'The shot sparks off your spear!',
+    lungeLog: 'He drives forward with a surveyor\'s chain, swinging it like a whip!', lungeBrace: 'You tangle the chain on the spear shaft!',
+    victoryLog: 'The Cartographer falls, and the wind scatters his maps across the tundra.'
+  },
+  governor: {
+    element: 'normal', name: 'Governor Ashcombe', hp: 340, dmgMult: 2.3, shakeRanged: 23, draw: drawEnemyBlackmoor,
+    encounterLog: 'Governor Ashcombe waits on the fort\'s last wall, sword drawn, the Crown\'s flag snapping above him. Every order in this land has come from his desk.',
+    wasted: [{txt:'The Governor straightens his coat and his medals.',pose:'reload'},{txt:'He glances back at the fort - there is no one left to command.',pose:'eye'},{txt:'A cannon behind him misfires. He flinches.',pose:'stumble'}],
+    rangedLog: 'The Governor orders the last cannon to fire!', rangedBrace: 'You throw yourself behind the spear as the shot tears up the ground!',
+    lungeLog: 'Ashcombe leaps down from the wall, sword first!', lungeBrace: 'Steel meets spear - you hold!',
+    victoryLog: 'Governor Ashcombe drops his sword. Above the fort, the Crown\'s flag comes down.'
+  }
+});
+Object.assign(GOLD_BY_ENEMY, { cartographer: 360, governor: 420 });
+Object.assign(BOSS_LEVELS, { cartographer: 140, governor: 158 });
+Object.assign(TROPHY_DEFS, {
+  cartographer: { name:'Torn Royal Atlas', icon:'🗺️', dropChance:1, desc:'+20 Max HP.', effect:()=>{ state.hpBonus += 20; log('The maps were never true. +20 Max HP.'); } },
+  governor: { name:'Governor\'s Seal', icon:'🏳️', dropChance:1, desc:'+25 Max HP.', effect:()=>{ state.hpBonus += 25; log('The seal means nothing now. +25 Max HP.'); } }
+});
+AREAS.push(
+  { id: 'aurora_tundra', name: 'The Aurora Tundra',
+    desc: 'Open ice and frozen sky under the northern lights. Tough, cold-hardy creatures and the Crown\'s last surveyors.',
+    unlocked: () => !!state.chapter10Done, unlockHint: 'Defeat the Stormcaller to unlock',
+    pool: ['walrus', 'ermine', 'snow_goose', 'frost_wolf', 'arctic_muskox', 'marine'], baseLevel: 134, levelStep: 1.3, maxLevelBonus: 26, xpMult: 11.5 },
+  { id: 'last_fort', name: 'The Last Fort',
+    desc: 'The wild ground around the Crown\'s final fort. The garrison is thin now, but the land has moved back in.',
+    unlocked: () => !!state.chapter11Done, unlockHint: 'Defeat the Royal Cartographer to unlock',
+    pool: ['skunk', 'wild_turkey', 'bobcat', 'grenadier', 'dragoon', 'gale_ranger'], baseLevel: 150, levelStep: 1.4, maxLevelBonus: 28, xpMult: 13 }
+);
+
+// ---- Backgrounds ----
+function drawAuroraTundraBackground(t){
+  drawFrozenShoreBackground(t);
+  sctx.save();
+  sctx.fillStyle = 'rgba(8,14,40,0.35)'; sctx.fillRect(0,0,W,H*0.6);
+  for(let b=0;b<3;b++){
+    const hue = [140,170,280][b];
+    sctx.strokeStyle = `hsla(${hue},90%,65%,${0.18 + Math.sin(t*0.0007+b)*0.07})`;
+    sctx.lineWidth = H*0.05;
+    sctx.beginPath();
+    for(let i=0;i<=24;i++){ const x = i/24*W; const y = H*(0.12 + b*0.07) + Math.sin(i*0.5 + t*0.0006 + b*2)*H*0.035; if(i===0) sctx.moveTo(x,y); else sctx.lineTo(x,y); }
+    sctx.stroke();
+  }
+  sctx.restore();
+}
+function drawLastFortBackground(t){
+  drawHighlandPassBackground(t);
+  sctx.save();
+  sctx.fillStyle = 'rgba(80,30,20,0.25)'; sctx.fillRect(0,0,W,H);
+  const gy = groundY(), fx = W*0.55;
+  sctx.fillStyle = '#1e1a1c';
+  sctx.fillRect(fx, gy - H*0.14, W*0.5, H*0.14);
+  for(let i=0;i<8;i++) sctx.fillRect(fx + i*W*0.065, gy - H*0.165, W*0.035, H*0.03);
+  sctx.fillRect(fx + W*0.12, gy - H*0.24, W*0.012, H*0.1);
+  sctx.fillStyle = '#b82020'; sctx.fillRect(fx + W*0.132, gy - H*0.24, W*0.07, H*0.03);
+  sctx.restore();
+}
+
+// ---- Chapter flow ----
+async function startChapter11(){
+  setupExpansionBoss('cartographer', 'cartographer', 132);
+  await playExpansionChapterIntro('CHAPTER XI — THE AURORA TUNDRA', [
+    'North of the peaks, the trees give out and the sky catches fire with green light.',
+    'Here the Royal Cartographer is drawing borders across land that has never needed them.',
+    'Kanata walks out onto the ice. The lines on a map are only ink.'
+  ], '#8fe0c8');
+  game.mode = 'battle';
+  ui.classList.remove('hidden');
+  state.turnBusy = false;
+  setButtonsEnabled(true);
+  log('The Royal Cartographer finally looks up from his map.');
+}
+async function startChapter12(){
+  setupExpansionBoss('governor', 'governor', 148);
+  await playExpansionChapterIntro('CHAPTER XII — THE LAST FORT', [
+    'Every road Kanata has walked leads here: the last fort the Crown still holds.',
+    'Its soldiers are gone. Only the Governor who signed every order remains.',
+    'Kanata climbs the broken wall. This is where it ends.'
+  ], '#e8c15a');
+  game.mode = 'battle';
+  ui.classList.remove('hidden');
+  state.turnBusy = false;
+  setButtonsEnabled(true);
+  log('Governor Ashcombe raises his sword. "This land belongs to the Crown."');
+}
+async function playChapter11Outro(){
+  ui.classList.add('hidden');
+  flashbackTextEl.classList.remove('hidden');
+  await playCaptions(flashbackTextEl, [
+    'The wind carries the maps away, one page at a time.',
+    'Under the northern lights, the tundra has no borders at all.',
+    'Far to the south, smoke rises from the last fort.'
+  ], 1750, 600, 420);
+  flashbackTextEl.classList.add('hidden');
+  ui.classList.remove('hidden');
+  showEnd(true);
+}
+async function playChapter12Outro(){
+  ui.classList.add('hidden');
+  flashbackTextEl.classList.remove('hidden');
+  await playCaptions(flashbackTextEl, [
+    'The flag comes down. The fort gates swing open, and no one closes them.',
+    'Kanata stands on the wall and looks out at the land - river, forest, mountain, ice.',
+    'It was never the Crown\'s. It was never his either. It belongs to itself.',
+    'The spirits are still out there. The land is still wide. The story goes on.'
+  ], 1900, 650, 450);
+  flashbackTextEl.classList.add('hidden');
+  ui.classList.remove('hidden');
+  showEnd(true);
+}
+
 async function playExpansionChapterIntro(title, beats, color){
   ui.classList.add('hidden');
   setButtonsEnabled(false);
-  const overlay = document.getElementById('cutsceneOverlay');
+  // The overlay was never part of the page, so these intros used to crash
+  // and Chapters IX-X could not start. Build it on first use: a dim veil
+  // behind the captions (z-index 10) with the chapter title near the top.
+  let overlay = document.getElementById('cutsceneOverlay');
+  if(!overlay){
+    overlay = document.createElement('div'); overlay.id = 'cutsceneOverlay';
+    overlay.style.cssText = 'z-index:9;background:rgba(6,10,18,0.55);justify-content:flex-start;padding-top:18%;transition:opacity .5s';
+    const tEl = document.createElement('div'); tEl.id = 'cutsceneTitle'; tEl.style.opacity = '1';
+    overlay.appendChild(tEl); stage.appendChild(overlay);
+  }
   const overlayTitle = document.getElementById('cutsceneTitle');
   overlay.style.opacity = 0;
   overlay.style.pointerEvents = 'none';
